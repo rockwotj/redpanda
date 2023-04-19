@@ -340,6 +340,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                     return ss::now();
                 }
                 auto self = shared_from_this();
+                auto req_key = hdr.key;
                 auto rctx = request_context(
                   self,
                   std::move(hdr),
@@ -379,8 +380,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                  seq,
                                  correlation,
                                  self,
-                                 sres = std::move(sres)](
-                                  ss::future<> d) mutable {
+                                 sres = std::move(sres),
+                                 req_key](ss::future<> d) mutable {
                       /*
                        * if the dispatch/first stage failed, then we need to
                        * need to consume the second stage since it might be
@@ -406,6 +407,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                       /**
                        * second stage processed in background.
                        */
+                      ss::lw_shared_ptr<int> phase;
+                      *phase = 1;
                       ssx::background
                         = ssx::spawn_with_gate_then(
                             _server.conn_gate(),
@@ -413,12 +416,15 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                              f = std::move(f),
                              sres = std::move(sres),
                              seq,
-                             correlation]() mutable {
+                             correlation,
+                             phase]() mutable {
+                                *phase = 2;
                                 return f.then([this,
                                                sres = std::move(sres),
                                                seq,
-                                               correlation](
-                                                response_ptr r) mutable {
+                                               correlation,
+                                               phase](response_ptr r) mutable {
+                                    *phase = 3;
                                     r->set_correlation(correlation);
                                     response_and_resources randr{
                                       std::move(r), std::move(sres)};
@@ -426,7 +432,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                     return maybe_process_responses();
                                 });
                             })
-                            .handle_exception([self](std::exception_ptr e) {
+                            .handle_exception([self, phase, req_key](
+                                                std::exception_ptr e) {
                                 // ssx::spawn_with_gate already caught
                                 // shutdown-like exceptions, so we should only
                                 // be taking this path for real errors.  That
@@ -441,14 +448,18 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                 if (disconnected) {
                                     vlog(
                                       klog.info,
-                                      "Disconnected {} ({})",
+                                      "Disconnected {} ({}) {}, {}",
                                       self->conn->addr,
-                                      disconnected.value());
+                                      disconnected.value(),
+                                      *phase,
+                                      req_key);
                                 } else {
                                     vlog(
                                       klog.warn,
-                                      "Error processing request: {}",
-                                      e);
+                                      "Error processing request: {} {}, {}",
+                                      e,
+                                      *phase,
+                                      req_key);
                                 }
 
                                 self->_server.probe().service_error();
@@ -525,11 +536,12 @@ ss::future<> connection_context::maybe_process_responses() {
               // connection.
               .finally([resources = std::move(resp_and_res.resources)] {});
         } catch (...) {
-          // This wasn't triggered (which makes sense because this is catching sync
-          // errors
+            // This wasn't triggered (which makes sense because this is catching
+            // sync errors
             vlog(
               klog.debug,
-              "Failed to process request: {}",
+              "Failed to process request: {} {}",
+              conn->addr,
               std::current_exception());
         }
         return ss::make_ready_future<ss::stop_iteration>(

@@ -142,7 +142,7 @@ void connection::shutdown_input() {
     } catch (...) {
         _probe.connection_close_error();
         rpc::rpclog.debug(
-          "Failed to shutdown connection: {}", std::current_exception());
+          "Failed to shutdown connection: {} {}", addr, std::current_exception());
     }
 }
 
@@ -153,7 +153,7 @@ ss::future<> connection::shutdown() {
 
 ss::future<> connection::write(ss::scattered_message<char> msg) {
     _probe.add_bytes_sent(msg.size());
-    return _out.write(std::move(msg)).discard_result();
+    return _out.write(std::move(msg), &addr).discard_result();
 }
 
 } // namespace net

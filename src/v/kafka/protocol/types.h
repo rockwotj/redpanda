@@ -18,6 +18,7 @@
 namespace kafka {
 
 /// Kafka API key.
+/// See: https://kafka.apache.org/protocol.html#protocol_api_keys
 using api_key = named_type<int16_t, struct kafka_api_key>;
 
 /// Kafka API version.

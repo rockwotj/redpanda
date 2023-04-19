@@ -12,13 +12,19 @@
 #include "likely.h"
 #include "ssx/semaphore.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/scattered_message.hh>
+#include <seastar/net/socket_defs.hh>
 
 #include <fmt/format.h>
 
 namespace net {
+
+namespace {
+ss::logger nlog("rockwood_net");
+}
 
 batched_output_stream::batched_output_stream(
   ss::output_stream<char> o, size_t cache)
@@ -36,17 +42,25 @@ already_closed_error(ss::scattered_message<char>& msg) {
       batched_output_stream_closed(msg.size()));
 }
 
-ss::future<bool> batched_output_stream::write(ss::scattered_message<char> msg) {
+ss::future<bool> batched_output_stream::write(ss::scattered_message<char> msg, std::optional<const ss::socket_address*> debug_info) {
     if (unlikely(_closed)) {
         return already_closed_error(msg);
     }
     return ss::with_semaphore(
-      *_write_sem, 1, [this, v = std::move(msg)]() mutable {
+      *_write_sem, 1, [this, v = std::move(msg), debug_info]() mutable {
           if (unlikely(_closed)) {
               return already_closed_error(v);
           }
           const size_t vbytes = v.size();
-          return _out.write(std::move(v)).then([this, vbytes] {
+          return _out.write(std::move(v)).then([this, vbytes, debug_info] {
+              if (unlikely(_closed)) {
+                auto addr = debug_info.value_or(nullptr);
+                if (addr != nullptr) {
+                  vlog(nlog.info, "Closed stream after write, on to blind flush! {}", *addr);
+                } else {
+                  vlog(nlog.info, "Closed stream after write, on to blind flush! (no debug info)");
+                }
+              }
               // Should we check for closed here?
               _unflushed_bytes += vbytes;
               if (
