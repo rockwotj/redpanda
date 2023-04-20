@@ -15,7 +15,6 @@
 #include "ssx/semaphore.h"
 
 #include <seastar/core/iostream.hh>
-#include <seastar/net/socket_defs.hh>
 
 #include <cstddef>
 #include <memory>
@@ -82,7 +81,7 @@ public:
      * completes with the wrapped value indicating wheter a flush occurred on
      * this write (true) or not (false)
      */
-    ss::future<bool> write(ss::scattered_message<char> msg, std::optional<const ss::socket_address*> = std::nullopt);
+    ss::future<bool> write(ss::scattered_message<char> msg);
     ss::future<> flush();
 
     /// \brief calls output_stream<char>::close()
