@@ -407,8 +407,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                       /**
                        * second stage processed in background.
                        */
-                      ss::lw_shared_ptr<int> phase;
-                      *phase = 1;
+                      ss::lw_shared_ptr<int> phase = ss::make_lw_shared(1);
                       ssx::background
                         = ssx::spawn_with_gate_then(
                             _server.conn_gate(),
