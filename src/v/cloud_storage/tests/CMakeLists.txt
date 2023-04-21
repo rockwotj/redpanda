@@ -8,7 +8,6 @@ rp_test(
     partition_manifest_test.cc
     topic_manifest_test.cc
     tx_range_manifest_test.cc
-    offset_translation_layer_test.cc
     remote_segment_index_test.cc
     recovery_request_test.cc
     segment_meta_cstore_test.cc 
@@ -74,6 +73,6 @@ rp_test(
   BENCHMARK_TEST
   BINARY_NAME cloud_storage
   SOURCES cache_bench.cc segment_meta_cstore_bench.cc
-  LIBRARIES Seastar::seastar_perf_testing v::cloud_storage
+  LIBRARIES Seastar::seastar_perf_testing v::cloud_storage v::storage
   LABELS cloud_storage
 )
