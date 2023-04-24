@@ -311,16 +311,6 @@ disk_log_impl::monitor_eviction(ss::abort_source& as) {
       .promise.get_future();
 }
 
-// TODO: Remove this function once mem_log_impl is gone
-void disk_log_impl::set_collectible_offset(model::offset) {
-    vassert(false, "set_collectible_offset called on disk_log_impl");
-}
-
-bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
-    return !_segs.empty()
-           && ptr->reader().filename() == (*_segs.begin())->reader().filename();
-}
-
 ss::future<model::offset>
 disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
     vlog(
@@ -801,7 +791,7 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
       model::timestamp::now().value() + ignore_in_future / 1ms);
 
     for (const auto& s : _segs) {
-        auto max_ts = s->index().max_timestamp();
+        auto max_ts = s->index().retention_timestamp();
 
         // If the actual max timestamp from user records is out of bounds, clamp
         // it to something more plausible, either from other batches or from
