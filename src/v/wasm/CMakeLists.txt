@@ -10,3 +10,5 @@ v_cc_library(
     v::model
     Seastar::seastar
 )
+
+add_subdirectory(tests)
