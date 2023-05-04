@@ -168,12 +168,13 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
         auto octx = kafka::op_context(
           std::move(rctx), ss::default_smp_service_group());
         auto shard = octx.rctx.shards().shard_for(ntp).value();
+        auto& wasm_service = octx.rctx.connection()->server().wasm_service();
         return octx.rctx.partition_manager()
           .invoke_on(
             shard,
-            [ntp, config](cluster::partition_manager& pm) {
+            [ntp, config, &wasm_service](cluster::partition_manager& pm) {
                 return kafka::read_from_ntp(
-                  pm, ntp, config, true, model::no_timeout);
+                  pm, ntp, config, true, model::no_timeout, wasm_service);
             })
           .get0();
     };

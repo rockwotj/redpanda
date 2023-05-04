@@ -2,6 +2,7 @@
 
 #include "errc.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "model/timestamp.h"
@@ -9,12 +10,15 @@
 #include "seastarx.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
+#include "utils/vint.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 
+#include <boost/fusion/sequence/io/out.hpp>
 #include <boost/iostreams/categories.hpp>
 #include <boost/type_traits/function_traits.hpp>
 #include <wasmedge/enum_types.h>
@@ -31,6 +35,7 @@
 #include <ratio>
 #include <tuple>
 #include <type_traits>
+#include <variant>
 
 namespace wasm {
 
@@ -109,7 +114,7 @@ struct transform_context {
 class wasmedge_wasm_engine : public engine {
 public:
     static result<std::unique_ptr<wasmedge_wasm_engine>, errc>
-      create(ss::sstring);
+      create(std::string_view);
 
     // TODO: How akward is this API? Can we flatten the batches.
     ss::future<std::vector<model::record_batch>>
@@ -188,25 +193,67 @@ private:
               "transform execution {} resulted in an error",
               user_transform_name));
         }
-        storage::record_batch_builder builder(
-          header.type,
-          model::offset(header.base_offset() + record.offset_delta()));
-        builder.set_producer_identity(
-          header.producer_id, header.producer_epoch);
-        builder.set_timestamp(model::timestamp(
-          header.first_timestamp() + record.timestamp_delta()));
+        auto batch_size = model::packed_record_batch_header_size;
+        model::record_batch::uncompressed_records records;
+        records.reserve(_call_ctx->output_records.size());
+        // TODO: Encapsulate this in a builder
         for (auto& output_record : _call_ctx->output_records) {
-            builder.add_raw_kw(
+            auto k_size = output_record.key.size_bytes();
+            auto v_size = output_record.value.size_bytes();
+            auto size = sizeof(model::record_attributes::type) // attributes
+                        + vint::vint_size(record.timestamp_delta())
+                        + vint::vint_size(record.offset_delta())
+                        // TODO: Handle null keys
+                        + vint::vint_size(k_size)
+                        + k_size
+                        // TODO: Handle null values
+                        + vint::vint_size(v_size) + v_size
+                        + vint::vint_size(output_record.headers.size());
+            for (auto& h : output_record.headers) {
+                size += vint::vint_size(h.key_size()) + h.key().size_bytes()
+                        + vint::vint_size(h.value_size())
+                        + h.value().size_bytes();
+            }
+            auto r = model::record(
+              size,
+              record.attributes(),
+              record.timestamp_delta(),
+              record.offset_delta(),
+              k_size,
               std::move(output_record.key),
+              v_size,
               std::move(output_record.value),
               std::move(output_record.headers));
+            batch_size += vint::vint_size(r.size_bytes());
+            batch_size += r.size_bytes();
+            records.push_back(std::move(r));
         }
         _call_ctx = std::nullopt;
-        if (builder.empty()) {
+        if (records.empty()) {
             return std::nullopt;
         }
-        auto batch = std::move(builder).build();
-        batch.header().base_sequence = header.base_sequence;
+        auto new_header = model::record_batch_header{
+          .size_bytes = static_cast<int32_t>(batch_size),
+          .base_offset = header.base_offset,
+          .type = header.type,
+          .crc = 0,  // To be calculated
+          .attrs = model::record_batch_attributes(0),
+          .last_offset_delta = header.last_offset_delta,
+          .first_timestamp = header.first_timestamp,
+          .max_timestamp = header.max_timestamp,
+          .producer_id = header.producer_id,
+          .producer_epoch = header.producer_epoch,
+          .base_sequence = header.base_sequence,
+          .record_count = static_cast<int32_t>(
+            records.size()),
+          .ctx = model::record_batch_header::context(
+            header.ctx.term,
+            ss::this_shard_id()
+          ),
+        };
+        auto batch = model::record_batch(new_header, std::move(records));
+        batch.header().crc = model::crc_record_batch(batch);
+        batch.header().header_crc = model::internal_header_only_crc(batch.header());
         return batch;
     }
 
@@ -573,7 +620,7 @@ struct host_function<engine_func> {
 };
 
 result<std::unique_ptr<wasmedge_wasm_engine>, errc>
-wasmedge_wasm_engine::create(ss::sstring module_source) {
+wasmedge_wasm_engine::create(std::string_view module_source) {
     auto config_ctx = WasmEdgeConfig(
       WasmEdge_ConfigureCreate(), &WasmEdge_ConfigureDelete);
 
@@ -630,7 +677,7 @@ wasmedge_wasm_engine::create(ss::sstring module_source) {
     result = WasmEdge_LoaderParseFromBuffer(
       loader_ctx.get(),
       &module_ctx_ptr,
-      reinterpret_cast<uint8_t*>(module_source.data()),
+      reinterpret_cast<const uint8_t*>(module_source.data()),
       module_source.size());
     auto module_ctx = WasmEdgeASTModule(
       module_ctx_ptr, &WasmEdge_ASTModuleDelete);
@@ -681,11 +728,80 @@ wasmedge_wasm_engine::create(ss::sstring module_source) {
     return std::move(engine);
 }
 
+class wasm_transform_applying_reader : public model::record_batch_reader::impl {
+public:
+    using data_t = model::record_batch_reader::data_t;
+    using foreign_data_t = model::record_batch_reader::foreign_data_t;
+    using storage_t = model::record_batch_reader::storage_t;
+
+    wasm_transform_applying_reader(
+      model::record_batch_reader r,
+      engine* engine,
+      ss::gate::holder gate_holder)
+      : _gate_holder(std::move(gate_holder))
+      , _engine(engine)
+      , _source(std::move(r).release()) {}
+
+    bool is_end_of_stream() const final { return _source->is_end_of_stream(); }
+
+    ss::future<storage_t>
+    do_load_slice(model::timeout_clock::time_point tout) final {
+        storage_t ret = co_await _source->do_load_slice(tout);
+        data_t output;
+        if (std::holds_alternative<data_t>(ret)) {
+            auto& d = std::get<data_t>(ret);
+            output.reserve(d.size());
+            for (auto& batch : d) {
+                auto transformed = co_await _engine->transform(
+                  std::move(batch));
+                for (auto& r : transformed) {
+                    output.emplace_back(std::move(r));
+                }
+            }
+        } else {
+            auto& d = std::get<foreign_data_t>(ret);
+            for (auto& batch : *d.buffer) {
+                auto transformed = co_await _engine->transform(
+                  std::move(batch));
+                for (auto& r : transformed) {
+                    output.emplace_back(std::move(r));
+                }
+            }
+        }
+        co_return std::move(output);
+    }
+
+    void print(std::ostream& os) final {
+        fmt::print(os, "{wasm transform applying reader}");
+    }
+
+private:
+    ss::gate::holder _gate_holder;
+    engine* _engine;
+    std::unique_ptr<model::record_batch_reader::impl> _source;
+};
+
 } // namespace
 
+service::service(std::unique_ptr<engine> engine)
+  : _engine(std::move(engine)) {
+    wasm_log.info("Wasm service started: {}", is_enabled());
+}
+
+ss::future<> service::stop() { return _gate.close(); }
+
+model::record_batch_reader
+service::wrap_batch_reader(model::record_batch_reader batch_reader) {
+    if (is_enabled()) {
+        return model::make_record_batch_reader<wasm_transform_applying_reader>(
+          std::move(batch_reader), _engine.get(), _gate.hold());
+    }
+    return batch_reader;
+}
+
 result<std::unique_ptr<engine>, errc>
-make_wasm_engine(ss::sstring wasm_source) {
-    auto r = wasmedge_wasm_engine::create(std::move(wasm_source));
+make_wasm_engine(std::string_view wasm_source) {
+    auto r = wasmedge_wasm_engine::create(wasm_source);
     if (r.has_error()) {
         return r.error();
     }

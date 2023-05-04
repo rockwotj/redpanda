@@ -20,5 +20,6 @@ SEASTAR_THREAD_TEST_CASE(test_wasm_transforms_work) {
   auto result_batches = engine->transform(batch.copy()).get0();
   BOOST_CHECK_EQUAL(result_batches.size(), 1);
   BOOST_CHECK_EQUAL(result_batches[0].copy_records(), batch.copy_records());
+  BOOST_CHECK_EQUAL(result_batches[0], batch);
 }
 

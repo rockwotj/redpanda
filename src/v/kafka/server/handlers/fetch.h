@@ -14,6 +14,7 @@
 #include "kafka/server/handlers/handler.h"
 #include "kafka/types.h"
 #include "utils/intrusive_list_helpers.h"
+#include "wasm/wasm.h"
 
 namespace kafka {
 
@@ -336,6 +337,7 @@ ss::future<read_result> read_from_ntp(
   const model::ntp&,
   fetch_config,
   bool,
-  std::optional<model::timeout_clock::time_point>);
+  std::optional<model::timeout_clock::time_point>,
+  wasm::service&);
 
 } // namespace kafka

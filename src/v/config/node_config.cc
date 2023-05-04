@@ -155,6 +155,14 @@ node_config::node_config() noexcept
       "Enables log messages for allocations greater than the given size.",
       {.visibility = visibility::tunable},
       std::nullopt)
+  , wasm_enabled(
+      *this,
+      "wasm_enabled",
+      "Enable wasm transforms",
+      {.visibility = visibility::user},
+      false)
+  , wasm_file(
+      *this, "wasm_file", "Wasm file to load", {.visibility = visibility::user})
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",

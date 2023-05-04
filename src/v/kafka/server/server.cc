@@ -97,6 +97,7 @@ server::server(
   ss::sharded<cluster::security_frontend>& sec_fe,
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::sharded<wasm::service>& wasm_service,
   std::optional<qdc_monitor::config> qdc_config,
   ssx::thread_worker& tw) noexcept
   : net::server(cfg, klog)
@@ -124,6 +125,7 @@ server::server(
   , _security_frontend(sec_fe)
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
+  , _wasm_service(wasm_service)
   , _mtls_principal_mapper(
       config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind())
   , _gssapi_principal_mapper(

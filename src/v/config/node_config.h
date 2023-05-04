@@ -27,6 +27,7 @@ public:
     property<bool> developer_mode;
     property<data_directory_path> data_directory;
 
+
     // NOTE: during the normal runtime of a cluster, it is safe to assume that
     // the value of the node ID has been determined, and that there is a value
     // set for this property.
@@ -66,6 +67,9 @@ public:
     // if potentially incompatible with existing system state.
     property<bool> upgrade_override_checks;
     property<std::optional<size_t>> memory_allocation_warning_threshold;
+
+    property<bool> wasm_enabled;
+    property<data_directory_path> wasm_file;
 
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
