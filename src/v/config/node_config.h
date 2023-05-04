@@ -27,6 +27,7 @@ public:
     property<bool> developer_mode;
     property<data_directory_path> data_directory;
 
+
     // NOTE: during the normal runtime of a cluster, it is safe to assume that
     // the value of the node ID has been determined, and that there is a value
     // set for this property.

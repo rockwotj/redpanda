@@ -122,6 +122,7 @@ public:
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
     ss::sharded<coproc::partition_manager> cp_partition_manager;
+    ss::sharded<wasm::service> wasm_service;
 
     ss::sharded<features::feature_table> feature_table;
 

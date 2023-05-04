@@ -56,6 +56,7 @@ v_cc_library(
     v::cluster
     v::kafka_protocol
     v::security
+    v::wasm
     absl::flat_hash_map
     absl::flat_hash_set
 )

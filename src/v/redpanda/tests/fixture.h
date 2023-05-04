@@ -146,6 +146,7 @@ public:
           app.controller->get_api(),
           app.tx_gateway_frontend,
           app.tx_registry_frontend,
+          app.wasm_service,
           std::nullopt,
           *app.thread_worker);
 
