@@ -78,6 +78,11 @@ public:
     }
 
     template<typename T>
+    T consume_le_type() {
+        return _in.consume_le_type<T>();
+    }
+
+    template<typename T>
     T consume_be_type() {
         return _in.consume_be_type<T>();
     }
