@@ -16,6 +16,27 @@ namespace {
 
 class parse_exception : public std::exception {};
 
+template<typename Type, ss::future<Type> (*parse_type)(iobuf_const_parser&)>
+ss::future<std::vector<Type>> parse_section(iobuf_const_parser& parser) {
+    auto vector_size = parser.consume_le_type<uint32_t>();
+    std::vector<Type> vector;
+    for (uint32_t i = 0; i < vector_size; ++i) {
+        vector.push_back(co_await parse_type(parser));
+        co_await ss::coroutine::maybe_yield();
+    }
+    co_return vector;
+}
+template<typename Type, Type (*parse_type)(iobuf_const_parser&)>
+ss::future<std::vector<Type>> parse_section(iobuf_const_parser& parser) {
+    auto vector_size = parser.consume_le_type<uint32_t>();
+    std::vector<Type> vector;
+    for (uint32_t i = 0; i < vector_size; ++i) {
+        vector.push_back(parse_type(parser));
+        co_await ss::coroutine::maybe_yield();
+    }
+    co_return vector;
+}
+
 enum class valtype : uint8_t {
     i32 = 0x7F,
     i64 = 0x7E,
@@ -57,21 +78,16 @@ ss::future<std::vector<valtype>> parse_result_type(iobuf_const_parser& parser) {
     co_return result_type;
 }
 
-ss::future<std::vector<function_type>>
-parse_type_section(iobuf_const_parser& parser) {
-    auto vector_size = parser.consume_le_type<uint32_t>();
-    std::vector<function_type> function_types;
-    for (uint32_t i = 0; i < vector_size; ++i) {
-        auto magic = parser.consume_le_type<uint8_t>();
-        if (magic != 0x60) {
-            throw parse_exception();
-        }
-        auto parameter_types = co_await parse_result_type(parser);
-        auto result_types = co_await parse_result_type(parser);
-        function_types.emplace_back(parameter_types, result_types);
-        co_await ss::coroutine::maybe_yield();
+ss::future<function_type> parse_function_type(iobuf_const_parser& parser) {
+    auto magic = parser.consume_le_type<uint8_t>();
+    if (magic != 0x60) {
+        throw parse_exception();
     }
-    co_return function_types;
+    auto parameter_types = co_await parse_result_type(parser);
+    auto result_types = co_await parse_result_type(parser);
+    co_return function_type{
+      .parameter_types = std::move(parameter_types),
+      .result_types = std::move(result_types)};
 }
 
 struct limits {
@@ -79,29 +95,29 @@ struct limits {
     uint32_t max; // Empty maximums use numeric_limits::max
 };
 limits parse_limits(iobuf_const_parser& parser) {
-  if (parser.read_bool()) {
-    auto min = parser.consume_le_type<uint32_t>();
-    auto max = parser.consume_le_type<uint32_t>();
-    return {.min = min, .max = max};
-  } else {
-    auto min = parser.consume_le_type<uint32_t>();
-    return {.min = min, .max = std::numeric_limits<uint32_t>::max()};
-  }
+    if (parser.read_bool()) {
+        auto min = parser.consume_le_type<uint32_t>();
+        auto max = parser.consume_le_type<uint32_t>();
+        return {.min = min, .max = max};
+    } else {
+        auto min = parser.consume_le_type<uint32_t>();
+        return {.min = min, .max = std::numeric_limits<uint32_t>::max()};
+    }
 }
 
 using name = named_type<ss::sstring, struct name_tag>;
 
 name parse_name(iobuf_const_parser& parser) {
-  auto str_len = parser.consume_le_type<uint32_t>();
-  auto str = parser.read_string(str_len);
-  // TODO: validate utf8
-  return name(str);
+    auto str_len = parser.consume_le_type<uint32_t>();
+    auto str = parser.read_string(str_len);
+    // TODO: validate utf8
+    return name(str);
 }
 
 using typeidx = named_type<uint32_t, struct typeidx_tag>;
 
 typeidx parse_typeidx(iobuf_const_parser& parser) {
-  return typeidx(parser.consume_le_type<uint32_t>());
+    return typeidx(parser.consume_le_type<uint32_t>());
 }
 
 struct tabletype {
@@ -110,12 +126,12 @@ struct tabletype {
 };
 
 tabletype parse_tabletype(iobuf_const_parser& parser) {
-  auto reftype = parse_valtype(parser);
-  if (reftype != valtype::externref && reftype != valtype::funcref) {
-    throw parse_exception();
-  }
-  auto limits = parse_limits(parser);
-  return {.limits = limits, .reftype = reftype};
+    auto reftype = parse_valtype(parser);
+    if (reftype != valtype::externref && reftype != valtype::funcref) {
+        throw parse_exception();
+    }
+    auto limits = parse_limits(parser);
+    return {.limits = limits, .reftype = reftype};
 }
 
 struct memtype {
@@ -123,18 +139,18 @@ struct memtype {
 };
 
 memtype parse_memtype(iobuf_const_parser& parser) {
-  return {.limits = parse_limits(parser)};
+    return {.limits = parse_limits(parser)};
 }
 
 struct globaltype {
-  valtype valtype;
-  bool mut;
+    valtype valtype;
+    bool mut;
 };
 
 globaltype parse_globaltype(iobuf_const_parser& parser) {
-  auto valtype = parse_valtype(parser);
-  auto mut = parser.read_bool();
-  return {.valtype = valtype, .mut = mut};
+    auto valtype = parse_valtype(parser);
+    auto mut = parser.read_bool();
+    return {.valtype = valtype, .mut = mut};
 }
 
 struct import {
@@ -145,55 +161,95 @@ struct import {
 };
 
 import parse_import(iobuf_const_parser& parser) {
-  auto module = parse_name(parser);
-  auto name = parse_name(parser);
-  auto type = parser.consume_le_type<uint8_t>();
-  import::desc desc;
-  switch (type) {
+    auto module = parse_name(parser);
+    auto name = parse_name(parser);
+    auto type = parser.consume_le_type<uint8_t>();
+    import::desc desc;
+    switch (type) {
     case 0x00: // func
-      desc = parse_typeidx(parser);
-      break;
+        desc = parse_typeidx(parser);
+        break;
     case 0x01: // table
-      desc = parse_tabletype(parser);
-      break;
+        desc = parse_tabletype(parser);
+        break;
     case 0x02: // memory
-      desc = parse_memtype(parser);
-      break;
+        desc = parse_memtype(parser);
+        break;
     case 0x03: // global
-      desc = parse_globaltype(parser);
-      break;
+        desc = parse_globaltype(parser);
+        break;
     default:
-      throw parse_exception();
-  }
-  return {.module = std::move(module), .name = std::move(name), .description = desc};
+        throw parse_exception();
+    }
+    return {
+      .module = std::move(module),
+      .name = std::move(name),
+      .description = desc};
 }
 
-ss::future<std::vector<import>> parse_import_section(iobuf_const_parser& parser) {
+struct table {
+    tabletype type;
+};
+
+table parse_table(iobuf_const_parser& parser) {
+    return {.type = parse_tabletype(parser)};
+}
+
+ss::future<std::vector<table>> parse_table_section(iobuf_const_parser& parser) {
     auto vector_size = parser.consume_le_type<uint32_t>();
-    std::vector<import> imports;
-    imports.reserve(vector_size);
+    std::vector<table> tables;
+    tables.reserve(vector_size);
     for (uint32_t i = 0; i < vector_size; ++i) {
-        imports.push_back(parse_import(parser));
+        tables.push_back(parse_table(parser));
         co_await ss::coroutine::maybe_yield();
     }
-    co_return imports;
+    co_return tables;
 }
 
-ss::future<> parse_section(iobuf_const_parser& parser) {
+struct mem {
+    memtype type;
+};
+
+mem parse_memory(iobuf_const_parser& parser) {
+    return {.type = parse_memtype(parser)};
+}
+
+struct instruction {
+};
+
+struct expression {
+  std::vector<instruction> instructions;
+};
+
+struct global {
+  globaltype type;
+  // expression expr;
+};
+
+ss::future<> parse_one_section(iobuf_const_parser& parser) {
     auto id = parser.consume_le_type<uint8_t>();
     auto size = parser.consume_le_type<uint32_t>();
     switch (id) {
     case 0x00: // Custom section
         // Skip over custom sections for now
+        // TODO: Support debug symbols if included.
         parser.skip(size);
         co_return;
     case 0x01: // type section
-        co_await parse_type_section(parser);
+        co_await parse_section<function_type, parse_function_type>(parser);
+        co_return;
     case 0x02: // import section
-        co_await parse_import_section(parser);
+        co_await parse_section<import, parse_import>(parser);
+        co_return;
     case 0x03: // function section
+        co_await parse_section<typeidx, parse_typeidx>(parser);
+        co_return;
     case 0x04: // table section
+        co_await parse_section<table, parse_table>(parser);
+        co_return;
     case 0x05: // memory section
+        co_await parse_section<mem, parse_memory>(parser);
+        co_return;
     case 0x06: // global section
     case 0x07: // export section
     case 0x08: // start section
@@ -221,7 +277,7 @@ ss::future<> parse_module(iobuf buffer) {
     }
 
     while (parser.bytes_left() > 0) {
-        co_await parse_section(parser);
+        co_await parse_one_section(parser);
         co_await ss::coroutine::maybe_yield();
     }
 }
