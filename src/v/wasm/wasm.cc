@@ -1,25 +1,36 @@
 #include "wasm.h"
 
 #include "errc.h"
+#include "http/client.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "model/timestamp.h"
+#include "net/tls.h"
+#include "net/unresolved_address.h"
 #include "outcome.h"
 #include "seastarx.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
+#include "utils/mutex.h"
+#include "utils/uri.h"
 #include "utils/vint.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/metrics.hh>
 #include <seastar/core/print.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/net/tls.hh>
 
+#include <absl/strings/str_split.h>
+#include <boost/beast/http/field.hpp>
 #include <boost/fusion/sequence/io/out.hpp>
-#include <boost/iostreams/categories.hpp>
+#include <boost/regex.hpp>
 #include <boost/type_traits/function_traits.hpp>
 #include <wasmedge/enum_types.h>
 #include <wasmedge/wasmedge.h>
@@ -33,6 +44,8 @@
 #include <memory>
 #include <optional>
 #include <ratio>
+#include <regex>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <variant>
@@ -108,6 +121,7 @@ struct transform_context {
     model::timestamp timestamp;
     std::vector<model::record_header> headers;
 
+    std::vector<iobuf_parser> http_responses;
     std::vector<record_builder> output_records;
 };
 
@@ -123,6 +137,11 @@ public:
           = co_await storage::internal::decompress_batch(std::move(batch));
 
         std::vector<model::record_batch> batches;
+
+        // In the case of an async host call, don't allow multiple
+        // calls into the wasm engine concurrently (I think there
+        // are mutex in wasmedge that would deadlock for us).
+        auto holder = _mutex.get_units();
 
         // TODO: Put in a scheduling group
         co_await ss::async(
@@ -187,11 +206,13 @@ private:
             throw wasm_exception(
               ss::format("transform execution {} failed", user_transform_name));
         }
-        if (WasmEdge_ValueGetI32(returns[0]) != 0) {
+        auto user_result = WasmEdge_ValueGetI32(returns[0]);
+        if (user_result != 0) {
             _call_ctx = std::nullopt;
             throw wasm_exception(ss::format(
-              "transform execution {} resulted in an error",
-              user_transform_name));
+              "transform execution {} resulted in error {}",
+              user_transform_name,
+              user_result));
         }
         auto batch_size = model::packed_record_batch_header_size;
         model::record_batch::uncompressed_records records;
@@ -236,7 +257,7 @@ private:
           .size_bytes = static_cast<int32_t>(batch_size),
           .base_offset = header.base_offset,
           .type = header.type,
-          .crc = 0,  // To be calculated
+          .crc = 0, // To be calculated
           .attrs = model::record_batch_attributes(0),
           .last_offset_delta = header.last_offset_delta,
           .first_timestamp = header.first_timestamp,
@@ -244,16 +265,14 @@ private:
           .producer_id = header.producer_id,
           .producer_epoch = header.producer_epoch,
           .base_sequence = header.base_sequence,
-          .record_count = static_cast<int32_t>(
-            records.size()),
+          .record_count = static_cast<int32_t>(records.size()),
           .ctx = model::record_batch_header::context(
-            header.ctx.term,
-            ss::this_shard_id()
-          ),
+            header.ctx.term, ss::this_shard_id()),
         };
         auto batch = model::record_batch(new_header, std::move(records));
         batch.header().crc = model::crc_record_batch(batch);
-        batch.header().header_crc = model::internal_header_only_crc(batch.header());
+        batch.header().header_crc = model::internal_header_only_crc(
+          batch.header());
         return batch;
     }
 
@@ -417,8 +436,142 @@ private:
         return int32_t(key_len + value_len);
     }
 
+    int32_t http_fetch(
+      uint32_t method,
+      uint8_t* url,
+      uint32_t url_len,
+      uint8_t* headers,
+      uint32_t headers_len,
+      uint8_t* body,
+      uint32_t body_len) {
+        try {
+            if (!_call_ctx) {
+                return -1;
+            }
+
+            auto uri = util::parse_uri(
+              std::string_view(reinterpret_cast<char*>(url), url_len));
+
+            if (!uri.has_value()) {
+                return -2;
+            }
+            std::string_view headers_str(
+              reinterpret_cast<char*>(headers), headers_len);
+            std::string_view body_str(reinterpret_cast<char*>(body), body_len);
+            net::base_transport::configuration client_config{
+              .server_addr = net::unresolved_address(
+                  // TODO: Respect the passed in port if set
+                  uri->host,
+                  uri->scheme == "http" ? 80 : 443),
+            };
+            if (uri->scheme == "https") {
+                ss::tls::credentials_builder b;
+                b.set_client_auth(ss::tls::client_auth::NONE);
+                auto ca_file = net::find_ca_file().get();
+                vlog(wasm_log.info, "Using ca_file: {}", ca_file.value_or("system"));
+                if (ca_file.has_value()) {
+                    b.set_x509_trust_file(
+                       ca_file.value(), ss::tls::x509_crt_format::PEM)
+                      .get();
+                } else {
+                    b.set_system_trust().get();
+                }
+                client_config.credentials = b.build_reloadable_certificate_credentials().get();
+                client_config.tls_sni_hostname = uri->host;
+            }
+
+            http::client client(client_config);
+
+            return http::with_client(
+                     std::move(client),
+                     [uri = std::move(uri.value()),
+                      headers_str,
+                      body_str,
+                      method,
+                      this](auto& client) mutable {
+                         return make_http_request(
+                           client,
+                           method == 0 ? boost::beast::http::verb::get
+                                       : boost::beast::http::verb::post,
+                           std::move(uri),
+                           headers_str,
+                           body_str);
+                     })
+              .get();
+
+        } catch (...) {
+            vlog(
+              wasm_log.warn,
+              "Error making HTTP request: {}",
+              std::current_exception());
+            return -3;
+        }
+    }
+
+    ss::future<int32_t> make_http_request(
+      http::client& client,
+      boost::beast::http::verb method,
+      util::uri uri,
+      std::string_view headers,
+      std::string_view body) {
+        http::client::request_header header;
+        header.method(method);
+        header.target(std::string(uri.path + "?" + uri.query));
+
+        if (!headers.empty()) {
+            for (auto header_line : absl::StrSplit(headers, '\n')) {
+                std::vector<std::string_view> parts = absl::StrSplit(
+                  header_line, absl::MaxSplits(": ", 1));
+                if (parts.size() != 2) {
+                    continue;
+                }
+                boost::beast::string_view name(
+                  parts[0].data(), parts[0].length());
+                boost::beast::string_view value(
+                  parts[1].data(), parts[1].length());
+
+                header.insert(
+                  boost::beast::http::string_to_field(name), name, value);
+            }
+        }
+
+        header.insert(
+          boost::beast::http::field::content_length,
+          boost::beast::to_static_string(body.length()));
+        header.insert(boost::beast::http::field::host, std::string(uri.host));
+
+        vlog(wasm_log.info, "sending fetch: {}", header);
+
+        auto [req, resp] = co_await client.make_request(std::move(header));
+
+        co_await req->send_some(ss::temporary_buffer<char>::copy_of(body));
+        co_await req->send_eof();
+
+        iobuf result;
+        while (!resp->is_done()) {
+            result.append_fragments(co_await resp->recv_some());
+        }
+        auto idx = _call_ctx->http_responses.size();
+        _call_ctx->http_responses.emplace_back(std::move(result));
+        co_return int32_t(idx);
+    }
+
+    int32_t
+    read_http_resp_body(int32_t handle, uint8_t* buf, uint32_t buf_len) {
+        if (
+          !_call_ctx || handle < 0
+          || handle >= int32_t(_call_ctx->http_responses.size())) {
+            return -1;
+        }
+        auto& resp = _call_ctx->http_responses[handle];
+        auto amt = std::min(buf_len, uint32_t(resp.bytes_left()));
+        resp.consume_to(amt, buf);
+        return amt;
+    }
+
     // End ABI exports
 
+    mutex _mutex;
     std::vector<WasmEdgeModule> _modules;
     WasmEdgeStore _store_ctx;
     WasmEdgeVM _vm_ctx;
@@ -454,6 +607,24 @@ struct host_function<engine_func> {
                                std::tuple<int32_t, uint8_t*, uint32_t>>) {
             inputs = {
               WasmEdge_ValType_I32, WasmEdge_ValType_I32, WasmEdge_ValType_I32};
+        } else if constexpr (std::is_same_v<
+                               std::tuple<ArgTypes...>,
+                               std::tuple<
+                                 uint32_t,
+                                 uint8_t*,
+                                 uint32_t,
+                                 uint8_t*,
+                                 uint32_t,
+                                 uint8_t*,
+                                 uint32_t>>) {
+            inputs = {
+              WasmEdge_ValType_I32,
+              WasmEdge_ValType_I32,
+              WasmEdge_ValType_I32,
+              WasmEdge_ValType_I32,
+              WasmEdge_ValType_I32,
+              WasmEdge_ValType_I32,
+              WasmEdge_ValType_I32};
         } else if constexpr (std::is_same_v<
                                std::tuple<ArgTypes...>,
                                std::
@@ -578,6 +749,41 @@ struct host_function<engine_func> {
                       ptr_len_a,
                       host_ptr_b,
                       ptr_len_b};
+                } else if constexpr (std::is_same_v<
+                                       std::tuple<ArgTypes...>,
+                                       std::tuple<
+                                         uint32_t,
+                                         uint8_t*,
+                                         uint32_t,
+                                         uint8_t*,
+                                         uint32_t,
+                                         uint8_t*,
+                                         uint32_t>>) {
+                    WasmEdge_MemoryInstanceContext* mem_ctx
+                      = WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0);
+
+                    auto guest_ptr_a = WasmEdge_ValueGetI32(parameters[1]);
+                    auto ptr_len_a = WasmEdge_ValueGetI32(parameters[2]);
+                    uint8_t* host_ptr_a = WasmEdge_MemoryInstanceGetPointer(
+                      mem_ctx, guest_ptr_a, ptr_len_a);
+
+                    auto guest_ptr_b = WasmEdge_ValueGetI32(parameters[3]);
+                    auto ptr_len_b = WasmEdge_ValueGetI32(parameters[4]);
+                    uint8_t* host_ptr_b = WasmEdge_MemoryInstanceGetPointer(
+                      mem_ctx, guest_ptr_b, ptr_len_b);
+
+                    auto guest_ptr_c = WasmEdge_ValueGetI32(parameters[5]);
+                    auto ptr_len_c = WasmEdge_ValueGetI32(parameters[6]);
+                    uint8_t* host_ptr_c = WasmEdge_MemoryInstanceGetPointer(
+                      mem_ctx, guest_ptr_c, ptr_len_c);
+                    packed_args = {
+                      WasmEdge_ValueGetI32(parameters[0]),
+                      host_ptr_a,
+                      ptr_len_a,
+                      host_ptr_b,
+                      ptr_len_b,
+                      host_ptr_c,
+                      ptr_len_c};
                 } else {
                     static_assert(
                       dependent_false<std::tuple<ArgTypes...>>::value,
@@ -661,6 +867,10 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
       engine, redpanda_module, "get_header_value");
     host_function<&wasmedge_wasm_engine::append_header>::reg(
       engine, redpanda_module, "append_header");
+    host_function<&wasmedge_wasm_engine::http_fetch>::reg(
+      engine, redpanda_module, "http_fetch");
+    host_function<&wasmedge_wasm_engine::read_http_resp_body>::reg(
+      engine, redpanda_module, "read_http_resp_body");
 
     WasmEdge_VMRegisterModuleFromImport(vm_ctx.get(), redpanda_module.get());
 
@@ -784,9 +994,7 @@ private:
 } // namespace
 
 service::service(std::unique_ptr<engine> engine)
-  : _engine(std::move(engine)) {
-    wasm_log.info("Wasm service started: {}", is_enabled());
-}
+  : _engine(std::move(engine)) {}
 
 ss::future<> service::stop() { return _gate.close(); }
 

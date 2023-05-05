@@ -149,3 +149,29 @@ WASM_IMPORT(append_header) int32_t append_header(
 // TODO: Support reading from schema registry
 // TODO: Network functionality (Do we just use raw sockets or http?)
 // TODO: Explicitly layout the WASI support we'll want here
+
+using HttpResponseHandle = int32_t;
+
+enum class http_method : uint32_t {
+  GET = 1,
+  POST = 2,
+};
+
+WASM_IMPORT(http_fetch) HttpResponseHandle http_fetch(
+  http_method method,
+  const uint8_t* url,
+  uint32_t url_len,
+  // Already encoded headers
+  const uint8_t* headers,
+  uint32_t headers_len,
+  const uint8_t* body,
+  uint32_t body_len
+);
+
+WASM_IMPORT(read_http_resp_body) ReadResult read_http_resp_body(
+  HttpResponseHandle handle,
+  uint8_t* buf,
+  uint32_t buf_len
+);
+
+// TODO: Add the ability to read headers, status code etc

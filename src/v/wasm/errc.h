@@ -14,7 +14,7 @@ enum class errc {
 };
 
 struct errc_category final : public std::error_category {
-    const char* name() const noexcept final { return "rpc::errc"; }
+    const char* name() const noexcept final { return "wasm::errc"; }
 
     std::string message(int c) const final {
         switch (static_cast<errc>(c)) {
@@ -22,8 +22,10 @@ struct errc_category final : public std::error_category {
             return "wasm::errc::success";
         case errc::load_failure:
             return "wasm::errc::load_failure";
+        case errc::engine_creation_failure:
+            return "wasm::errc::engine_creation_failure";
         default:
-            return "rpc::wasm::unknown(" + std::to_string(c) + ")";
+            return "wasm::errc::unknown(" + std::to_string(c) + ")";
         }
     }
 };
