@@ -1,3 +1,5 @@
+*.wasm
+
 # Compiled Object files
 *.slo
 *.lo

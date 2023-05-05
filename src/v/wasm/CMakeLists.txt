@@ -7,6 +7,7 @@ v_cc_library(
   DEPS
     wasmedge
     v::storage
+    v::http
     v::model
     Seastar::seastar
 )

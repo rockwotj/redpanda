@@ -49,6 +49,7 @@ rp_test(
     tracking_allocator_tests.cc
     tristate_test.cc
     utf8_control_chars.cc
+    uri_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map
   LABELS utils
