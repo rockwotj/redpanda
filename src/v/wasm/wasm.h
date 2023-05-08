@@ -16,8 +16,7 @@ namespace wasm {
 
 class engine {
 public:
-    // TODO: How akward is this API? Can we flatten the batches.
-    virtual ss::future<std::vector<model::record_batch>>
+    virtual ss::future<model::record_batch>
     transform(model::record_batch&& batch) = 0;
 
     engine() = default;

@@ -1,5 +1,6 @@
-#include "abi.h"
+#include "redpanda/abi.h"
 
+WASM_EXPORT(_start) void _start() {}
 uint32_t redpanda_abi_version() { return 0; }
 
 constexpr uint32_t kBufferSize = 8 * 1024;

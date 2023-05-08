@@ -27,6 +27,7 @@
 #include <seastar/core/thread.hh>
 #include <seastar/net/tls.hh>
 
+#include <absl/base/casts.h>
 #include <absl/strings/str_split.h>
 #include <boost/beast/http/field.hpp>
 #include <boost/fusion/sequence/io/out.hpp>
@@ -36,15 +37,18 @@
 #include <wasmedge/wasmedge.h>
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <ratio>
 #include <regex>
+#include <stdexcept>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -101,6 +105,7 @@ constexpr std::string_view wasi_preview_1_module_name
   = "wasi_snapshot_preview1";
 constexpr std::string_view redpanda_on_record_callback_function_name
   = "redpanda_on_record";
+constexpr std::string_view wasi_preview_1_start_function_name = "_start";
 
 WasmEdgeModule create_module(std::string_view name) {
     auto wrapped = WasmEdge_StringWrap(name.data(), name.size());
@@ -130,34 +135,71 @@ public:
     static result<std::unique_ptr<wasmedge_wasm_engine>, errc>
       create(std::string_view);
 
-    // TODO: How akward is this API? Can we flatten the batches.
-    ss::future<std::vector<model::record_batch>>
+    ss::future<model::record_batch>
     transform(model::record_batch&& batch) override {
         model::record_batch decompressed
           = co_await storage::internal::decompress_batch(std::move(batch));
 
-        std::vector<model::record_batch> batches;
+        std::vector<model::record> transformed_records;
+
+        auto header = decompressed.header();
+        auto new_header = model::record_batch_header{
+          .size_bytes = 0, // To be calculated
+          .base_offset = header.base_offset,
+          .type = header.type,
+          .crc = 0, // To be calculated
+          .attrs = model::record_batch_attributes(0),
+          .last_offset_delta = header.last_offset_delta,
+          .first_timestamp = header.first_timestamp,
+          .max_timestamp = header.max_timestamp,
+          .producer_id = header.producer_id,
+          .producer_epoch = header.producer_epoch,
+          .base_sequence = header.base_sequence,
+          .record_count = 0, // To be calculated
+          .ctx = model::record_batch_header::context(
+            header.ctx.term, ss::this_shard_id()),
+        };
 
         // In the case of an async host call, don't allow multiple
         // calls into the wasm engine concurrently (I think there
         // are mutex in wasmedge that would deadlock for us).
         auto holder = _mutex.get_units();
 
+        if (!_wasi_started) {
+            co_await ss::async([this] { initialize_wasi(); });
+            _wasi_started = true;
+        }
+
         // TODO: Put in a scheduling group
         co_await ss::async(
-          [this, &batches](model::record_batch decompressed) {
+          [this, &transformed_records](model::record_batch decompressed) {
               decompressed.for_each_record(
-                [this, &batches, &decompressed](model::record record) {
-                    auto output_batch = invoke_transform(
+                [this, &transformed_records, &decompressed](
+                  model::record record) {
+                    auto output = invoke_transform(
                       decompressed.header(), std::move(record));
-                    if (output_batch.has_value()) {
-                        batches.push_back(std::move(output_batch.value()));
-                    }
+                    transformed_records.insert(
+                      transformed_records.end(),
+                      std::make_move_iterator(output.begin()),
+                      std::make_move_iterator(output.end()));
                 });
           },
           std::move(decompressed));
 
-        co_return batches;
+        auto batch_size = model::packed_record_batch_header_size;
+        for (const auto& r : transformed_records) {
+            batch_size += vint::vint_size(r.size_bytes());
+            batch_size += r.size_bytes();
+        }
+        new_header.size_bytes = batch_size;
+        new_header.record_count = transformed_records.size();
+        auto transformed_batch = model::record_batch(
+          new_header, std::move(transformed_records));
+        transformed_batch.header().crc = model::crc_record_batch(
+          transformed_batch);
+        transformed_batch.header().header_crc = model::internal_header_only_crc(
+          transformed_batch.header());
+        co_return std::move(transformed_batch);
     }
 
 private:
@@ -175,7 +217,28 @@ private:
         _modules = std::move(modules);
     }
 
-    std::optional<model::record_batch> invoke_transform(
+    void initialize_wasi() {
+        std::array<WasmEdge_Value, 0> params = {};
+        std::array<WasmEdge_Value, 0> returns = {};
+        WasmEdge_Result result = WasmEdge_VMExecute(
+          _vm_ctx.get(),
+          WasmEdge_StringWrap(
+            wasi_preview_1_start_function_name.data(),
+            wasi_preview_1_start_function_name.size()),
+          params.data(),
+          params.size(),
+          returns.data(),
+          returns.size());
+
+        if (!WasmEdge_ResultOK(result)) {
+            // Get the right transform name here
+            std::string_view user_transform_name = "foo";
+            throw wasm_exception(ss::format(
+              "wasi _start initialization {} failed", user_transform_name));
+        }
+    }
+
+    std::vector<model::record> invoke_transform(
       const model::record_batch_header& header, model::record&& record) {
         iobuf key = record.release_key();
         iobuf value = record.release_value();
@@ -214,7 +277,7 @@ private:
               user_transform_name,
               user_result));
         }
-        auto batch_size = model::packed_record_batch_header_size;
+        wasm_log.info("Done, output: {}", _call_ctx->output_records.size());
         model::record_batch::uncompressed_records records;
         records.reserve(_call_ctx->output_records.size());
         // TODO: Encapsulate this in a builder
@@ -245,35 +308,10 @@ private:
               v_size,
               std::move(output_record.value),
               std::move(output_record.headers));
-            batch_size += vint::vint_size(r.size_bytes());
-            batch_size += r.size_bytes();
             records.push_back(std::move(r));
         }
         _call_ctx = std::nullopt;
-        if (records.empty()) {
-            return std::nullopt;
-        }
-        auto new_header = model::record_batch_header{
-          .size_bytes = static_cast<int32_t>(batch_size),
-          .base_offset = header.base_offset,
-          .type = header.type,
-          .crc = 0, // To be calculated
-          .attrs = model::record_batch_attributes(0),
-          .last_offset_delta = header.last_offset_delta,
-          .first_timestamp = header.first_timestamp,
-          .max_timestamp = header.max_timestamp,
-          .producer_id = header.producer_id,
-          .producer_epoch = header.producer_epoch,
-          .base_sequence = header.base_sequence,
-          .record_count = static_cast<int32_t>(records.size()),
-          .ctx = model::record_batch_header::context(
-            header.ctx.term, ss::this_shard_id()),
-        };
-        auto batch = model::record_batch(new_header, std::move(records));
-        batch.header().crc = model::crc_record_batch(batch);
-        batch.header().header_crc = model::internal_header_only_crc(
-          batch.header());
-        return batch;
+        return records;
     }
 
     std::optional<transform_context> _call_ctx;
@@ -460,15 +498,18 @@ private:
             std::string_view body_str(reinterpret_cast<char*>(body), body_len);
             net::base_transport::configuration client_config{
               .server_addr = net::unresolved_address(
-                  // TODO: Respect the passed in port if set
-                  uri->host,
-                  uri->scheme == "http" ? 80 : 443),
+                // TODO: Respect the passed in port if set
+                uri->host,
+                uri->scheme == "http" ? 80 : 443),
             };
             if (uri->scheme == "https") {
                 ss::tls::credentials_builder b;
                 b.set_client_auth(ss::tls::client_auth::NONE);
                 auto ca_file = net::find_ca_file().get();
-                vlog(wasm_log.info, "Using ca_file: {}", ca_file.value_or("system"));
+                vlog(
+                  wasm_log.info,
+                  "Using ca_file: {}",
+                  ca_file.value_or("system"));
                 if (ca_file.has_value()) {
                     b.set_x509_trust_file(
                        ca_file.value(), ss::tls::x509_crt_format::PEM)
@@ -476,7 +517,8 @@ private:
                 } else {
                     b.set_system_trust().get();
                 }
-                client_config.credentials = b.build_reloadable_certificate_credentials().get();
+                client_config.credentials
+                  = b.build_reloadable_certificate_credentials().get();
                 client_config.tls_sni_hostname = uri->host;
             }
 
@@ -575,10 +617,218 @@ private:
     std::vector<WasmEdgeModule> _modules;
     WasmEdgeStore _store_ctx;
     WasmEdgeVM _vm_ctx;
+    bool _wasi_started = false;
 };
 
 template<class T>
 struct dependent_false : std::false_type {};
+
+namespace wasi {
+
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L110-L113C1
+constexpr uint16_t WASI_ERRNO_SUCCESS = 0;
+
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L370-L373
+constexpr uint16_t WASI_ERRNO_NOSYS = 52;
+
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1453-L1469
+uint16_t clock_time_get(uint32_t, uint64_t, uint64_t) {
+    return WASI_ERRNO_NOSYS;
+}
+
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1409-L1418C1
+int32_t args_sizes_get(uint32_t*, uint32_t*) { return 0; }
+
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1400-L1408
+int16_t args_get(uint8_t**, uint8_t*) { return WASI_ERRNO_SUCCESS; }
+
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1419-L1427
+int32_t environ_get(uint8_t**, uint8_t*) { return WASI_ERRNO_SUCCESS; }
+
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1428-L1437
+int32_t environ_sizes_get(uint32_t*, uint32_t*) { return 0; }
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1504-L1510
+int16_t fd_close(int32_t) { return WASI_ERRNO_NOSYS; }
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1518-L1527
+int16_t fd_fdstat_get(int32_t, void*) { return WASI_ERRNO_NOSYS; }
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1612-L1620
+int16_t fd_prestat_get(int32_t, void*) { return WASI_ERRNO_NOSYS; }
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1621-L1631
+int16_t fd_prestat_dir_name(int32_t, uint8_t*, uint32_t) {
+    return WASI_ERRNO_NOSYS;
+}
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1654-L1671
+int16_t fd_read(int32_t, const void*, uint32_t, uint32_t*) {
+    return WASI_ERRNO_NOSYS;
+}
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1715-L1732
+int16_t fd_seek(int32_t, int32_t) { return WASI_ERRNO_NOSYS; }
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1845-L1884
+int16_t path_open(
+  int32_t,
+  uint32_t,
+  const uint8_t*,
+  uint16_t,
+  uint64_t,
+  uint64_t,
+  uint16_t,
+  void*) {
+    return WASI_ERRNO_NOSYS;
+}
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1982-L1992
+void proc_exit(int32_t) { throw std::runtime_error("exiting"); }
+
+template<typename Type>
+void transform_type(std::vector<WasmEdge_ValType>& types) {
+    if constexpr (
+      std::is_pointer_v<
+        Type> || std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t> || std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
+        types.push_back(WasmEdge_ValType_I32);
+    } else if constexpr (
+      std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
+        types.push_back(WasmEdge_ValType_I64);
+    } else if constexpr (std::is_same_v<Type, void>) {
+        // There is nothing to do
+    } else {
+        static_assert(dependent_false<Type>::value, "Unknown type");
+    }
+}
+
+template<typename Type, typename... Rest>
+void transform_types(std::vector<WasmEdge_ValType>& types) {
+    transform_type<Type>(types);
+    if constexpr (std::tuple_size<std::tuple<Rest...>>::value > 0) {
+        transform_types<Rest...>(types);
+    }
+}
+
+template<typename Type>
+std::tuple<Type> extract_parameter(
+  const WasmEdge_CallingFrameContext*,
+  const WasmEdge_Value* params,
+  unsigned idx) {
+    if constexpr (std::is_pointer_v<Type>) {
+        // TODO: Actually convert to the correct pointer type some how...
+        // right now we don't use these buffers
+        return std::make_tuple(static_cast<Type>(nullptr));
+    } else if constexpr (
+      std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t>) {
+        return std::make_tuple(
+          static_cast<Type>(WasmEdge_ValueGetI32(params[idx])));
+    } else if constexpr (
+      std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
+        return std::make_tuple(
+          std::bit_cast<Type>(WasmEdge_ValueGetI32(params[idx])));
+    } else if constexpr (
+      std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
+        return std::make_tuple(
+          std::bit_cast<Type>(WasmEdge_ValueGetI64(params[idx])));
+    } else {
+        static_assert(dependent_false<Type>::value, "Unknown type");
+    }
+}
+
+template<typename... Args>
+concept EmptyPack = sizeof...(Args) == 0;
+
+template<typename... Rest>
+std::tuple<> extract_parameters(
+  const WasmEdge_CallingFrameContext*,
+  const WasmEdge_Value*,
+  unsigned) requires EmptyPack<Rest...> {
+    return std::make_tuple();
+}
+
+template<typename Type, typename... Rest>
+std::tuple<Type, Rest...> extract_parameters(
+  const WasmEdge_CallingFrameContext* calling_ctx,
+  const WasmEdge_Value* params,
+  unsigned idx) {
+    auto head_type = extract_parameter<Type>(calling_ctx, params, idx);
+    return std::tuple_cat(
+      std::move(head_type),
+      extract_parameters<Rest...>(calling_ctx, params, idx + 1));
+}
+
+template<typename Type>
+void pack_result(WasmEdge_Value* results, Type result) {
+    if constexpr (
+      std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t>) {
+        *results = WasmEdge_ValueGenI32(static_cast<int32_t>(result));
+    } else if constexpr (
+      std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
+        *results = WasmEdge_ValueGenI32(std::bit_cast<int32_t>(result));
+    } else if constexpr (
+      std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
+        *results = WasmEdge_ValueGenI64(std::bit_cast<int64_t>(result));
+    } else {
+        static_assert(dependent_false<Type>::value, "Unknown type");
+    }
+}
+
+template<typename ResultType, typename... ArgTypes>
+errc register_function(
+  const WasmEdgeModule& mod,
+  ResultType (*host_fn)(ArgTypes...),
+  std::string_view function_name) {
+    std::vector<WasmEdge_ValType> inputs;
+    transform_types<ArgTypes...>(inputs);
+    std::vector<WasmEdge_ValType> outputs;
+    transform_type<ResultType>(outputs);
+    auto func_type_ctx = WasmEdgeFuncType(
+      WasmEdge_FunctionTypeCreate(
+        inputs.data(), inputs.size(), outputs.data(), outputs.size()),
+      &WasmEdge_FunctionTypeDelete);
+    if (!func_type_ctx.get()) {
+        vlog(
+          wasm_log.warn,
+          "Failed to register host function types: {}",
+          function_name);
+        return errc::load_failure;
+    }
+    WasmEdge_FunctionInstanceContext* func = WasmEdge_FunctionInstanceCreate(
+      func_type_ctx.get(),
+      [](
+        void* data,
+        const WasmEdge_CallingFrameContext* calling_ctx,
+        const WasmEdge_Value* guest_params,
+        WasmEdge_Value* guest_results) {
+          auto host_fn = reinterpret_cast<ResultType (*)(ArgTypes...)>(data);
+          auto host_params = extract_parameters<ArgTypes...>(
+            calling_ctx, guest_params, 0);
+          try {
+              if constexpr (std::is_same_v<ResultType, void>) {
+                  std::apply(host_fn, std::move(host_params));
+              } else {
+                  auto host_result = std::apply(
+                    host_fn, std::move(host_params));
+                  pack_result(guest_results, host_result);
+              }
+          } catch (...) {
+              vlog(
+                wasm_log.warn,
+                "Error executing host wasi function: {}",
+                std::current_exception());
+              // TODO: When do we fail vs terminate?
+              return WasmEdge_Result_Terminate;
+          }
+          return WasmEdge_Result_Success;
+      },
+      reinterpret_cast<void*>(host_fn),
+      0);
+    if (!func) {
+        vlog(
+          wasm_log.warn, "Failed to register host function: {}", function_name);
+        return errc::load_failure;
+    }
+    WasmEdge_ModuleInstanceAddFunction(
+      mod.get(),
+      WasmEdge_StringWrap(function_name.data(), function_name.size()),
+      func);
+    return errc::success;
+}
+
+} // namespace wasi
 
 template<auto value>
 struct host_function;
@@ -670,6 +920,14 @@ struct host_function<engine_func> {
             vlog(
               wasm_log.warn,
               "Failed to register host function: {}",
+              function_name);
+            return errc::load_failure;
+        }
+
+        if (!func_type_ctx.get()) {
+            vlog(
+              wasm_log.warn,
+              "Failed to register host function types: {}",
               function_name);
             return errc::load_failure;
         }
@@ -876,7 +1134,24 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
 
     auto wasi1_module = create_module(wasi_preview_1_module_name);
 
-    // TODO: Register wasi modules
+    wasi::register_function(
+      wasi1_module, wasi::clock_time_get, "clock_time_get");
+    wasi::register_function(
+      wasi1_module, wasi::args_sizes_get, "args_sizes_get");
+    wasi::register_function(wasi1_module, wasi::args_get, "args_get");
+    wasi::register_function(wasi1_module, wasi::environ_get, "environ_get");
+    wasi::register_function(
+      wasi1_module, wasi::environ_sizes_get, "environ_sizes_get");
+    wasi::register_function(wasi1_module, wasi::fd_close, "fd_close");
+    wasi::register_function(wasi1_module, wasi::fd_fdstat_get, "fd_fdstat_get");
+    wasi::register_function(
+      wasi1_module, wasi::fd_prestat_get, "fd_prestat_get");
+    wasi::register_function(
+      wasi1_module, wasi::fd_prestat_dir_name, "fd_prestat_dir_name");
+    wasi::register_function(wasi1_module, wasi::fd_read, "fd_read");
+    wasi::register_function(wasi1_module, wasi::fd_seek, "fd_seek");
+    wasi::register_function(wasi1_module, wasi::path_open, "path_open");
+    wasi::register_function(wasi1_module, wasi::proc_exit, "proc_exit");
 
     WasmEdge_VMRegisterModuleFromImport(vm_ctx.get(), wasi1_module.get());
 
@@ -964,18 +1239,14 @@ public:
             for (auto& batch : d) {
                 auto transformed = co_await _engine->transform(
                   std::move(batch));
-                for (auto& r : transformed) {
-                    output.emplace_back(std::move(r));
-                }
+                output.emplace_back(std::move(transformed));
             }
         } else {
             auto& d = std::get<foreign_data_t>(ret);
             for (auto& batch : *d.buffer) {
                 auto transformed = co_await _engine->transform(
                   std::move(batch));
-                for (auto& r : transformed) {
-                    output.emplace_back(std::move(r));
-                }
+                output.emplace_back(std::move(transformed));
             }
         }
         co_return std::move(output);
