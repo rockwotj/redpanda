@@ -3,8 +3,6 @@ package main
 import (
 	"io"
 
-	"github.com/mailru/easyjson"
-	"redpanda.com/wasm/model"
 	"redpanda.com/wasm/redpanda"
 )
 
@@ -16,16 +14,6 @@ func main() {
 var buf = make([]byte, 4096)
 
 func onTransform(e redpanda.TransformEvent) error {
-	var jsonData model.GithubRepoData
-	err := easyjson.UnmarshalFromReader(e.Record.Value, &jsonData)
-	if err != nil {
-		return err
-	}
-	// Remove gravatars as a redaction step for science
-	jsonData.Owner.GravatarID = "<redacted>"
-	jsonData.Organization.GravatarID = "<redacted>"
-	jsonData.Source.Owner.GravatarID = "<redacted>"
-	jsonData.Parent.Owner.GravatarID = "<redacted>"
 
 	output, err := redpanda.CreateOutputRecord()
 	if err != nil {
@@ -38,8 +26,8 @@ func onTransform(e redpanda.TransformEvent) error {
 		return err
 	}
 		
-	// write out the value
-	_, err = easyjson.MarshalToWriter(&jsonData, output.Value)
+	// copy over the value
+	_, err = io.CopyBuffer(output.Value, e.Record.Value, buf)
 	if err != nil {
 		return err
 	}
