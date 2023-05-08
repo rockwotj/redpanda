@@ -1,9 +1,12 @@
+#include "pandawasm/parser.h"
 
 #include "bytes/iobuf_parser.h"
+#include "pandawasm/encoding.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/coroutine/maybe_yield.hh>
@@ -13,14 +16,11 @@
 
 namespace pandawasm {
 
-
 namespace {
-
-class parse_exception : public std::exception {};
 
 template<typename Type, ss::future<Type> (*parse_type)(iobuf_const_parser&)>
 ss::future<std::vector<Type>> parse_section(iobuf_const_parser& parser) {
-    auto vector_size = parser.consume_le_type<uint32_t>();
+    auto vector_size = encoding::decode_leb128<uint32_t>(parser);
     std::vector<Type> vector;
     for (uint32_t i = 0; i < vector_size; ++i) {
         vector.push_back(co_await parse_type(parser));
@@ -30,7 +30,7 @@ ss::future<std::vector<Type>> parse_section(iobuf_const_parser& parser) {
 }
 template<typename Type, Type (*parse_type)(iobuf_const_parser&)>
 ss::future<std::vector<Type>> parse_section(iobuf_const_parser& parser) {
-    auto vector_size = parser.consume_le_type<uint32_t>();
+    auto vector_size = encoding::decode_leb128<uint32_t>(parser);
     std::vector<Type> vector;
     for (uint32_t i = 0; i < vector_size; ++i) {
         vector.push_back(parse_type(parser));
@@ -70,7 +70,7 @@ valtype parse_valtype(iobuf_const_parser& parser) {
 }
 
 ss::future<std::vector<valtype>> parse_result_type(iobuf_const_parser& parser) {
-    auto vector_size = parser.consume_le_type<uint32_t>();
+    auto vector_size = encoding::decode_leb128<uint32_t>(parser);
     std::vector<valtype> result_type;
     result_type.reserve(vector_size);
     for (uint32_t i = 0; i < vector_size; ++i) {
@@ -98,11 +98,11 @@ struct limits {
 };
 limits parse_limits(iobuf_const_parser& parser) {
     if (parser.read_bool()) {
-        auto min = parser.consume_le_type<uint32_t>();
-        auto max = parser.consume_le_type<uint32_t>();
+        auto min = encoding::decode_leb128<uint32_t>(parser);
+        auto max = encoding::decode_leb128<uint32_t>(parser);
         return {.min = min, .max = max};
     } else {
-        auto min = parser.consume_le_type<uint32_t>();
+        auto min = encoding::decode_leb128<uint32_t>(parser);
         return {.min = min, .max = std::numeric_limits<uint32_t>::max()};
     }
 }
@@ -110,7 +110,7 @@ limits parse_limits(iobuf_const_parser& parser) {
 using name = named_type<ss::sstring, struct name_tag>;
 
 name parse_name(iobuf_const_parser& parser) {
-    auto str_len = parser.consume_le_type<uint32_t>();
+    auto str_len = encoding::decode_leb128<uint32_t>(parser);
     auto str = parser.read_string(str_len);
     // TODO: validate utf8
     return name(str);
@@ -119,7 +119,7 @@ name parse_name(iobuf_const_parser& parser) {
 using typeidx = named_type<uint32_t, struct typeidx_tag>;
 
 typeidx parse_typeidx(iobuf_const_parser& parser) {
-    return typeidx(parser.consume_le_type<uint32_t>());
+    return typeidx(encoding::decode_leb128<uint32_t>(parser));
 }
 
 struct tabletype {
@@ -155,36 +155,39 @@ globaltype parse_globaltype(iobuf_const_parser& parser) {
     return {.valtype = valtype, .mut = mut};
 }
 
-struct import {
+struct module_import {
     using desc = std::variant<typeidx, tabletype, memtype, globaltype>;
     ss::sstring module;
     ss::sstring name;
     desc description;
 };
 
-import parse_import(iobuf_const_parser & parser){auto module = parse_name(parser);
-auto name = parse_name(parser);
-auto type = parser.consume_le_type<uint8_t>();
-import::desc desc;
-switch (type) {
-case 0x00: // func
-    desc = parse_typeidx(parser);
-    break;
-case 0x01: // table
-    desc = parse_tabletype(parser);
-    break;
-case 0x02: // memory
-    desc = parse_memtype(parser);
-    break;
-case 0x03: // global
-    desc = parse_globaltype(parser);
-    break;
-default:
-    throw parse_exception();
+module_import parse_import(iobuf_const_parser& parser) {
+    auto module = parse_name(parser);
+    auto name = parse_name(parser);
+    auto type = parser.consume_le_type<uint8_t>();
+    module_import::desc desc;
+    switch (type) {
+    case 0x00: // func
+        desc = parse_typeidx(parser);
+        break;
+    case 0x01: // table
+        desc = parse_tabletype(parser);
+        break;
+    case 0x02: // memory
+        desc = parse_memtype(parser);
+        break;
+    case 0x03: // global
+        desc = parse_globaltype(parser);
+        break;
+    default:
+        throw parse_exception();
+    }
+    return {
+      .module = std::move(module),
+      .name = std::move(name),
+      .description = desc};
 }
-return {
-  .module = std::move(module), .name = std::move(name), .description = desc};
-} // namespace
 
 struct table {
     tabletype type;
@@ -213,7 +216,7 @@ struct global {
 
 ss::future<> parse_one_section(iobuf_const_parser& parser) {
     auto id = parser.consume_le_type<uint8_t>();
-    auto size = parser.consume_le_type<uint32_t>();
+    auto size = encoding::decode_leb128<uint32_t>(parser);
     switch (id) {
     case 0x00: // Custom section
         // Skip over custom sections for now
@@ -224,7 +227,7 @@ ss::future<> parse_one_section(iobuf_const_parser& parser) {
         co_await parse_section<function_type, parse_function_type>(parser);
         co_return;
     case 0x02: // import section
-        co_await parse_section<import, parse_import>(parser);
+        co_await parse_section<module_import, parse_import>(parser);
         co_return;
     case 0x03: // function section
         co_await parse_section<typeidx, parse_typeidx>(parser);
@@ -248,7 +251,7 @@ ss::future<> parse_one_section(iobuf_const_parser& parser) {
     }
 }
 
-} // namespace pandawasm
+} // namespace
 
 ss::future<> parse_module(iobuf buffer) {
     iobuf_const_parser parser(buffer);

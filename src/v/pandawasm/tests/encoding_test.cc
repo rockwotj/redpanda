@@ -22,6 +22,7 @@ struct testcase {
     bytes encoded;
 };
 
+using pandawasm::encoding::decode_exception;
 using pandawasm::encoding::decode_leb128;
 using pandawasm::encoding::encode_leb128;
 
@@ -113,4 +114,22 @@ BOOST_AUTO_TEST_CASE(leb128_int64) {
     for (const auto& testcase : testcases) {
         run_testcase(testcase);
     }
+}
+
+BOOST_AUTO_TEST_CASE(overflow_64) {
+    bytes encoded(size_t(11), 0xff);
+    auto iobuf = bytes_to_iobuf(encoded);
+    auto parser = iobuf_const_parser(iobuf);
+    BOOST_CHECK_THROW(decode_leb128<int64_t>(parser), decode_exception);
+    parser = iobuf_const_parser(iobuf);
+    BOOST_CHECK_THROW(decode_leb128<int64_t>(parser), decode_exception);
+}
+
+BOOST_AUTO_TEST_CASE(overflow_32) {
+    bytes encoded = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    auto iobuf = bytes_to_iobuf(encoded);
+    auto parser = iobuf_const_parser(iobuf);
+    BOOST_CHECK_THROW(decode_leb128<int32_t>(parser), decode_exception);
+    parser = iobuf_const_parser(iobuf);
+    BOOST_CHECK_THROW(decode_leb128<uint32_t>(parser), decode_exception);
 }

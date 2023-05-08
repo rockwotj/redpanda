@@ -1,10 +1,4 @@
 
 #include "instruction.h"
 
-
-
-namespace pandawasm {
-
-
-
-}
+namespace pandawasm {}
