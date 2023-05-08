@@ -1,8 +1,10 @@
-#include "abi.h"
+#include "redpanda/abi.h"
 
+WASM_EXPORT(_start) void _start() {}
 uint32_t redpanda_abi_version() { return 0; }
 
 constexpr uint32_t kBufferSize = 4096;
+
 
 EventErrorCode copy_header(
   InputRecordHandle input_handle,
@@ -48,12 +50,6 @@ EventErrorCode redpanda_on_record(InputRecordHandle input_handle) {
         }
         result = write_value(output_handle, &buf[0], result);
     }
-    if (result < 0) {
-        return 1;
-    }
-    // Write an extra bang for the demo
-    buf[0] = '!';
-    result = write_value(output_handle, &buf[0], 1);
     if (result < 0) {
         return 1;
     }
