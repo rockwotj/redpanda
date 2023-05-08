@@ -7,3 +7,13 @@ rp_test(
     LABELS pandawasm
     ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME encoding_unit
+  SOURCES
+    encoding_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::pandawasm
+  LABELS pandawasm
+)

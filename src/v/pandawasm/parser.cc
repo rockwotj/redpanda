@@ -12,6 +12,8 @@
 #include <vector>
 
 namespace pandawasm {
+
+
 namespace {
 
 class parse_exception : public std::exception {};
@@ -160,32 +162,29 @@ struct import {
     desc description;
 };
 
-import parse_import(iobuf_const_parser& parser) {
-    auto module = parse_name(parser);
-    auto name = parse_name(parser);
-    auto type = parser.consume_le_type<uint8_t>();
-    import::desc desc;
-    switch (type) {
-    case 0x00: // func
-        desc = parse_typeidx(parser);
-        break;
-    case 0x01: // table
-        desc = parse_tabletype(parser);
-        break;
-    case 0x02: // memory
-        desc = parse_memtype(parser);
-        break;
-    case 0x03: // global
-        desc = parse_globaltype(parser);
-        break;
-    default:
-        throw parse_exception();
-    }
-    return {
-      .module = std::move(module),
-      .name = std::move(name),
-      .description = desc};
+import parse_import(iobuf_const_parser & parser){auto module = parse_name(parser);
+auto name = parse_name(parser);
+auto type = parser.consume_le_type<uint8_t>();
+import::desc desc;
+switch (type) {
+case 0x00: // func
+    desc = parse_typeidx(parser);
+    break;
+case 0x01: // table
+    desc = parse_tabletype(parser);
+    break;
+case 0x02: // memory
+    desc = parse_memtype(parser);
+    break;
+case 0x03: // global
+    desc = parse_globaltype(parser);
+    break;
+default:
+    throw parse_exception();
 }
+return {
+  .module = std::move(module), .name = std::move(name), .description = desc};
+} // namespace
 
 struct table {
     tabletype type;
@@ -193,17 +192,6 @@ struct table {
 
 table parse_table(iobuf_const_parser& parser) {
     return {.type = parse_tabletype(parser)};
-}
-
-ss::future<std::vector<table>> parse_table_section(iobuf_const_parser& parser) {
-    auto vector_size = parser.consume_le_type<uint32_t>();
-    std::vector<table> tables;
-    tables.reserve(vector_size);
-    for (uint32_t i = 0; i < vector_size; ++i) {
-        tables.push_back(parse_table(parser));
-        co_await ss::coroutine::maybe_yield();
-    }
-    co_return tables;
 }
 
 struct mem {
@@ -214,16 +202,13 @@ mem parse_memory(iobuf_const_parser& parser) {
     return {.type = parse_memtype(parser)};
 }
 
-struct instruction {
-};
-
 struct expression {
-  std::vector<instruction> instructions;
+    iobuf instructions;
 };
 
 struct global {
-  globaltype type;
-  // expression expr;
+    globaltype type;
+    expression expr;
 };
 
 ss::future<> parse_one_section(iobuf_const_parser& parser) {
@@ -263,7 +248,7 @@ ss::future<> parse_one_section(iobuf_const_parser& parser) {
     }
 }
 
-} // namespace
+} // namespace pandawasm
 
 ss::future<> parse_module(iobuf buffer) {
     iobuf_const_parser parser(buffer);
