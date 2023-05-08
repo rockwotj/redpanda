@@ -19,3 +19,7 @@ clang -target wasm32 -iquote . \
 tinygo build -target wasi \
   -panic trap -scheduler none -gc conservative \
   -o golang_identity_transform.wasm identity_transform.go
+
+tinygo build -target wasi \
+  -panic trap -scheduler none -gc conservative \
+  -o golang_redaction_transform.wasm redaction/redaction_transform.go
