@@ -1,5 +1,6 @@
 #include "wasm.h"
 
+#include "bytes/bytes.h"
 #include "errc.h"
 #include "http/client.h"
 #include "model/record.h"
@@ -95,6 +96,193 @@ using read_result = int32_t;
 using write_result = int32_t;
 using input_record_handle = int32_t;
 using output_record_handle = int32_t;
+
+template<class T>
+struct dependent_false : std::false_type {};
+
+namespace ffi {
+template<typename T>
+class array {
+public:
+    using element_type = T;
+
+    array()
+      : _ptr(nullptr)
+      , _size(0) {}
+    array(T* ptr, uint32_t size)
+      : _ptr(ptr)
+      , _size(size) {}
+
+    array(array<T>&&) noexcept = default;
+    array& operator=(array<T>&&) noexcept = default;
+
+    array(const array<T>&) noexcept = default;
+    array& operator=(const array<T>&) noexcept = default;
+
+    ~array() = default;
+
+    explicit operator bool() const noexcept { return bool(_ptr); }
+
+
+    T* raw() noexcept { return _ptr; }
+
+    const T* raw() const noexcept { return _ptr; }
+
+    T& operator[](uint32_t index) noexcept { return _ptr[index]; }
+
+    const T& operator[](uint32_t index) const noexcept { return _ptr[index]; }
+
+    uint32_t size() const noexcept { return _size; }
+
+private:
+    T* _ptr;
+    uint32_t _size;
+};
+
+std::string_view array_as_string_view(array<uint8_t> arr) {
+  return std::string_view(reinterpret_cast<char*>(arr.raw()), arr.size());
+}
+
+template<typename T>
+struct is_array {
+    static constexpr bool value = false;
+};
+template<template<typename...> class C, typename U>
+struct is_array<C<U>> {
+    static constexpr bool value = std::is_same<C<U>, array<U>>::value;
+};
+
+template<typename Type>
+void transform_type(std::vector<WasmEdge_ValType>& types) {
+    if constexpr (std::is_same_v<WasmEdge_MemoryInstanceContext*, Type>) {
+        // Do nothing
+    } else if constexpr (is_array<Type>::value) {
+        // Push back an arg for the pointer
+        types.push_back(WasmEdge_ValType_I32);
+        // Push back an other arg for the length
+        types.push_back(WasmEdge_ValType_I32);
+    } else if constexpr (
+      std::is_pointer_v<
+        Type> || std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t> || std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
+        types.push_back(WasmEdge_ValType_I32);
+    } else if constexpr (
+      std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
+        types.push_back(WasmEdge_ValType_I64);
+    } else if constexpr (std::is_same_v<Type, void>) {
+        // There is nothing to do
+    } else {
+        static_assert(dependent_false<Type>::value, "Unknown type");
+    }
+}
+
+template<typename... Args>
+concept EmptyPack = sizeof...(Args) == 0;
+
+template<typename... Rest>
+void transform_types(
+  std::vector<WasmEdge_ValType>&) requires EmptyPack<Rest...> {
+    // Nothing to do
+}
+
+template<typename Type, typename... Rest>
+void transform_types(std::vector<WasmEdge_ValType>& types) {
+    transform_type<Type>(types);
+    transform_types<Rest...>(types);
+}
+
+template<typename Type>
+std::tuple<Type> extract_parameter(
+  const WasmEdge_CallingFrameContext* calling_frame,
+  const WasmEdge_Value* params,
+  unsigned& idx) {
+    if constexpr (std::is_same_v<WasmEdge_MemoryInstanceContext*, Type>) {
+        auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_frame, 0);
+        return std::tuple(mem);
+    } else if constexpr (is_array<Type>::value) {
+        uint32_t guest_ptr = WasmEdge_ValueGetI32(params[idx++]);
+        uint32_t ptr_len = WasmEdge_ValueGetI32(params[idx++]);
+        auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_frame, 0);
+        if (mem == nullptr) {
+            return std::tuple<Type>();
+        }
+        uint8_t* host_ptr = WasmEdge_MemoryInstanceGetPointer(
+          mem, guest_ptr, ptr_len * sizeof(typename Type::element_type));
+        if (host_ptr == nullptr) {
+            return std::tuple<Type>();
+        }
+        return std::make_tuple(array<typename Type::element_type>(
+          reinterpret_cast<typename Type::element_type*>(host_ptr), ptr_len));
+    } else if constexpr (
+      std::is_same_v<Type, const void*> || std::is_same_v<Type, void*>) {
+        ++idx;
+        // TODO: Remove this temporary hack
+        return std::make_tuple(static_cast<Type>(nullptr));
+    } else if constexpr (std::is_pointer_v<Type>) {
+        // Assume this is an out val
+        uint32_t guest_ptr = WasmEdge_ValueGetI32(params[idx++]);
+        uint32_t ptr_len = sizeof(typename std::remove_pointer_t<Type>);
+        auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_frame, 0);
+        if (mem == nullptr) {
+            return std::tuple<Type>();
+        }
+        uint8_t* host_ptr = WasmEdge_MemoryInstanceGetPointer(
+          mem, guest_ptr, ptr_len);
+        if (host_ptr == nullptr) {
+            return std::tuple<Type>();
+        }
+        return std::make_tuple(reinterpret_cast<Type>(host_ptr));
+    } else if constexpr (
+      std::is_same_v<Type, int16_t> || std::is_same_v<Type, uint16_t>) {
+        return std::make_tuple(
+          static_cast<Type>(WasmEdge_ValueGetI32(params[idx++])));
+    } else if constexpr (
+      std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
+        return std::make_tuple(
+          std::bit_cast<Type>(WasmEdge_ValueGetI32(params[idx++])));
+    } else if constexpr (
+      std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
+        return std::make_tuple(
+          std::bit_cast<Type>(WasmEdge_ValueGetI64(params[idx++])));
+    } else {
+        static_assert(dependent_false<Type>::value, "Unknown type");
+    }
+}
+
+template<typename... Rest>
+std::tuple<> extract_parameters(
+  const WasmEdge_CallingFrameContext*,
+  const WasmEdge_Value*,
+  unsigned) requires EmptyPack<Rest...> {
+    return std::make_tuple();
+}
+
+template<typename Type, typename... Rest>
+std::tuple<Type, Rest...> extract_parameters(
+  const WasmEdge_CallingFrameContext* calling_ctx,
+  const WasmEdge_Value* params,
+  unsigned idx) {
+    auto head_type = extract_parameter<Type>(calling_ctx, params, idx);
+    return std::tuple_cat(
+      std::move(head_type),
+      extract_parameters<Rest...>(calling_ctx, params, idx));
+}
+
+template<typename Type>
+void pack_result(WasmEdge_Value* results, Type result) {
+    if constexpr (
+      std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t>) {
+        *results = WasmEdge_ValueGenI32(static_cast<int32_t>(result));
+    } else if constexpr (
+      std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
+        *results = WasmEdge_ValueGenI32(std::bit_cast<int32_t>(result));
+    } else if constexpr (
+      std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
+        *results = WasmEdge_ValueGenI64(std::bit_cast<int64_t>(result));
+    } else {
+        static_assert(dependent_false<Type>::value, "Unknown type");
+    }
+}
+} // namespace ffi
 
 // Right now we only ever will have a single handle
 constexpr input_record_handle fixed_input_record_handle = 1;
@@ -318,25 +506,24 @@ private:
     // Start ABI exports
     // This is a small set just to get the ball rolling
 
-    read_result
-    read_key(input_record_handle handle, uint8_t* data, uint32_t len) {
-        if (handle != fixed_input_record_handle || !_call_ctx) {
+    read_result read_key(input_record_handle handle, ffi::array<uint8_t> data) {
+        if (handle != fixed_input_record_handle || !_call_ctx || !data) {
             return -1;
         }
         size_t remaining = _call_ctx->key.segment_bytes_left();
-        size_t amount = std::min(size_t(len), remaining);
-        _call_ctx->key.consume_to(amount, data);
+        size_t amount = std::min(size_t(data.size()), remaining);
+        _call_ctx->key.consume_to(amount, data.raw());
         return int32_t(amount);
     }
 
     read_result
-    read_value(input_record_handle handle, uint8_t* data, uint32_t len) {
-        if (handle != fixed_input_record_handle || !_call_ctx) {
+    read_value(input_record_handle handle, ffi::array<uint8_t> data) {
+        if (handle != fixed_input_record_handle || !_call_ctx || !data) {
             return -1;
         }
         size_t remaining = _call_ctx->value.segment_bytes_left();
-        size_t amount = std::min(size_t(len), remaining);
-        _call_ctx->value.consume_to(amount, data);
+        size_t amount = std::min(size_t(data.size()), remaining);
+        _call_ctx->value.consume_to(amount, data.raw());
         return int32_t(amount);
     }
 
@@ -353,27 +540,27 @@ private:
     }
 
     write_result
-    write_key(output_record_handle handle, uint8_t* data, uint32_t len) {
+    write_key(output_record_handle handle, ffi::array<uint8_t> data) {
         if (
-          !_call_ctx || handle < 0
+          !_call_ctx || !data || handle < 0
           || handle >= int32_t(_call_ctx->output_records.size())) {
             return -1;
         }
         // TODO: Define a limit here?
-        _call_ctx->output_records[handle].key.append(data, len);
-        return int32_t(len);
+        _call_ctx->output_records[handle].key.append(data.raw(), data.size());
+        return int32_t(data.size());
     }
 
     write_result
-    write_value(output_record_handle handle, uint8_t* data, uint32_t len) {
+    write_value(output_record_handle handle, ffi::array<uint8_t> data) {
         if (
-          !_call_ctx || handle < 0
+          !_call_ctx || !data || handle < 0
           || handle >= int32_t(_call_ctx->output_records.size())) {
             return -1;
         }
         // TODO: Define a limit here?
-        _call_ctx->output_records[handle].value.append(data, len);
-        return int32_t(len);
+        _call_ctx->output_records[handle].value.append(data.raw(), data.size());
+        return int32_t(data.size());
     }
 
     int32_t num_headers(input_record_handle handle) {
@@ -383,12 +570,12 @@ private:
         return int32_t(_call_ctx->headers.size());
     }
 
-    int32_t find_header_by_key(
-      input_record_handle handle, uint8_t* key_data, uint32_t key_len) {
-        if (!_call_ctx || handle != fixed_input_record_handle) {
+    int32_t
+    find_header_by_key(input_record_handle handle, ffi::array<uint8_t> key) {
+        if (!_call_ctx || !key || handle != fixed_input_record_handle) {
             return -1;
         }
-        std::string_view needle(reinterpret_cast<char*>(key_data), key_len);
+        std::string_view needle(reinterpret_cast<char*>(key.raw()), key.size());
         for (int32_t i = 0; i < int32_t(_call_ctx->headers.size()); ++i) {
             if (_call_ctx->headers[i].key() == needle) {
                 return i;
@@ -416,85 +603,72 @@ private:
     }
 
     int32_t get_header_key(
-      input_record_handle handle,
-      int32_t index,
-      uint8_t* key_data,
-      uint32_t key_len) {
+      input_record_handle handle, int32_t index, ffi::array<uint8_t> key) {
         if (
-          !_call_ctx || handle != fixed_input_record_handle || index < 0
+          !_call_ctx || !key || handle != fixed_input_record_handle || index < 0
           || index >= int32_t(_call_ctx->headers.size())) {
             return -1;
         }
-        const iobuf& key = _call_ctx->headers[index].key();
-        if (key_len < key.size_bytes()) {
+        const iobuf& k = _call_ctx->headers[index].key();
+        if (key.size() < k.size_bytes()) {
             return -2;
         }
-        iobuf::iterator_consumer(key.cbegin(), key.cend())
-          .consume_to(key.size_bytes(), key_data);
-        return int32_t(key.size_bytes());
+        iobuf::iterator_consumer(k.cbegin(), k.cend())
+          .consume_to(k.size_bytes(), key.raw());
+        return int32_t(k.size_bytes());
     }
 
     int32_t get_header_value(
-      input_record_handle handle,
-      int32_t index,
-      uint8_t* value_data,
-      uint32_t value_len) {
+      input_record_handle handle, int32_t index, ffi::array<uint8_t> value) {
         if (
-          !_call_ctx || handle != fixed_input_record_handle || index < 0
-          || index >= int32_t(_call_ctx->headers.size())) {
+          !_call_ctx || !value || handle != fixed_input_record_handle
+          || index < 0 || index >= int32_t(_call_ctx->headers.size())) {
             return -1;
         }
-        const iobuf& value = _call_ctx->headers[index].value();
-        if (value_len < value.size_bytes()) {
+        const iobuf& v = _call_ctx->headers[index].value();
+        if (value.size() < v.size_bytes()) {
             return -2;
         }
-        iobuf::iterator_consumer(value.cbegin(), value.cend())
-          .consume_to(value.size_bytes(), value_data);
-        return int32_t(value.size_bytes());
+        iobuf::iterator_consumer(v.cbegin(), v.cend())
+          .consume_to(v.size_bytes(), value.raw());
+        return int32_t(v.size_bytes());
     }
 
     int32_t append_header(
       output_record_handle handle,
-      uint8_t* key_data,
-      uint32_t key_len,
-      uint8_t* value_data,
-      uint32_t value_len) {
+      ffi::array<uint8_t> key,
+      ffi::array<uint8_t> value) {
         if (
           !_call_ctx || handle < 0
           || handle >= int32_t(_call_ctx->output_records.size())) {
             return -1;
         }
-        iobuf key;
-        key.append(key_data, key_len);
-        iobuf value;
-        value.append(value_data, value_len);
+        iobuf k;
+        k.append(key.raw(), key.size());
+        iobuf v;
+        v.append(value.raw(), value.size());
         _call_ctx->output_records[handle].headers.emplace_back(
-          key_len, std::move(key), value_len, std::move(value));
-        return int32_t(key_len + value_len);
+          key.size(), std::move(k), value.size(), std::move(v));
+        return int32_t(key.size() + value.size());
     }
 
     int32_t http_fetch(
       uint32_t method,
-      uint8_t* url,
-      uint32_t url_len,
-      uint8_t* headers,
-      uint32_t headers_len,
-      uint8_t* body,
-      uint32_t body_len) {
+      ffi::array<uint8_t> url,
+      ffi::array<uint8_t> headers,
+      ffi::array<uint8_t> body) {
         try {
             if (!_call_ctx) {
                 return -1;
             }
 
-            auto uri = util::parse_uri(
-              std::string_view(reinterpret_cast<char*>(url), url_len));
+            auto uri = util::parse_uri(ffi::array_as_string_view(url));
 
             if (!uri.has_value()) {
                 return -2;
             }
-            std::string_view headers_str(
-              reinterpret_cast<char*>(headers), headers_len);
-            std::string_view body_str(reinterpret_cast<char*>(body), body_len);
+            std::string_view headers_str = ffi::array_as_string_view(headers);
+            std::string_view body_str = ffi::array_as_string_view(body);
             net::base_transport::configuration client_config{
               .server_addr = net::unresolved_address(
                 // TODO: Respect the passed in port if set
@@ -598,15 +772,15 @@ private:
     }
 
     int32_t
-    read_http_resp_body(int32_t handle, uint8_t* buf, uint32_t buf_len) {
+    read_http_resp_body(int32_t handle, ffi::array<uint8_t> buf) {
         if (
-          !_call_ctx || handle < 0
+          !_call_ctx || !buf || handle < 0
           || handle >= int32_t(_call_ctx->http_responses.size())) {
             return -1;
         }
         auto& resp = _call_ctx->http_responses[handle];
-        auto amt = std::min(buf_len, uint32_t(resp.bytes_left()));
-        resp.consume_to(amt, buf);
+        auto amt = std::min(buf.size(), uint32_t(resp.bytes_left()));
+        resp.consume_to(amt, buf.raw());
         return amt;
     }
 
@@ -619,52 +793,7 @@ private:
     bool _wasi_started = false;
 };
 
-template<class T>
-struct dependent_false : std::false_type {};
-
 namespace wasi {
-
-template<typename T>
-class ffi_array {
-public:
-    using element_type = T;
-
-    ffi_array()
-      : _ptr(nullptr)
-      , _size(0) {}
-    ffi_array(T* ptr, uint32_t size)
-      : _ptr(ptr)
-      , _size(size) {}
-
-    ffi_array(ffi_array<T>&&) noexcept = default;
-    ffi_array& operator=(ffi_array<T>&&) noexcept = default;
-
-    ffi_array(const ffi_array<T>&) noexcept = default;
-    ffi_array& operator=(const ffi_array<T>&) noexcept = default;
-
-    ~ffi_array() = default;
-
-    explicit operator bool() const noexcept { return bool(_ptr); }
-
-    T& operator[](uint32_t index) noexcept { return _ptr[index]; }
-
-    const T& operator[](uint32_t index) const noexcept { return _ptr[index]; }
-
-    uint32_t size() const noexcept { return _size; }
-
-private:
-    T* _ptr;
-    uint32_t _size;
-};
-
-template<typename T>
-struct is_ffi_array {
-    static constexpr bool value = false;
-};
-template<template<typename...> class C, typename U>
-struct is_ffi_array<C<U>> {
-    static constexpr bool value = std::is_same<C<U>, ffi_array<U>>::value;
-};
 
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L110-L113C1
 constexpr uint16_t WASI_ERRNO_SUCCESS = 0;
@@ -730,7 +859,7 @@ struct ciovec_t {
 int16_t fd_write(
   WasmEdge_MemoryInstanceContext* mem,
   int32_t fd,
-  ffi_array<ciovec_t> iovecs,
+  ffi::array<ciovec_t> iovecs,
   uint32_t* written) {
     if (written == nullptr || !iovecs) [[unlikely]] {
         return WASI_ERRNO_INVAL;
@@ -775,142 +904,15 @@ void proc_exit(int32_t exit_code) {
     throw std::runtime_error(ss::format("Exiting: {}", exit_code));
 }
 
-template<typename Type>
-void transform_type(std::vector<WasmEdge_ValType>& types) {
-    if constexpr (std::is_same_v<WasmEdge_MemoryInstanceContext*, Type>) {
-        // Do nothing
-    } else if constexpr (is_ffi_array<Type>::value) {
-        // Push back an arg for the pointer
-        types.push_back(WasmEdge_ValType_I32);
-        // Push back an other arg for the length
-        types.push_back(WasmEdge_ValType_I32);
-    } else if constexpr (
-      std::is_pointer_v<
-        Type> || std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t> || std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
-        types.push_back(WasmEdge_ValType_I32);
-    } else if constexpr (
-      std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
-        types.push_back(WasmEdge_ValType_I64);
-    } else if constexpr (std::is_same_v<Type, void>) {
-        // There is nothing to do
-    } else {
-        static_assert(dependent_false<Type>::value, "Unknown type");
-    }
-}
-
-template<typename Type, typename... Rest>
-void transform_types(std::vector<WasmEdge_ValType>& types) {
-    transform_type<Type>(types);
-    if constexpr (std::tuple_size<std::tuple<Rest...>>::value > 0) {
-        transform_types<Rest...>(types);
-    }
-}
-
-template<typename Type>
-std::tuple<Type> extract_parameter(
-  const WasmEdge_CallingFrameContext* calling_frame,
-  const WasmEdge_Value* params,
-  unsigned& idx) {
-    if constexpr (std::is_same_v<WasmEdge_MemoryInstanceContext*, Type>) {
-        auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_frame, 0);
-        return std::tuple(mem);
-    } else if constexpr (is_ffi_array<Type>::value) {
-        uint32_t guest_ptr = WasmEdge_ValueGetI32(params[idx++]);
-        uint32_t ptr_len = WasmEdge_ValueGetI32(params[idx++]);
-        auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_frame, 0);
-        if (mem == nullptr) {
-            return std::tuple<Type>();
-        }
-        uint8_t* host_ptr = WasmEdge_MemoryInstanceGetPointer(
-          mem, guest_ptr, ptr_len * sizeof(typename Type::element_type));
-        if (host_ptr == nullptr) {
-            return std::tuple<Type>();
-        }
-        return std::make_tuple(ffi_array<typename Type::element_type>(
-          reinterpret_cast<typename Type::element_type*>(host_ptr), ptr_len));
-    } else if constexpr (
-      std::is_same_v<Type, const void*> || std::is_same_v<Type, void*>) {
-        ++idx;
-        // TODO: Remove this temporary hack
-        return std::make_tuple(static_cast<Type>(nullptr));
-    } else if constexpr (std::is_pointer_v<Type>) {
-        // Assume this is an out val
-        uint32_t guest_ptr = WasmEdge_ValueGetI32(params[idx++]);
-        uint32_t ptr_len = sizeof(typename std::remove_pointer_t<Type>);
-        auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_frame, 0);
-        if (mem == nullptr) {
-            return std::tuple<Type>();
-        }
-        uint8_t* host_ptr = WasmEdge_MemoryInstanceGetPointer(
-          mem, guest_ptr, ptr_len);
-        if (host_ptr == nullptr) {
-            return std::tuple<Type>();
-        }
-        return std::make_tuple(reinterpret_cast<Type>(host_ptr));
-    } else if constexpr (
-      std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t>) {
-        return std::make_tuple(
-          static_cast<Type>(WasmEdge_ValueGetI32(params[idx++])));
-    } else if constexpr (
-      std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
-        return std::make_tuple(
-          std::bit_cast<Type>(WasmEdge_ValueGetI32(params[idx++])));
-    } else if constexpr (
-      std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
-        return std::make_tuple(
-          std::bit_cast<Type>(WasmEdge_ValueGetI64(params[idx++])));
-    } else {
-        static_assert(dependent_false<Type>::value, "Unknown type");
-    }
-}
-
-template<typename... Args>
-concept EmptyPack = sizeof...(Args) == 0;
-
-template<typename... Rest>
-std::tuple<> extract_parameters(
-  const WasmEdge_CallingFrameContext*,
-  const WasmEdge_Value*,
-  unsigned) requires EmptyPack<Rest...> {
-    return std::make_tuple();
-}
-
-template<typename Type, typename... Rest>
-std::tuple<Type, Rest...> extract_parameters(
-  const WasmEdge_CallingFrameContext* calling_ctx,
-  const WasmEdge_Value* params,
-  unsigned idx) {
-    auto head_type = extract_parameter<Type>(calling_ctx, params, idx);
-    return std::tuple_cat(
-      std::move(head_type),
-      extract_parameters<Rest...>(calling_ctx, params, idx));
-}
-
-template<typename Type>
-void pack_result(WasmEdge_Value* results, Type result) {
-    if constexpr (
-      std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t>) {
-        *results = WasmEdge_ValueGenI32(static_cast<int32_t>(result));
-    } else if constexpr (
-      std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
-        *results = WasmEdge_ValueGenI32(std::bit_cast<int32_t>(result));
-    } else if constexpr (
-      std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
-        *results = WasmEdge_ValueGenI64(std::bit_cast<int64_t>(result));
-    } else {
-        static_assert(dependent_false<Type>::value, "Unknown type");
-    }
-}
-
 template<typename ResultType, typename... ArgTypes>
 errc register_function(
   const WasmEdgeModule& mod,
   ResultType (*host_fn)(ArgTypes...),
   std::string_view function_name) {
     std::vector<WasmEdge_ValType> inputs;
-    transform_types<ArgTypes...>(inputs);
+    ffi::transform_types<ArgTypes...>(inputs);
     std::vector<WasmEdge_ValType> outputs;
-    transform_type<ResultType>(outputs);
+    ffi::transform_type<ResultType>(outputs);
     auto func_type_ctx = WasmEdgeFuncType(
       WasmEdge_FunctionTypeCreate(
         inputs.data(), inputs.size(), outputs.data(), outputs.size()),
@@ -930,19 +932,15 @@ errc register_function(
         const WasmEdge_Value* guest_params,
         WasmEdge_Value* guest_results) {
           auto host_fn = reinterpret_cast<ResultType (*)(ArgTypes...)>(data);
-          auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0);
-          if (mem == nullptr) [[unlikely]] {
-              return WasmEdge_Result_Terminate;
-          }
-          auto host_params = std::tuple_cat(
-            extract_parameters<ArgTypes...>(calling_ctx, guest_params, 0));
+          auto host_params = ffi::extract_parameters<ArgTypes...>(
+            calling_ctx, guest_params, 0);
           try {
               if constexpr (std::is_same_v<ResultType, void>) {
                   std::apply(host_fn, std::move(host_params));
               } else {
                   auto host_result = std::apply(
                     host_fn, std::move(host_params));
-                  pack_result(guest_results, host_result);
+                  ffi::pack_result(guest_results, host_result);
               }
           } catch (...) {
               vlog(
@@ -970,6 +968,7 @@ errc register_function(
 
 } // namespace wasi
 
+// TODO: Unify this with the above wasi host function registeration
 template<auto value>
 struct host_function;
 template<
@@ -981,76 +980,10 @@ struct host_function<engine_func> {
       const std::unique_ptr<wasmedge_wasm_engine>& engine,
       const WasmEdgeModule& mod,
       std::string_view function_name) {
-        std::vector<WasmEdge_ValType> inputs{};
-        if constexpr (std::is_same_v<std::tuple<ArgTypes...>, std::tuple<>>) {
-            inputs = {};
-        } else if constexpr (std::is_same_v<
-                               std::tuple<ArgTypes...>,
-                               std::tuple<int32_t>>) {
-            inputs = {WasmEdge_ValType_I32};
-        } else if constexpr (std::is_same_v<
-                               std::tuple<ArgTypes...>,
-                               std::tuple<int32_t, int32_t>>) {
-            inputs = {WasmEdge_ValType_I32, WasmEdge_ValType_I32};
-        } else if constexpr (std::is_same_v<
-                               std::tuple<ArgTypes...>,
-                               std::tuple<int32_t, uint8_t*, uint32_t>>) {
-            inputs = {
-              WasmEdge_ValType_I32, WasmEdge_ValType_I32, WasmEdge_ValType_I32};
-        } else if constexpr (std::is_same_v<
-                               std::tuple<ArgTypes...>,
-                               std::tuple<
-                                 uint32_t,
-                                 uint8_t*,
-                                 uint32_t,
-                                 uint8_t*,
-                                 uint32_t,
-                                 uint8_t*,
-                                 uint32_t>>) {
-            inputs = {
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32};
-        } else if constexpr (std::is_same_v<
-                               std::tuple<ArgTypes...>,
-                               std::
-                                 tuple<int32_t, int32_t, uint8_t*, uint32_t>>) {
-            inputs = {
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32};
-        } else if constexpr (
-          std::is_same_v<
-            std::tuple<ArgTypes...>,
-            std::tuple<int32_t, uint8_t*, uint32_t, uint8_t*, uint32_t>>) {
-            inputs = {
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32,
-              WasmEdge_ValType_I32};
-        } else {
-            static_assert(
-              dependent_false<std::tuple<ArgTypes...>>::value,
-              "Unexpected host function parameter types");
-        }
-
-        std::vector<WasmEdge_ValType> outputs{};
-        if constexpr (
-          std::is_same_v<
-            ReturnType,
-            int32_t> || std::is_same_v<ReturnType, uint32_t>) {
-            outputs = {WasmEdge_ValType_I32};
-        } else {
-            static_assert(
-              dependent_false<ReturnType>::value,
-              "Unexpected host function return type");
-        }
+        std::vector<WasmEdge_ValType> inputs;
+        ffi::transform_types<ArgTypes...>(inputs);
+        std::vector<WasmEdge_ValType> outputs;
+        ffi::transform_types<ReturnType>(outputs);
         auto func_type_ctx = WasmEdgeFuncType(
           WasmEdge_FunctionTypeCreate(
             inputs.data(), inputs.size(), outputs.data(), outputs.size()),
@@ -1078,129 +1011,23 @@ struct host_function<engine_func> {
             [](
               void* data,
               const WasmEdge_CallingFrameContext* calling_ctx,
-              const WasmEdge_Value* parameters,
-              WasmEdge_Value* returns) {
+              const WasmEdge_Value* guest_params,
+              WasmEdge_Value* guest_returns) {
                 auto engine = static_cast<wasmedge_wasm_engine*>(data);
-                std::tuple<ArgTypes...> packed_args;
-
-                if constexpr (std::is_same_v<
-                                std::tuple<ArgTypes...>,
-                                std::tuple<>>) {
-                    packed_args = {};
-                } else if constexpr (std::is_same_v<
-                                       std::tuple<ArgTypes...>,
-                                       std::tuple<int32_t>>) {
-                    packed_args = {WasmEdge_ValueGetI32(parameters[0])};
-                } else if constexpr (std::is_same_v<
-                                       std::tuple<ArgTypes...>,
-                                       std::tuple<int32_t, int32_t>>) {
-                    packed_args = {
-                      WasmEdge_ValueGetI32(parameters[0]),
-                      WasmEdge_ValueGetI32(parameters[1])};
-                } else if constexpr (std::is_same_v<
-                                       std::tuple<ArgTypes...>,
-                                       std::
-                                         tuple<int32_t, uint8_t*, uint32_t>>) {
-                    auto guest_ptr = WasmEdge_ValueGetI32(parameters[1]);
-                    auto ptr_len = WasmEdge_ValueGetI32(parameters[2]);
-                    WasmEdge_MemoryInstanceContext* mem_ctx
-                      = WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0);
-                    uint8_t* host_ptr = WasmEdge_MemoryInstanceGetPointer(
-                      mem_ctx, guest_ptr, ptr_len);
-                    packed_args = {
-                      WasmEdge_ValueGetI32(parameters[0]), host_ptr, ptr_len};
-                } else if constexpr (
-                  std::is_same_v<
-                    std::tuple<ArgTypes...>,
-                    std::tuple<int32_t, int32_t, uint8_t*, uint32_t>>) {
-                    auto guest_ptr = WasmEdge_ValueGetI32(parameters[2]);
-                    auto ptr_len = WasmEdge_ValueGetI32(parameters[3]);
-                    WasmEdge_MemoryInstanceContext* mem_ctx
-                      = WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0);
-                    uint8_t* host_ptr = WasmEdge_MemoryInstanceGetPointer(
-                      mem_ctx, guest_ptr, ptr_len);
-                    packed_args = {
-                      WasmEdge_ValueGetI32(parameters[0]),
-                      WasmEdge_ValueGetI32(parameters[1]),
-                      host_ptr,
-                      ptr_len};
-                } else if constexpr (
-                  std::is_same_v<
-                    std::tuple<ArgTypes...>,
-                    std::
-                      tuple<int32_t, uint8_t*, uint32_t, uint8_t*, uint32_t>>) {
-                    WasmEdge_MemoryInstanceContext* mem_ctx
-                      = WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0);
-
-                    auto guest_ptr_a = WasmEdge_ValueGetI32(parameters[1]);
-                    auto ptr_len_a = WasmEdge_ValueGetI32(parameters[2]);
-                    uint8_t* host_ptr_a = WasmEdge_MemoryInstanceGetPointer(
-                      mem_ctx, guest_ptr_a, ptr_len_a);
-
-                    auto guest_ptr_b = WasmEdge_ValueGetI32(parameters[3]);
-                    auto ptr_len_b = WasmEdge_ValueGetI32(parameters[4]);
-                    uint8_t* host_ptr_b = WasmEdge_MemoryInstanceGetPointer(
-                      mem_ctx, guest_ptr_b, ptr_len_b);
-                    packed_args = {
-                      WasmEdge_ValueGetI32(parameters[0]),
-                      host_ptr_a,
-                      ptr_len_a,
-                      host_ptr_b,
-                      ptr_len_b};
-                } else if constexpr (std::is_same_v<
-                                       std::tuple<ArgTypes...>,
-                                       std::tuple<
-                                         uint32_t,
-                                         uint8_t*,
-                                         uint32_t,
-                                         uint8_t*,
-                                         uint32_t,
-                                         uint8_t*,
-                                         uint32_t>>) {
-                    WasmEdge_MemoryInstanceContext* mem_ctx
-                      = WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0);
-
-                    auto guest_ptr_a = WasmEdge_ValueGetI32(parameters[1]);
-                    auto ptr_len_a = WasmEdge_ValueGetI32(parameters[2]);
-                    uint8_t* host_ptr_a = WasmEdge_MemoryInstanceGetPointer(
-                      mem_ctx, guest_ptr_a, ptr_len_a);
-
-                    auto guest_ptr_b = WasmEdge_ValueGetI32(parameters[3]);
-                    auto ptr_len_b = WasmEdge_ValueGetI32(parameters[4]);
-                    uint8_t* host_ptr_b = WasmEdge_MemoryInstanceGetPointer(
-                      mem_ctx, guest_ptr_b, ptr_len_b);
-
-                    auto guest_ptr_c = WasmEdge_ValueGetI32(parameters[5]);
-                    auto ptr_len_c = WasmEdge_ValueGetI32(parameters[6]);
-                    uint8_t* host_ptr_c = WasmEdge_MemoryInstanceGetPointer(
-                      mem_ctx, guest_ptr_c, ptr_len_c);
-                    packed_args = {
-                      WasmEdge_ValueGetI32(parameters[0]),
-                      host_ptr_a,
-                      ptr_len_a,
-                      host_ptr_b,
-                      ptr_len_b,
-                      host_ptr_c,
-                      ptr_len_c};
-                } else {
-                    static_assert(
-                      dependent_false<std::tuple<ArgTypes...>>::value,
-                      "Unexpected host function parameter types");
-                }
-                // TODO: Handle exceptions
-                ReturnType result = std::apply(
-                  engine_func,
-                  std::tuple_cat(std::make_tuple(engine), packed_args));
-                returns[0] = WasmEdge_ValueGenI32(result);
-                if constexpr (
-                  std::is_same_v<
-                    ReturnType,
-                    int32_t> || std::is_same_v<ReturnType, uint32_t>) {
-                    returns[0] = WasmEdge_ValueGenI32(result);
-                } else {
-                    static_assert(
-                      dependent_false<ReturnType>::value,
-                      "Unexpected host function return type");
+                auto host_params = ffi::extract_parameters<ArgTypes...>(
+                  calling_ctx, guest_params, 0);
+                try {
+                    ReturnType host_result = std::apply(
+                      engine_func,
+                      std::tuple_cat(std::make_tuple(engine), host_params));
+                    ffi::pack_result(guest_returns, host_result);
+                } catch (...) {
+                    vlog(
+                      wasm_log.warn,
+                      "Error executing engine function: {}",
+                      std::current_exception());
+                    // TODO: When do we fail vs terminate?
+                    return WasmEdge_Result_Terminate;
                 }
                 return WasmEdge_Result_Success;
             },
