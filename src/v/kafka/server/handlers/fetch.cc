@@ -98,7 +98,7 @@ static ss::future<read_result> read_from_partition(
     reader_config.strict_max_bytes = config.strict_max_bytes;
     auto rdr = co_await part.make_reader(reader_config);
     // STOPSHIP: Wrap with wasm transform!
-    rdr.reader = wasm_service.wrap_batch_reader(std::move(rdr.reader));
+    // rdr.reader = wasm_service.wrap_batch_reader(std::move(rdr.reader));
     std::exception_ptr e;
     std::unique_ptr<iobuf> data;
     std::vector<cluster::rm_stm::tx_range> aborted_transactions;

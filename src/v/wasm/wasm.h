@@ -43,6 +43,7 @@ class service {
     ss::future<> stop();
 
     model::record_batch_reader wrap_batch_reader(model::record_batch_reader);
+  
 
   private:
     ss::gate _gate;
