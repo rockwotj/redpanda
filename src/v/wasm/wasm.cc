@@ -123,7 +123,6 @@ public:
 
     explicit operator bool() const noexcept { return bool(_ptr); }
 
-
     T* raw() noexcept { return _ptr; }
 
     const T* raw() const noexcept { return _ptr; }
@@ -140,7 +139,7 @@ private:
 };
 
 std::string_view array_as_string_view(array<uint8_t> arr) {
-  return std::string_view(reinterpret_cast<char*>(arr.raw()), arr.size());
+    return std::string_view(reinterpret_cast<char*>(arr.raw()), arr.size());
 }
 
 template<typename T>
@@ -302,8 +301,8 @@ WasmEdgeModule create_module(std::string_view name) {
 }
 
 struct record_builder {
-    iobuf key;
-    iobuf value;
+    std::optional<iobuf> key;
+    std::optional<iobuf> value;
     std::vector<model::record_header> headers;
 };
 
@@ -469,16 +468,17 @@ private:
         records.reserve(_call_ctx->output_records.size());
         // TODO: Encapsulate this in a builder
         for (auto& output_record : _call_ctx->output_records) {
-            auto k_size = output_record.key.size_bytes();
-            auto v_size = output_record.value.size_bytes();
+            int32_t k_size = output_record.key
+                               ? int32_t(output_record.key->size_bytes())
+                               : -1;
+            int32_t v_size = output_record.value
+                               ? int32_t(output_record.value->size_bytes())
+                               : -1;
             auto size = sizeof(model::record_attributes::type) // attributes
                         + vint::vint_size(record.timestamp_delta())
                         + vint::vint_size(record.offset_delta())
-                        // TODO: Handle null keys
-                        + vint::vint_size(k_size)
-                        + k_size
-                        // TODO: Handle null values
-                        + vint::vint_size(v_size) + v_size
+                        + vint::vint_size(k_size) + std::min(k_size, 0)
+                        + vint::vint_size(v_size) + std::min(v_size, 0)
                         + vint::vint_size(output_record.headers.size());
             for (auto& h : output_record.headers) {
                 size += vint::vint_size(h.key_size()) + h.key().size_bytes()
@@ -491,9 +491,9 @@ private:
               record.timestamp_delta(),
               record.offset_delta(),
               k_size,
-              std::move(output_record.key),
+              std::move(output_record.key).value_or(iobuf{}),
               v_size,
-              std::move(output_record.value),
+              std::move(output_record.value).value_or(iobuf{}),
               std::move(output_record.headers));
             records.push_back(std::move(r));
         }
@@ -546,8 +546,12 @@ private:
           || handle >= int32_t(_call_ctx->output_records.size())) {
             return -1;
         }
+        auto& k = _call_ctx->output_records[handle].key;
+        if (!k) {
+            k.emplace();
+        }
         // TODO: Define a limit here?
-        _call_ctx->output_records[handle].key.append(data.raw(), data.size());
+        k->append(data.raw(), data.size());
         return int32_t(data.size());
     }
 
@@ -559,7 +563,12 @@ private:
             return -1;
         }
         // TODO: Define a limit here?
-        _call_ctx->output_records[handle].value.append(data.raw(), data.size());
+        auto& v = _call_ctx->output_records[handle].value;
+        if (!v) {
+            v.emplace();
+        }
+        // TODO: Define a limit here?
+        v->append(data.raw(), data.size());
         return int32_t(data.size());
     }
 
@@ -771,8 +780,7 @@ private:
         co_return int32_t(idx);
     }
 
-    int32_t
-    read_http_resp_body(int32_t handle, ffi::array<uint8_t> buf) {
+    int32_t read_http_resp_body(int32_t handle, ffi::array<uint8_t> buf) {
         if (
           !_call_ctx || !buf || handle < 0
           || handle >= int32_t(_call_ctx->http_responses.size())) {
