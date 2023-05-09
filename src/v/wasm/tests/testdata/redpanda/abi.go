@@ -4,9 +4,9 @@ package redpanda
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"unsafe"
-	"fmt"
 )
 
 // Tinygo documentation on wasi: https://tinygo.org/docs/guides/webassembly/
@@ -63,7 +63,44 @@ type Headers struct {
 	handle inputRecordHandle
 }
 
-// TODO: Add header methods
+func (h *Headers) Get(key string) string {
+	idx := findHeaderByKey(h.handle, stringBytePtr(key), len(key))
+	if idx < 0 {
+		return ""
+	}
+	length := getHeaderValueLength(h.handle, idx)
+	if length < 0 {
+		return ""
+	}
+	// TODO: This should be pooled
+	sharedBuf := make([]byte, length)
+	result := getHeaderValue(h.handle, idx, &sharedBuf[0], len(sharedBuf))
+	if result < 0 {
+		return ""
+	}
+	return string(sharedBuf)
+}
+
+func (h *Headers) Keys() []string {
+	size := numHeaders(h.handle)
+	keys := make([]string, size)
+	for i := 0; i < size; i++ {
+		length := getHeaderKeyLength(h.handle, i)
+		if length < 0 {
+			keys[i] = ""
+			break
+		}
+		// TODO: This should be pooled
+		sharedBuf := make([]byte, length)
+		result := getHeaderKey(h.handle, i, &sharedBuf[0], len(sharedBuf))
+		if result < 0 {
+			keys[i] = ""
+			break
+		}
+		keys[i] = string(sharedBuf)
+	}
+	return keys
+}
 
 type keyReader struct {
 	handle inputRecordHandle
@@ -116,33 +153,33 @@ func readValue(h inputRecordHandle, buf *byte, len int) int
 
 //go:wasm-module redpanda
 //export num_headers
-//extern num_headers 
-func numHeaders(h inputRecordHandle) int32
+//extern num_headers
+func numHeaders(h inputRecordHandle) int
 
 //go:wasm-module redpanda
 //export find_header_by_key
 //extern find_header_by_key
-func findHeaderByKey(h inputRecordHandle, buf *byte, len uint32) int32
+func findHeaderByKey(h inputRecordHandle, buf *byte, len int) int
 
 //go:wasm-module redpanda
 //export get_header_key_length
 //extern get_header_key_length
-func getHeaderKeyLength(h inputRecordHandle, index int32) int32
+func getHeaderKeyLength(h inputRecordHandle, index int) int
 
 //go:wasm-module redpanda
 //export get_header_value_length
 //extern get_header_value_length
-func getHeaderValueLength(h inputRecordHandle, index int32) int32
+func getHeaderValueLength(h inputRecordHandle, index int) int
 
 //go:wasm-module redpanda
 //export get_header_key
 //extern get_header_key
-func getHeaderKey(h inputRecordHandle, index int32, buf *byte, len uint32) int32
+func getHeaderKey(h inputRecordHandle, index int, buf *byte, len int) int
 
 //go:wasm-module redpanda
 //export get_header_value
 //extern get_header_value
-func getHeaderValue(h inputRecordHandle, index int32, buf *byte, len uint32) int32
+func getHeaderValue(h inputRecordHandle, index int, buf *byte, len int) int
 
 //go:wasm-module redpanda
 //export offset
@@ -225,9 +262,9 @@ func (o *OutputRecord) AppendHeader(name string, value string) error {
 		stringBytePtr(value),
 		len(value),
 	)
-	if errc == 0 {
-		return nil
+	if errc < 0 {
+		return errors.New(fmt.Sprintf("Unable to append header %s=%s [%d]", name, value, errc))
 	} else {
-		return errors.New("Unable to append header")
+		return nil
 	}
 }
