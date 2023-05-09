@@ -34,5 +34,14 @@ func onTransform(e redpanda.TransformEvent) error {
 		return err
 	}
 
+	// copy over the headers
+	for _, k := range(e.Record.Headers.Keys()) {
+		v := e.Record.Headers.Get(k)
+		err = output.AppendHeader(k, v)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

@@ -21,6 +21,14 @@ type TransformEvent struct {
 type Headers struct {
 }
 
+func (h *Headers) Get(key string) string {
+	panic("stub")
+}
+
+func (h *Headers) Keys() []string {
+	panic("stub")
+}
+
 type InputRecord struct {
 	Key   io.Reader
 	Value io.Reader
