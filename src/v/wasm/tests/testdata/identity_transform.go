@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 
 	"redpanda.com/wasm/redpanda"
@@ -8,6 +9,7 @@ import (
 
 func main() {
 	redpanda.OnTransform(onTransform)
+	fmt.Println("Working")
 }
 
 // Temporary buffer so that GC isn't invoked so much!
