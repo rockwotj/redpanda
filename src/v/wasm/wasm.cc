@@ -139,7 +139,7 @@ private:
 };
 
 std::string_view array_as_string_view(array<uint8_t> arr) {
-    return std::string_view(reinterpret_cast<char*>(arr.raw()), arr.size());
+    return {reinterpret_cast<char*>(arr.raw()), arr.size()};
 }
 
 template<typename T>
@@ -153,7 +153,10 @@ struct is_array<C<U>> {
 
 template<typename Type>
 void transform_type(std::vector<WasmEdge_ValType>& types) {
-    if constexpr (std::is_same_v<WasmEdge_MemoryInstanceContext*, Type>) {
+    if constexpr (ss::is_future<Type>::value) {
+        transform_type<typename Type::value_type>(types);
+    } else if constexpr (std::
+                           is_same_v<WasmEdge_MemoryInstanceContext*, Type>) {
         // Do nothing
     } else if constexpr (is_array<Type>::value) {
         // Push back an arg for the pointer
@@ -268,7 +271,9 @@ std::tuple<Type, Rest...> extract_parameters(
 
 template<typename Type>
 void pack_result(WasmEdge_Value* results, Type result) {
-    if constexpr (
+    if constexpr (ss::is_future<Type>::value) {
+        pack_result(results, result.get0());
+    } else if constexpr (
       std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t>) {
         *results = WasmEdge_ValueGenI32(static_cast<int32_t>(result));
     } else if constexpr (
@@ -281,6 +286,7 @@ void pack_result(WasmEdge_Value* results, Type result) {
         static_assert(dependent_false<Type>::value, "Unknown type");
     }
 }
+
 } // namespace ffi
 
 // Right now we only ever will have a single handle
@@ -477,8 +483,8 @@ private:
             auto size = sizeof(model::record_attributes::type) // attributes
                         + vint::vint_size(record.timestamp_delta())
                         + vint::vint_size(record.offset_delta())
-                        + vint::vint_size(k_size) + std::min(k_size, 0)
-                        + vint::vint_size(v_size) + std::min(v_size, 0)
+                        + vint::vint_size(k_size) + std::max(k_size, 0)
+                        + vint::vint_size(v_size) + std::max(v_size, 0)
                         + vint::vint_size(output_record.headers.size());
             for (auto& h : output_record.headers) {
                 size += vint::vint_size(h.key_size()) + h.key().size_bytes()
@@ -661,20 +667,20 @@ private:
         return int32_t(key.size() + value.size());
     }
 
-    int32_t http_fetch(
+    ss::future<int32_t> http_fetch(
       uint32_t method,
       ffi::array<uint8_t> url,
       ffi::array<uint8_t> headers,
       ffi::array<uint8_t> body) {
         try {
             if (!_call_ctx) {
-                return -1;
+                co_return -1;
             }
 
             auto uri = util::parse_uri(ffi::array_as_string_view(url));
 
             if (!uri.has_value()) {
-                return -2;
+                co_return -2;
             }
             std::string_view headers_str = ffi::array_as_string_view(headers);
             std::string_view body_str = ffi::array_as_string_view(body);
@@ -687,48 +693,45 @@ private:
             if (uri->scheme == "https") {
                 ss::tls::credentials_builder b;
                 b.set_client_auth(ss::tls::client_auth::NONE);
-                auto ca_file = net::find_ca_file().get();
+                auto ca_file = co_await net::find_ca_file();
                 vlog(
                   wasm_log.info,
                   "Using ca_file: {}",
                   ca_file.value_or("system"));
                 if (ca_file.has_value()) {
-                    b.set_x509_trust_file(
-                       ca_file.value(), ss::tls::x509_crt_format::PEM)
-                      .get();
+                    co_await b.set_x509_trust_file(
+                      ca_file.value(), ss::tls::x509_crt_format::PEM);
                 } else {
-                    b.set_system_trust().get();
+                    co_await b.set_system_trust();
                 }
                 client_config.credentials
-                  = b.build_reloadable_certificate_credentials().get();
+                  = co_await b.build_reloadable_certificate_credentials();
                 client_config.tls_sni_hostname = uri->host;
             }
 
             http::client client(client_config);
 
-            return http::with_client(
-                     std::move(client),
-                     [uri = std::move(uri.value()),
-                      headers_str,
-                      body_str,
-                      method,
-                      this](auto& client) mutable {
-                         return make_http_request(
-                           client,
-                           method == 0 ? boost::beast::http::verb::get
-                                       : boost::beast::http::verb::post,
-                           std::move(uri),
-                           headers_str,
-                           body_str);
-                     })
-              .get();
-
+            co_return co_await http::with_client(
+              std::move(client),
+              [uri = std::move(uri.value()),
+               headers_str,
+               body_str,
+               method,
+               this](auto& client) mutable {
+                  return make_http_request(
+                    client,
+                    method == 0 ? boost::beast::http::verb::get
+                                : boost::beast::http::verb::post,
+                    std::move(uri),
+                    headers_str,
+                    body_str);
+              });
         } catch (...) {
             vlog(
               wasm_log.warn,
               "Error making HTTP request: {}",
               std::current_exception());
-            return -3;
+            co_return -3;
         }
     }
 
@@ -943,7 +946,9 @@ errc register_function(
           auto host_params = ffi::extract_parameters<ArgTypes...>(
             calling_ctx, guest_params, 0);
           try {
-              if constexpr (std::is_same_v<ResultType, void>) {
+              if constexpr (std::is_same_v<ResultType, ss::future<>>) {
+                  std::apply(host_fn, std::move(host_params)).get();
+              } else if constexpr (std::is_same_v<ResultType, void>) {
                   std::apply(host_fn, std::move(host_params));
               } else {
                   auto host_result = std::apply(
@@ -1028,7 +1033,7 @@ struct host_function<engine_func> {
                     ReturnType host_result = std::apply(
                       engine_func,
                       std::tuple_cat(std::make_tuple(engine), host_params));
-                    ffi::pack_result(guest_returns, host_result);
+                    ffi::pack_result(guest_returns, std::move(host_result));
                 } catch (...) {
                     vlog(
                       wasm_log.warn,
