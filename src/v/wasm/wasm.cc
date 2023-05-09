@@ -277,7 +277,6 @@ private:
               user_transform_name,
               user_result));
         }
-        wasm_log.info("Done, output: {}", _call_ctx->output_records.size());
         model::record_batch::uncompressed_records records;
         records.reserve(_call_ctx->output_records.size());
         // TODO: Encapsulate this in a builder
@@ -625,11 +624,59 @@ struct dependent_false : std::false_type {};
 
 namespace wasi {
 
+template<typename T>
+class ffi_array {
+public:
+    using element_type = T;
+
+    ffi_array()
+      : _ptr(nullptr)
+      , _size(0) {}
+    ffi_array(T* ptr, uint32_t size)
+      : _ptr(ptr)
+      , _size(size) {}
+
+    ffi_array(ffi_array<T>&&) noexcept = default;
+    ffi_array& operator=(ffi_array<T>&&) noexcept = default;
+
+    ffi_array(const ffi_array<T>&) noexcept = default;
+    ffi_array& operator=(const ffi_array<T>&) noexcept = default;
+
+    ~ffi_array() = default;
+
+    explicit operator bool() const noexcept { return bool(_ptr); }
+
+    T& operator[](uint32_t index) noexcept { return _ptr[index]; }
+
+    const T& operator[](uint32_t index) const noexcept { return _ptr[index]; }
+
+    uint32_t size() const noexcept { return _size; }
+
+private:
+    T* _ptr;
+    uint32_t _size;
+};
+
+template<typename T>
+struct is_ffi_array {
+    static constexpr bool value = false;
+};
+template<template<typename...> class C, typename U>
+struct is_ffi_array<C<U>> {
+    static constexpr bool value = std::is_same<C<U>, ffi_array<U>>::value;
+};
+
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L110-L113C1
 constexpr uint16_t WASI_ERRNO_SUCCESS = 0;
 
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L250-L253C1
+constexpr uint16_t WASI_ERRNO_INVAL = 16;
+
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L370-L373
 constexpr uint16_t WASI_ERRNO_NOSYS = 52;
+//
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L370-L373
+constexpr uint16_t WASI_ERRNO_BADF = 8;
 
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1453-L1469
 uint16_t clock_time_get(uint32_t, uint64_t, uint64_t) {
@@ -652,13 +699,61 @@ int16_t fd_close(int32_t) { return WASI_ERRNO_NOSYS; }
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1518-L1527
 int16_t fd_fdstat_get(int32_t, void*) { return WASI_ERRNO_NOSYS; }
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1612-L1620
-int16_t fd_prestat_get(int32_t, void*) { return WASI_ERRNO_NOSYS; }
+int16_t fd_prestat_get(int32_t fd, void*) {
+    if (fd == 0 || fd == 1 || fd == 2) {
+        // stdin, stdout, stderr are fine but unimplemented
+        return WASI_ERRNO_NOSYS;
+    }
+    // We don't hand out any file descriptors and this is needed for wasi_libc
+    return WASI_ERRNO_BADF;
+}
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1621-L1631
 int16_t fd_prestat_dir_name(int32_t, uint8_t*, uint32_t) {
     return WASI_ERRNO_NOSYS;
 }
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1654-L1671
 int16_t fd_read(int32_t, const void*, uint32_t, uint32_t*) {
+    return WASI_ERRNO_NOSYS;
+}
+
+/**
+ * A region of memory for scatter/gather writes.
+ */
+struct ciovec_t {
+    /** The address of the buffer to be written. */
+    uint32_t buf;
+    /** The length of the buffer to be written. */
+    uint32_t buf_len;
+};
+
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1750-L1765
+int16_t fd_write(
+  WasmEdge_MemoryInstanceContext* mem,
+  int32_t fd,
+  ffi_array<ciovec_t> iovecs,
+  uint32_t* written) {
+    if (written == nullptr || !iovecs) [[unlikely]] {
+        return WASI_ERRNO_INVAL;
+    }
+    if (fd == 1) {
+        std::stringstream ss;
+        for (unsigned i = 0; i < iovecs.size(); ++i) {
+            const auto& vec = iovecs[i];
+            const uint8_t* data = WasmEdge_MemoryInstanceGetPointerConst(
+              mem, vec.buf, vec.buf_len);
+            if (data == nullptr) [[unlikely]] {
+                return WASI_ERRNO_INVAL;
+            }
+            ss << std::string_view(
+              reinterpret_cast<const char*>(data), vec.buf_len);
+        }
+        // TODO: We should be buffering these until a newline or something and
+        // emitting logs line by line Also: rate limit logs
+        auto str = ss.str();
+        wasm_log.info("Guest stdout: {}", str);
+        *written = str.size();
+        return WASI_ERRNO_SUCCESS;
+    }
     return WASI_ERRNO_NOSYS;
 }
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1715-L1732
@@ -676,11 +771,20 @@ int16_t path_open(
     return WASI_ERRNO_NOSYS;
 }
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1982-L1992
-void proc_exit(int32_t) { throw std::runtime_error("exiting"); }
+void proc_exit(int32_t exit_code) {
+    throw std::runtime_error(ss::format("Exiting: {}", exit_code));
+}
 
 template<typename Type>
 void transform_type(std::vector<WasmEdge_ValType>& types) {
-    if constexpr (
+    if constexpr (std::is_same_v<WasmEdge_MemoryInstanceContext*, Type>) {
+        // Do nothing
+    } else if constexpr (is_ffi_array<Type>::value) {
+        // Push back an arg for the pointer
+        types.push_back(WasmEdge_ValType_I32);
+        // Push back an other arg for the length
+        types.push_back(WasmEdge_ValType_I32);
+    } else if constexpr (
       std::is_pointer_v<
         Type> || std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t> || std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
         types.push_back(WasmEdge_ValType_I32);
@@ -704,25 +808,57 @@ void transform_types(std::vector<WasmEdge_ValType>& types) {
 
 template<typename Type>
 std::tuple<Type> extract_parameter(
-  const WasmEdge_CallingFrameContext*,
+  const WasmEdge_CallingFrameContext* calling_frame,
   const WasmEdge_Value* params,
-  unsigned idx) {
-    if constexpr (std::is_pointer_v<Type>) {
-        // TODO: Actually convert to the correct pointer type some how...
-        // right now we don't use these buffers
+  unsigned& idx) {
+    if constexpr (std::is_same_v<WasmEdge_MemoryInstanceContext*, Type>) {
+        auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_frame, 0);
+        return std::tuple(mem);
+    } else if constexpr (is_ffi_array<Type>::value) {
+        uint32_t guest_ptr = WasmEdge_ValueGetI32(params[idx++]);
+        uint32_t ptr_len = WasmEdge_ValueGetI32(params[idx++]);
+        auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_frame, 0);
+        if (mem == nullptr) {
+            return std::tuple<Type>();
+        }
+        uint8_t* host_ptr = WasmEdge_MemoryInstanceGetPointer(
+          mem, guest_ptr, ptr_len * sizeof(typename Type::element_type));
+        if (host_ptr == nullptr) {
+            return std::tuple<Type>();
+        }
+        return std::make_tuple(ffi_array<typename Type::element_type>(
+          reinterpret_cast<typename Type::element_type*>(host_ptr), ptr_len));
+    } else if constexpr (
+      std::is_same_v<Type, const void*> || std::is_same_v<Type, void*>) {
+        ++idx;
+        // TODO: Remove this temporary hack
         return std::make_tuple(static_cast<Type>(nullptr));
+    } else if constexpr (std::is_pointer_v<Type>) {
+        // Assume this is an out val
+        uint32_t guest_ptr = WasmEdge_ValueGetI32(params[idx++]);
+        uint32_t ptr_len = sizeof(typename std::remove_pointer_t<Type>);
+        auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_frame, 0);
+        if (mem == nullptr) {
+            return std::tuple<Type>();
+        }
+        uint8_t* host_ptr = WasmEdge_MemoryInstanceGetPointer(
+          mem, guest_ptr, ptr_len);
+        if (host_ptr == nullptr) {
+            return std::tuple<Type>();
+        }
+        return std::make_tuple(reinterpret_cast<Type>(host_ptr));
     } else if constexpr (
       std::is_same_v<Type, uint16_t> || std::is_same_v<Type, int16_t>) {
         return std::make_tuple(
-          static_cast<Type>(WasmEdge_ValueGetI32(params[idx])));
+          static_cast<Type>(WasmEdge_ValueGetI32(params[idx++])));
     } else if constexpr (
       std::is_same_v<Type, int32_t> || std::is_same_v<Type, uint32_t>) {
         return std::make_tuple(
-          std::bit_cast<Type>(WasmEdge_ValueGetI32(params[idx])));
+          std::bit_cast<Type>(WasmEdge_ValueGetI32(params[idx++])));
     } else if constexpr (
       std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
         return std::make_tuple(
-          std::bit_cast<Type>(WasmEdge_ValueGetI64(params[idx])));
+          std::bit_cast<Type>(WasmEdge_ValueGetI64(params[idx++])));
     } else {
         static_assert(dependent_false<Type>::value, "Unknown type");
     }
@@ -747,7 +883,7 @@ std::tuple<Type, Rest...> extract_parameters(
     auto head_type = extract_parameter<Type>(calling_ctx, params, idx);
     return std::tuple_cat(
       std::move(head_type),
-      extract_parameters<Rest...>(calling_ctx, params, idx + 1));
+      extract_parameters<Rest...>(calling_ctx, params, idx));
 }
 
 template<typename Type>
@@ -794,8 +930,12 @@ errc register_function(
         const WasmEdge_Value* guest_params,
         WasmEdge_Value* guest_results) {
           auto host_fn = reinterpret_cast<ResultType (*)(ArgTypes...)>(data);
-          auto host_params = extract_parameters<ArgTypes...>(
-            calling_ctx, guest_params, 0);
+          auto* mem = WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0);
+          if (mem == nullptr) [[unlikely]] {
+              return WasmEdge_Result_Terminate;
+          }
+          auto host_params = std::tuple_cat(
+            extract_parameters<ArgTypes...>(calling_ctx, guest_params, 0));
           try {
               if constexpr (std::is_same_v<ResultType, void>) {
                   std::apply(host_fn, std::move(host_params));
@@ -1149,6 +1289,7 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
     wasi::register_function(
       wasi1_module, wasi::fd_prestat_dir_name, "fd_prestat_dir_name");
     wasi::register_function(wasi1_module, wasi::fd_read, "fd_read");
+    wasi::register_function(wasi1_module, wasi::fd_write, "fd_write");
     wasi::register_function(wasi1_module, wasi::fd_seek, "fd_seek");
     wasi::register_function(wasi1_module, wasi::path_open, "path_open");
     wasi::register_function(wasi1_module, wasi::proc_exit, "proc_exit");

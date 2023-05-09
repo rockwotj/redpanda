@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"unsafe"
+	"fmt"
 )
 
 // Tinygo documentation on wasi: https://tinygo.org/docs/guides/webassembly/
@@ -43,10 +44,12 @@ func OnTransform(fn OnTransformFn) {
 //export redpanda_on_record
 func redpandaOnRecord(h inputRecordHandle) EventErrorCode {
 	if userTransformFunction == nil {
+		fmt.Println("Invalid configuration, there is no registered user transform function")
 		return evtConfigError
 	}
 	err := userTransformFunction(TransformEvent{InputRecord{h, &keyReader{h}, &valueReader{h}, Headers{h}}})
 	if err != nil {
+		fmt.Println("transforming record failed: %v", err)
 		return evtUserError
 	}
 	return evtSuccess
