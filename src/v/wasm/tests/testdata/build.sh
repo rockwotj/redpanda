@@ -16,10 +16,10 @@ clang -target wasm32 -iquote . \
  -DOPENAI_API_KEY="\"$OPENAI_API_KEY\"" \
   -o ai_transform.wasm cc/ai_transform.cc 
 
-tinygo build -target wasi \
-  -panic trap -scheduler none -gc conservative \
+tinygo build -target wasi -opt=z \
+  -panic trap -scheduler none -gc custom -tags custommalloc \
   -o golang_identity_transform.wasm identity_transform.go
 
-tinygo build -target wasi \
-  -panic trap -scheduler none -gc conservative \
+tinygo build -target wasi -opt=z \
+  -panic trap -scheduler none -gc custom -tags custommalloc \
   -o golang_redaction_transform.wasm redaction/redaction_transform.go

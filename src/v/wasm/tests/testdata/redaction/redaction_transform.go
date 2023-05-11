@@ -6,6 +6,8 @@ import (
 	"github.com/mailru/easyjson"
 	"redpanda.com/wasm/model"
 	"redpanda.com/wasm/redpanda"
+
+	_ "github.com/wasilibs/nottinygc"
 )
 
 func main() {
