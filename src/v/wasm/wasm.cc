@@ -11,9 +11,12 @@
 #include "net/tls.h"
 #include "net/unresolved_address.h"
 #include "outcome.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
+#include "utils/hdr_hist.h"
 #include "utils/mutex.h"
 #include "utils/uri.h"
 #include "utils/vint.h"
@@ -60,6 +63,51 @@ namespace wasm {
 namespace {
 
 static ss::logger wasm_log("wasm");
+
+class probe {
+public:
+    probe() {
+        namespace sm = ss::metrics;
+
+        std::vector<sm::label_instance> labels{
+          sm::label("latency_metric")("microseconds")};
+        auto aggregate_labels = std::vector<sm::label>{sm::shard_label};
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("redpanda:wasm"),
+          {
+            sm::make_histogram(
+              "latency_us",
+              sm::description("Wasm Latency"),
+              labels,
+              [this] { return _transform_latency.seastar_histogram_logform(); })
+              .aggregate(aggregate_labels),
+            sm::make_counter(
+              "count",
+              [this] { return _transform_count; },
+              sm::description("Wasm transforms total count"),
+              labels)
+              .aggregate(aggregate_labels),
+            sm::make_counter(
+              "errors",
+              [this] { return _transform_errors; },
+              sm::description("Wasm errors"),
+              labels)
+              .aggregate(aggregate_labels),
+          });
+    }
+    std::unique_ptr<hdr_hist::measurement> auto_transform_measurement() {
+        return _transform_latency.auto_measure();
+    }
+    void transform_complete() { ++_transform_count; }
+    void transform_error() { ++_transform_errors; }
+
+private:
+    uint64_t _transform_count{0};
+    uint64_t _transform_errors{0};
+    hdr_hist _transform_latency;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
+};
 
 // TODO: Use a struct so there is no need for the fn pointer storage
 using WasmEdgeConfig = std::
@@ -433,6 +481,7 @@ private:
 
     std::vector<model::record> invoke_transform(
       const model::record_batch_header& header, model::record&& record) {
+        auto m = _probe.auto_transform_measurement();
         iobuf key = record.release_key();
         iobuf value = record.release_value();
         _call_ctx.emplace(transform_context{
@@ -455,16 +504,19 @@ private:
           params.size(),
           returns.data(),
           returns.size());
+        _probe.transform_complete();
         // Get the right transform name here
         std::string_view user_transform_name = "foo";
         if (!WasmEdge_ResultOK(result)) {
             _call_ctx = std::nullopt;
+            _probe.transform_error();
             throw wasm_exception(
               ss::format("transform execution {} failed", user_transform_name));
         }
         auto user_result = WasmEdge_ValueGetI32(returns[0]);
         if (user_result != 0) {
             _call_ctx = std::nullopt;
+            _probe.transform_error();
             throw wasm_exception(ss::format(
               "transform execution {} resulted in error {}",
               user_transform_name,
@@ -797,6 +849,7 @@ private:
 
     // End ABI exports
 
+    probe _probe;
     mutex _mutex;
     std::vector<WasmEdgeModule> _modules;
     WasmEdgeStore _store_ctx;
