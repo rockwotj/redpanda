@@ -967,6 +967,11 @@ int16_t path_open(
 void proc_exit(int32_t exit_code) {
     throw std::runtime_error(ss::format("Exiting: {}", exit_code));
 }
+// https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1993-L1999
+int32_t sched_yield() {
+  ss::thread::maybe_yield();
+  return WASI_ERRNO_SUCCESS;
+}
 
 template<typename ResultType, typename... ArgTypes>
 errc register_function(
@@ -1186,6 +1191,7 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
     wasi::register_function(wasi1_module, wasi::fd_seek, "fd_seek");
     wasi::register_function(wasi1_module, wasi::path_open, "path_open");
     wasi::register_function(wasi1_module, wasi::proc_exit, "proc_exit");
+    wasi::register_function(wasi1_module, wasi::sched_yield, "sched_yield");
 
     WasmEdge_VMRegisterModuleFromImport(vm_ctx.get(), wasi1_module.get());
 

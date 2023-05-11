@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"redpanda.com/wasm/redpanda"
+	_ "github.com/wasilibs/nottinygc"
 )
 
 func main() {
