@@ -11,6 +11,8 @@ enum class errc {
     load_failure,
     // When the engine is fails to be created
     engine_creation_failure,
+    // When the user's supplied code errors
+    user_code_failure,
 };
 
 struct errc_category final : public std::error_category {
@@ -24,6 +26,8 @@ struct errc_category final : public std::error_category {
             return "wasm::errc::load_failure";
         case errc::engine_creation_failure:
             return "wasm::errc::engine_creation_failure";
+        case errc::user_code_failure:
+            return "wasm::errc::user_code_failure";
         default:
             return "wasm::errc::unknown(" + std::to_string(c) + ")";
         }

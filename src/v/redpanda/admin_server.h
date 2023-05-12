@@ -21,6 +21,7 @@
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "utils/request_auth.h"
+#include "wasm/wasm.h"
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sstring.hh>
@@ -72,7 +73,8 @@ public:
       pandaproxy::schema_registry::api*,
       ss::sharded<cloud_storage::topic_recovery_service>&,
       ss::sharded<cluster::topic_recovery_status_frontend>&,
-      ss::sharded<cluster::tx_registry_frontend>&);
+      ss::sharded<cluster::tx_registry_frontend>&,
+      ss::sharded<wasm::service>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -332,6 +334,7 @@ private:
     void register_self_test_routes();
     void register_cluster_routes();
     void register_shadow_indexing_routes();
+    void register_wasm_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -433,6 +436,11 @@ private:
       std::unique_ptr<ss::http::request> req,
       std::unique_ptr<ss::http::reply> rep);
 
+    /// Wasm routes
+    ss::future<std::unique_ptr<ss::http::reply>> deploy_wasm(
+      std::unique_ptr<ss::http::request> req,
+      std::unique_ptr<ss::http::reply> rep);
+
     /// Self test routes
     ss::future<ss::json::json_return_type>
       self_test_start_handler(std::unique_ptr<ss::http::request>);
@@ -501,6 +509,7 @@ private:
     ss::sharded<cluster::topic_recovery_status_frontend>&
       _topic_recovery_status_frontend;
     ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
+    ss::sharded<wasm::service>& _wasm_service;
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;
     ss::timer<> _blocked_reactor_notify_reset_timer;

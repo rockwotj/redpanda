@@ -12,7 +12,8 @@ set(swags
   cluster
   debug
   usage
-  shadow_indexing)
+  shadow_indexing
+  wasm)
 
 set(swag_files)
 foreach(swag ${swags})

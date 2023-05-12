@@ -78,6 +78,7 @@
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
 #include "redpanda/admin/api-doc/usage.json.h"
+#include "redpanda/admin/api-doc/wasm.json.h"
 #include "rpc/errc.h"
 #include "security/acl.h"
 #include "security/credential_store.h"
@@ -90,12 +91,14 @@
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
 #include "vlog.h"
+#include "wasm/wasm.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/core/with_scheduling_group.hh>
@@ -108,6 +111,7 @@
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/short_streams.hh>
 #include <seastar/util/variant_utils.hh>
 
 #include <boost/algorithm/string/classification.hpp>
@@ -119,11 +123,15 @@
 
 #include <charconv>
 #include <chrono>
+#include <exception>
+#include <iterator>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
 #include <unordered_map>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -203,7 +211,8 @@ admin_server::admin_server(
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
   ss::sharded<cluster::topic_recovery_status_frontend>&
     topic_recovery_status_frontend,
-  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend)
+  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
+  ss::sharded<wasm::service>& wasm_service)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -225,6 +234,7 @@ admin_server::admin_server(
   , _topic_recovery_service(topic_recovery_svc)
   , _topic_recovery_status_frontend(topic_recovery_status_frontend)
   , _tx_registry_frontend(tx_registry_frontend)
+  , _wasm_service(wasm_service)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {}
 
@@ -284,6 +294,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "debug");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "cluster");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "wasm");
     register_config_routes();
     register_cluster_config_routes();
     register_raft_routes();
@@ -300,6 +312,7 @@ void admin_server::configure_admin_routes() {
     register_self_test_routes();
     register_cluster_routes();
     register_shadow_indexing_routes();
+    register_wasm_routes();
 }
 
 static json::validator make_set_replicas_validator() {
@@ -4742,6 +4755,58 @@ void admin_server::register_shadow_indexing_routes() {
         std::unique_ptr<ss::http::request> req,
         std::unique_ptr<ss::http::reply> rep) {
           return get_manifest(std::move(req), std::move(rep));
+      });
+}
+
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
+    auto content = req->content;
+    std::vector<std::optional<std::unique_ptr<wasm::engine>>> rollback_engines(
+      ss::smp::count);
+    std::exception_ptr ex;
+    try {
+        co_await _wasm_service.invoke_on_all(
+          [&content, &rollback_engines](wasm::service& service) {
+              return wasm::make_wasm_engine(content).then(
+                [&service, &rollback_engines](auto engine) {
+                    service.swap_engine(engine);
+                    rollback_engines[ss::this_shard_id()] = std::move(engine);
+                });
+          });
+    } catch (...) {
+        ex = std::current_exception();
+        vlog(logger.error, "Unknown issue deploying wasm {}, rolling back", ex);
+    }
+    if (ex) {
+        content = ""; // Free the content while this is going on.
+        try {
+            co_await _wasm_service.invoke_on_all(
+              [&rollback_engines](wasm::service& service) {
+                  auto& prev_engine = rollback_engines[ss::this_shard_id()];
+                  if (prev_engine.has_value()) {
+                      service.swap_engine(prev_engine.value());
+                  }
+              });
+        } catch (const std::exception& ex) {
+            // 😱 What do we do?
+            vlog(logger.error, "Unable to rollback wasm engines {}", ex.what());
+        }
+        throw ss::httpd::server_error_exception(
+          fmt::format("Unknown issue deploying wasm"));
+    }
+    rep->set_status(ss::http::reply::status_type::ok);
+    rep->write_body("json", ss::json::json_void().to_json());
+    co_return std::move(rep);
+}
+
+void admin_server::register_wasm_routes() {
+    register_route_raw_async<user>(
+      ss::httpd::wasm_json::deploy_wasm,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return deploy_wasm(std::move(req), std::move(rep));
       });
 }
 

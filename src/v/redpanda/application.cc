@@ -854,24 +854,9 @@ void application::configure_admin_server() {
       _proxy.get(),
       _schema_registry.get(),
       std::ref(topic_recovery_service),
-<<<<<<< HEAD
-      std::ref(topic_recovery_status_frontend),
-      std::ref(tx_registry_frontend))
-||||||| parent of ce4d751c5 (fixup! Silly read path demo)
-<<<<<<< HEAD
-      std::ref(topic_recovery_status_frontend),
-      std::ref(tx_registry_frontend))
-||||||| parent of 1af44c908 (Allow for uploads of wasm files via admin api)
-      std::ref(topic_recovery_status_frontend))
-=======
-      std::ref(topic_recovery_status_frontend),
-      std::ref(wasm_service))
->>>>>>> 1af44c908 (Allow for uploads of wasm files via admin api)
-=======
       std::ref(topic_recovery_status_frontend),
       std::ref(tx_registry_frontend),
       std::ref(wasm_service))
->>>>>>> ce4d751c5 (fixup! Silly read path demo)
       .get();
 }
 
@@ -1479,9 +1464,47 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(storage))
       .get();
 
+<<<<<<< HEAD
     syschecks::systemd_message("Creating wasm service").get();
     construct_service(wasm_service).get();
 
+||||||| parent of fbd9c2a72 (Allow for uploads of wasm files via admin api)
+=======
+<<<<<<< HEAD
+||||||| parent of 1af44c908 (Allow for uploads of wasm files via admin api)
+    syschecks::systemd_message("Creating tx coordinator mapper").get();
+    construct_service(
+      tx_coordinator_ntp_mapper, std::ref(metadata_cache), model::tx_manager_nt)
+      .get();
+
+    syschecks::systemd_message(
+      "Enabling wasm: {}", config::node().wasm_enabled())
+      .get();
+    if (config::node().wasm_enabled()) {
+        auto path = config::node().wasm_file().path;
+        auto buffer = ss::util::read_entire_file_contiguous(std::move(path)).get();
+        construct_service(
+          wasm_service,
+          ss::sharded_parameter(
+            [](std::string_view buf) {
+                return wasm::make_wasm_engine(buf).value();
+            },
+            std::string_view(buffer)))
+          .get();
+    } else {
+        construct_service(wasm_service, nullptr).get();
+    }
+
+=======
+    syschecks::systemd_message("Creating tx coordinator mapper").get();
+    construct_service(
+      tx_coordinator_ntp_mapper, std::ref(metadata_cache), model::tx_manager_nt)
+      .get();
+
+    construct_service(wasm_service).get();
+
+>>>>>>> 1af44c908 (Allow for uploads of wasm files via admin api)
+>>>>>>> fbd9c2a72 (Allow for uploads of wasm files via admin api)
     syschecks::systemd_message("Creating tx coordinator frontend").get();
     // usually it'a an anti-pattern to let the same object be accessed
     // from different cores without precautionary measures like foreign
