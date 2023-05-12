@@ -30,8 +30,8 @@ import (
 )
 
 var (
-	tag               = "latest"
-	redpandaImageBase = "vectorized/redpanda:" + tag
+	tag               = "dev"
+	redpandaImageBase = "us-central1-docker.pkg.dev/rp-byoc-tyler/wasm-feature-branch/redpanda:" + tag
 )
 
 const (
