@@ -834,7 +834,8 @@ void application::configure_admin_server() {
       _proxy.get(),
       _schema_registry.get(),
       std::ref(topic_recovery_service),
-      std::ref(topic_recovery_status_frontend))
+      std::ref(topic_recovery_status_frontend),
+      std::ref(wasm_service))
       .get();
 }
 
@@ -1372,23 +1373,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       tx_coordinator_ntp_mapper, std::ref(metadata_cache), model::tx_manager_nt)
       .get();
 
-    syschecks::systemd_message(
-      "Enabling wasm: {}", config::node().wasm_enabled())
-      .get();
-    if (config::node().wasm_enabled()) {
-        auto path = config::node().wasm_file().path;
-        auto buffer = ss::util::read_entire_file_contiguous(std::move(path)).get();
-        construct_service(
-          wasm_service,
-          ss::sharded_parameter(
-            [](std::string_view buf) {
-                return wasm::make_wasm_engine(buf).value();
-            },
-            std::string_view(buffer)))
-          .get();
-    } else {
-        construct_service(wasm_service, nullptr).get();
-    }
+    construct_service(wasm_service).get();
 
     syschecks::systemd_message("Creating tx coordinator frontend").get();
     // usually it'a an anti-pattern to let the same object be accessed

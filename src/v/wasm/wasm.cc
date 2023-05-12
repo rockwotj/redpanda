@@ -129,15 +129,19 @@ using WasmEdgeFuncType = std::unique_ptr<
 
 class wasmedge_wasm_engine;
 
-class wasm_exception : public std::exception {
+class wasm_exception final : public std::exception {
 public:
-    explicit wasm_exception(ss::sstring msg) noexcept
-      : _msg(std::move(msg)) {}
+    explicit wasm_exception(ss::sstring msg, errc err_code) noexcept
+      : _msg(std::move(msg))
+      , _err_code(err_code) {}
 
     const char* what() const noexcept final { return _msg.c_str(); }
 
+    errc error_code() const noexcept { return _err_code; }
+
 private:
     ss::sstring _msg;
+    errc _err_code;
 };
 
 using read_result = int32_t;
@@ -373,7 +377,7 @@ struct transform_context {
 
 class wasmedge_wasm_engine : public engine {
 public:
-    static result<std::unique_ptr<wasmedge_wasm_engine>, errc>
+    static ss::future<std::unique_ptr<wasmedge_wasm_engine>>
       create(std::string_view);
 
     ss::future<model::record_batch>
@@ -474,8 +478,10 @@ private:
         if (!WasmEdge_ResultOK(result)) {
             // Get the right transform name here
             std::string_view user_transform_name = "foo";
-            throw wasm_exception(ss::format(
-              "wasi _start initialization {} failed", user_transform_name));
+            throw wasm_exception(
+              ss::format(
+                "wasi _start initialization {} failed", user_transform_name),
+              errc::user_code_failure);
         }
     }
 
@@ -511,16 +517,19 @@ private:
             _call_ctx = std::nullopt;
             _probe.transform_error();
             throw wasm_exception(
-              ss::format("transform execution {} failed", user_transform_name));
+              ss::format("transform execution {} failed", user_transform_name),
+              errc::user_code_failure);
         }
         auto user_result = WasmEdge_ValueGetI32(returns[0]);
         if (user_result != 0) {
             _call_ctx = std::nullopt;
             _probe.transform_error();
-            throw wasm_exception(ss::format(
-              "transform execution {} resulted in error {}",
-              user_transform_name,
-              user_result));
+            throw wasm_exception(
+              ss::format(
+                "transform execution {} resulted in error {}",
+                user_transform_name,
+                user_result),
+              errc::user_code_failure);
         }
         model::record_batch::uncompressed_records records;
         records.reserve(_call_ctx->output_records.size());
@@ -969,8 +978,8 @@ void proc_exit(int32_t exit_code) {
 }
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1993-L1999
 int32_t sched_yield() {
-  ss::thread::maybe_yield();
-  return WASI_ERRNO_SUCCESS;
+    ss::thread::maybe_yield();
+    return WASI_ERRNO_SUCCESS;
 }
 
 template<typename ResultType, typename... ArgTypes>
@@ -1121,7 +1130,7 @@ struct host_function<engine_func> {
     }
 };
 
-result<std::unique_ptr<wasmedge_wasm_engine>, errc>
+ss::future<std::unique_ptr<wasmedge_wasm_engine>>
 wasmedge_wasm_engine::create(std::string_view module_source) {
     auto config_ctx = WasmEdgeConfig(
       WasmEdge_ConfigureCreate(), &WasmEdge_ConfigureDelete);
@@ -1212,7 +1221,10 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
           wasm_log.warn,
           "Failed to load module: {}",
           WasmEdge_ResultGetMessage(result));
-        return errc::load_failure;
+        throw wasm_exception(
+          ss::format(
+            "Failed to load module: {}", WasmEdge_ResultGetMessage(result)),
+          errc::load_failure);
     }
 
     result = WasmEdge_VMLoadWasmFromASTModule(vm_ctx.get(), module_ctx.get());
@@ -1222,7 +1234,10 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
           wasm_log.warn,
           "Failed to load module: {}",
           WasmEdge_ResultGetMessage(result));
-        return errc::load_failure;
+        throw wasm_exception(
+          ss::format(
+            "Failed to load module: {}", WasmEdge_ResultGetMessage(result)),
+          errc::load_failure);
     }
 
     result = WasmEdge_VMValidate(vm_ctx.get());
@@ -1231,7 +1246,10 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
           wasm_log.warn,
           "Failed to create engine: {}",
           WasmEdge_ResultGetMessage(result));
-        return errc::engine_creation_failure;
+        throw wasm_exception(
+          ss::format(
+            "Failed to create engine: {}", WasmEdge_ResultGetMessage(result)),
+          errc::engine_creation_failure);
     }
 
     result = WasmEdge_VMInstantiate(vm_ctx.get());
@@ -1240,7 +1258,10 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
           wasm_log.warn,
           "Failed to create engine: {}",
           WasmEdge_ResultGetMessage(result));
-        return errc::engine_creation_failure;
+        throw wasm_exception(
+          ss::format(
+            "Failed to create engine: {}", WasmEdge_ResultGetMessage(result)),
+          errc::engine_creation_failure);
     }
 
     std::vector<WasmEdgeModule> modules;
@@ -1250,7 +1271,7 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
     engine->initialize(
       std::move(vm_ctx), std::move(store_ctx), std::move(modules));
 
-    return std::move(engine);
+    co_return std::move(engine);
 }
 
 class wasm_transform_applying_reader : public model::record_batch_reader::impl {
@@ -1304,9 +1325,6 @@ private:
 
 } // namespace
 
-service::service(std::unique_ptr<engine> engine)
-  : _engine(std::move(engine)) {}
-
 ss::future<> service::stop() { return _gate.close(); }
 
 model::record_batch_reader
@@ -1318,13 +1336,9 @@ service::wrap_batch_reader(model::record_batch_reader batch_reader) {
     return batch_reader;
 }
 
-result<std::unique_ptr<engine>, errc>
+ss::future<std::unique_ptr<engine>>
 make_wasm_engine(std::string_view wasm_source) {
-    auto r = wasmedge_wasm_engine::create(wasm_source);
-    if (r.has_error()) {
-        return r.error();
-    }
-    return std::move(r.value());
+    co_return co_await wasmedge_wasm_engine::create(wasm_source);
 }
 
 } // namespace wasm

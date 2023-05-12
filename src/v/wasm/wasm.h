@@ -10,6 +10,7 @@
 #include "seastarx.h"
 #include <seastar/core/gate.hh>
 
+#include <memory>
 #include <vector>
 
 namespace wasm {
@@ -30,7 +31,7 @@ public:
 
 class service {
   public:
-    explicit service(std::unique_ptr<engine>);
+    service() = default;
 
     ~service() = default;
     service(const service&) = delete;
@@ -44,12 +45,15 @@ class service {
 
     model::record_batch_reader wrap_batch_reader(model::record_batch_reader);
   
+    void swap_engine(std::unique_ptr<engine>& engine) {
+      engine.swap(engine);
+    }
 
   private:
     ss::gate _gate;
     std::unique_ptr<engine> _engine;
 };
 
-result<std::unique_ptr<engine>, errc> make_wasm_engine(std::string_view wasm_source);
+ss::future<std::unique_ptr<engine>> make_wasm_engine(std::string_view wasm_source);
 
 } // namespace wasm

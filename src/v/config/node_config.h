@@ -68,9 +68,6 @@ public:
     property<bool> upgrade_override_checks;
     property<std::optional<size_t>> memory_allocation_warning_threshold;
 
-    property<bool> wasm_enabled;
-    property<data_directory_path> wasm_file;
-
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
         return data_directory().path / "pid.lock";
