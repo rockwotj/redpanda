@@ -30,8 +30,8 @@ import (
 )
 
 var (
-	tag               = "dev"
-	redpandaImageBase = "us-central1-docker.pkg.dev/rp-byoc-tyler/wasm-feature-branch/redpanda:" + tag
+	digest            = "sha256:9868227b2e95cb5bbe4e72632bca18d13304c2f1f8a2e72d5bc8b01cb70f91a1"
+	redpandaImageBase = "us-central1-docker.pkg.dev/rp-byoc-tyler/wasm-feature-branch/redpanda@" + digest
 )
 
 const (
