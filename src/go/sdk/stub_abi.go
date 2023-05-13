@@ -19,7 +19,6 @@ import (
 	"time"
 )
 
-
 type OnTransformFn func(e TransformEvent) error
 
 func OnTransform(fn OnTransformFn) {}
@@ -34,7 +33,7 @@ type Headers interface {
 }
 
 type InputRecord interface {
-	Key()   io.Reader
+	Key() io.Reader
 	Value() io.Reader
 
 	Headers() Headers
@@ -42,9 +41,8 @@ type InputRecord interface {
 	Offset() int64
 }
 
-
 type OutputRecord interface {
-	Key()   io.Writer
+	Key() io.Writer
 	Value() io.Writer
 	AppendHeader(name string, value string)
 }
@@ -52,4 +50,3 @@ type OutputRecord interface {
 func CreateOutputRecord() (OutputRecord, error) {
 	panic("stub")
 }
-

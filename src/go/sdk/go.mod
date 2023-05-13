@@ -1,3 +1,3 @@
-module redpanda.com/wasm-sdk
+module github.com/rockwotj/redpanda/src/go/sdk
 
 go 1.18

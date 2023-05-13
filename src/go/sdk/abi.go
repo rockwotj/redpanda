@@ -35,9 +35,11 @@ func redpandaAbiVersion() int32 {
 
 type EventErrorCode int32
 
-const evtSuccess = EventErrorCode(0)
-const evtConfigError = EventErrorCode(1)
-const evtUserError = EventErrorCode(2)
+const (
+	evtSuccess     = EventErrorCode(0)
+	evtConfigError = EventErrorCode(1)
+	evtUserError   = EventErrorCode(2)
+)
 
 type inputRecordHandle int32
 
@@ -57,7 +59,7 @@ func redpandaOnRecord(h inputRecordHandle) EventErrorCode {
 	}
 	err := userTransformFunction(&transformEvent{inputRecord{h, &keyReader{h}, &valueReader{h}, &headers{h}}})
 	if err != nil {
-		fmt.Println("transforming record failed: %v", err)
+		fmt.Println("transforming record failed:", err)
 		return evtUserError
 	}
 	return evtSuccess
@@ -174,15 +176,19 @@ type inputRecord struct {
 func (r *inputRecord) Key() io.Reader {
 	return r.key
 }
+
 func (r *inputRecord) Value() io.Reader {
 	return r.value
 }
+
 func (r *inputRecord) Headers() Headers {
 	return r.headers
 }
+
 func (r *inputRecord) Timestamp() time.Time {
 	return timestamp(r.handle)
 }
+
 func (r *inputRecord) Offset() int64 {
 	return offset(r.handle)
 }
@@ -275,6 +281,7 @@ type outputRecord struct {
 func (r *outputRecord) Key() io.Writer {
 	return r.key
 }
+
 func (r *outputRecord) Value() io.Writer {
 	return r.value
 }

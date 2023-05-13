@@ -66,7 +66,7 @@ func newStartCommand() *cobra.Command {
 			UnknownFlags: true,
 		},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if nodes == 1 {
+			if nodes != 1 {
 				return errors.New(
 					"--nodes should be 1 (for now)",
 				)
