@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"unsafe"
+	"time"
 )
 
 // Tinygo documentation on wasi: https://tinygo.org/docs/guides/webassembly/
@@ -57,7 +58,7 @@ func redpandaOnRecord(h inputRecordHandle) EventErrorCode {
 		fmt.Println("Invalid configuration, there is no registered user transform function")
 		return evtConfigError
 	}
-	err := userTransformFunction(&transformEvent{inputRecord{h, &keyReader{h}, &valueReader{h}, &headers{h}}})
+	err := userTransformFunction(&transformEvent{&inputRecord{h, &keyReader{h}, &valueReader{h}, &headers{h}}})
 	if err != nil {
 		fmt.Println("transforming record failed:", err)
 		return evtUserError
@@ -70,10 +71,10 @@ type TransformEvent interface {
 }
 
 type transformEvent struct {
-	record inputRecord
+	record InputRecord
 }
 
-func (e *TransformEvent) Record() {
+func (e *transformEvent) Record() InputRecord {
 	return e.record
 }
 
@@ -186,7 +187,7 @@ func (r *inputRecord) Headers() Headers {
 }
 
 func (r *inputRecord) Timestamp() time.Time {
-	return timestamp(r.handle)
+	return time.UnixMilli(timestamp(r.handle))
 }
 
 func (r *inputRecord) Offset() int64 {
@@ -236,12 +237,12 @@ func getHeaderValue(h inputRecordHandle, index int, buf *byte, len int) int
 //go:wasm-module redpanda
 //export offset
 //extern offset
-func offset(h inputRecordHandle) uint64
+func offset(h inputRecordHandle) int64
 
 //go:wasm-module redpanda
 //export timestamp
 //extern timestamp
-func timestamp(h inputRecordHandle) uint64
+func timestamp(h inputRecordHandle) int64
 
 type outputRecordHandle int32
 
@@ -268,7 +269,7 @@ func appendHeader(handle outputRecordHandle, keyBuffer *byte, keyLength int, val
 type OutputRecord interface {
 	Key() io.Writer
 	Value() io.Writer
-	AppendHeader(name string, value string)
+	AppendHeader(name string, value string) error
 }
 
 type outputRecord struct {

@@ -23,7 +23,8 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 	p.InstallKafkaFlags(cmd)
 	cmd.AddCommand(
-		newGenerateCommand(fs),
+		newInitializeCommand(fs),
+		newBuildCommand(fs),
 		newDeployCommand(fs, p),
 	)
 	return cmd
