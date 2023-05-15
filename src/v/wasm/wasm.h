@@ -61,6 +61,6 @@ class service {
     absl::flat_hash_map<model::topic_namespace, std::unique_ptr<engine>> _engines;
 };
 
-ss::future<std::unique_ptr<engine>> make_wasm_engine(std::string_view wasm_source);
+ss::future<std::unique_ptr<engine>> make_wasm_engine(std::string_view wasm_module_name, std::string_view wasm_source);
 
 } // namespace wasm
