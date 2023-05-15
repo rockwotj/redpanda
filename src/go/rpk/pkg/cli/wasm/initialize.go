@@ -22,7 +22,7 @@ import (
 
 func newInitializeCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "generate [PROJECT DIRECTORY]",
+		Use:   "init [PROJECT DIRECTORY]",
 		Short: "Create a template project for Wasm engine",
 		Args:  cobra.ExactArgs(1),
 		Run: func(_ *cobra.Command, args []string) {
