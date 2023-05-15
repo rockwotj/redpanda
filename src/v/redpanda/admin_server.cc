@@ -4523,16 +4523,18 @@ void admin_server::register_shadow_indexing_routes() {
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> rep) {
+    auto nt = model::topic_namespace(
+      model::ns(req->param["namespace"]), model::topic(req->param["topic"]));
     auto content = req->content;
     std::vector<std::optional<std::unique_ptr<wasm::engine>>> rollback_engines(
       ss::smp::count);
     std::exception_ptr ex;
     try {
         co_await _wasm_service.invoke_on_all(
-          [&content, &rollback_engines](wasm::service& service) {
+          [&content, &rollback_engines, &nt](wasm::service& service) {
               return wasm::make_wasm_engine(content).then(
-                [&service, &rollback_engines](auto engine) {
-                    service.swap_engine(engine);
+                [&service, &rollback_engines, &nt](auto engine) {
+                    service.swap_engine(nt, engine);
                     rollback_engines[ss::this_shard_id()] = std::move(engine);
                 });
           });
@@ -4544,10 +4546,10 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
         content = ""; // Free the content while this is going on.
         try {
             co_await _wasm_service.invoke_on_all(
-              [&rollback_engines](wasm::service& service) {
+              [&rollback_engines, &nt](wasm::service& service) {
                   auto& prev_engine = rollback_engines[ss::this_shard_id()];
                   if (prev_engine.has_value()) {
-                      service.swap_engine(prev_engine.value());
+                      service.swap_engine(nt, prev_engine.value());
                   }
               });
         } catch (const std::exception& ex) {

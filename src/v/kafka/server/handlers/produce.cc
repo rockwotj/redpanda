@@ -287,7 +287,9 @@ static partition_produce_stages produce_topic_partition(
     auto reader = reader_from_lcore_batch(std::move(batch));
     auto& wasm_service = octx.rctx.connection()->server().wasm_service();
     // STOPSHIP: Wrap with wasm transform!
-    reader = wasm_service.wrap_batch_reader(std::move(reader));
+    reader = wasm_service.wrap_batch_reader(
+        model::topic_namespace(model::kafka_namespace, topic.name),
+        std::move(reader));
     auto start = std::chrono::steady_clock::now();
 
     auto dispatch = std::make_unique<ss::promise<>>();
