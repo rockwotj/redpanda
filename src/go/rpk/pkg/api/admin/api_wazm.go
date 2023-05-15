@@ -17,9 +17,10 @@ import (
 	"net/http"
 )
 
-const wasmEndpoint = "/v1/wasm/deploy"
+const baseWasmEndpoint = "/v1/wasm/"
+const deploySuffix = "/deploy"
 
 // Deploy a wasm transform to a cluster
-func (a *AdminAPI) DeployWasm(ctx context.Context, file io.Reader) error {
-	return a.sendAny(ctx, http.MethodPost, wasmEndpoint, file, nil)
+func (a *AdminAPI) DeployWasm(ctx context.Context, topic string, file io.Reader) error {
+	return a.sendAny(ctx, http.MethodPost, baseWasmEndpoint + "kafka/" + topic + deploySuffix, file, nil)
 }
