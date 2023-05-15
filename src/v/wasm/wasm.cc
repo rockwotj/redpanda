@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "errc.h"
 #include "http/client.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
@@ -1337,10 +1338,11 @@ private:
 ss::future<> service::stop() { return _gate.close(); }
 
 model::record_batch_reader
-service::wrap_batch_reader(model::record_batch_reader batch_reader) {
-    if (is_enabled()) {
+service::wrap_batch_reader(const model::topic_namespace& nt, model::record_batch_reader batch_reader) {
+    auto it = _engines.find(nt);
+    if (it != _engines.end()) {
         return model::make_record_batch_reader<wasm_transform_applying_reader>(
-          std::move(batch_reader), _engine.get(), _gate.hold());
+          std::move(batch_reader), it->second.get(), _gate.hold());
     }
     return batch_reader;
 }

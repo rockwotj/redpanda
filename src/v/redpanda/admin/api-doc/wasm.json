@@ -8,17 +8,30 @@
     ],
     "apis": [
         {
-            "path": "/v1/wasm/deploy",
+            "path": "/v1/wasm/{namespace}/{topic}/deploy",
             "operations": [
                 {
                     "method": "POST",
                     "summary": "Deploy wasm",
-                    "type": "usage_response",
+                    "type": "void",
                     "nickname": "deploy_wasm",
                     "produces": [
                         "application/json"
                     ],
-                    "parameters": []
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ]
                 }
             ]
         }
