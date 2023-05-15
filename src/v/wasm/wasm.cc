@@ -9,6 +9,7 @@
  */
 #include "wasm.h"
 
+#include "probe.cc"
 #include "bytes/bytes.h"
 #include "errc.h"
 #include "http/client.h"
@@ -21,7 +22,6 @@
 #include "net/tls.h"
 #include "net/unresolved_address.h"
 #include "outcome.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"
 #include "storage/parser_utils.h"
@@ -73,51 +73,6 @@ namespace wasm {
 namespace {
 
 static ss::logger wasm_log("wasm");
-
-class probe {
-public:
-    probe() {
-        namespace sm = ss::metrics;
-
-        std::vector<sm::label_instance> labels{
-          sm::label("latency_metric")("microseconds")};
-        auto aggregate_labels = std::vector<sm::label>{sm::shard_label};
-        _public_metrics.add_group(
-          prometheus_sanitize::metrics_name("redpanda:wasm"),
-          {
-            sm::make_histogram(
-              "latency_us",
-              sm::description("Wasm Latency"),
-              labels,
-              [this] { return _transform_latency.seastar_histogram_logform(); })
-              .aggregate(aggregate_labels),
-            sm::make_counter(
-              "count",
-              [this] { return _transform_count; },
-              sm::description("Wasm transforms total count"),
-              labels)
-              .aggregate(aggregate_labels),
-            sm::make_counter(
-              "errors",
-              [this] { return _transform_errors; },
-              sm::description("Wasm errors"),
-              labels)
-              .aggregate(aggregate_labels),
-          });
-    }
-    std::unique_ptr<hdr_hist::measurement> auto_transform_measurement() {
-        return _transform_latency.auto_measure();
-    }
-    void transform_complete() { ++_transform_count; }
-    void transform_error() { ++_transform_errors; }
-
-private:
-    uint64_t _transform_count{0};
-    uint64_t _transform_errors{0};
-    hdr_hist _transform_latency;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
-};
 
 // TODO: Use a struct so there is no need for the fn pointer storage
 using WasmEdgeConfig = std::
@@ -388,7 +343,7 @@ struct transform_context {
 class wasmedge_wasm_engine : public engine {
 public:
     static ss::future<std::unique_ptr<wasmedge_wasm_engine>>
-      create(std::string_view);
+      create(std::string_view module_name, std::string_view module_binary);
 
     ss::future<model::record_batch>
     transform(model::record_batch&& batch) override {
@@ -487,10 +442,9 @@ private:
 
         if (!WasmEdge_ResultOK(result)) {
             // Get the right transform name here
-            std::string_view user_transform_name = "foo";
             throw wasm_exception(
               ss::format(
-                "wasi _start initialization {} failed", user_transform_name),
+                "wasi _start initialization {} failed", _user_module_name),
               errc::user_code_failure);
         }
     }
@@ -522,12 +476,11 @@ private:
           returns.size());
         _probe.transform_complete();
         // Get the right transform name here
-        std::string_view user_transform_name = "foo";
         if (!WasmEdge_ResultOK(result)) {
             _call_ctx = std::nullopt;
             _probe.transform_error();
             throw wasm_exception(
-              ss::format("transform execution {} failed", user_transform_name),
+              ss::format("transform execution {} failed", _user_module_name),
               errc::user_code_failure);
         }
         auto user_result = WasmEdge_ValueGetI32(returns[0]);
@@ -537,7 +490,7 @@ private:
             throw wasm_exception(
               ss::format(
                 "transform execution {} resulted in error {}",
-                user_transform_name,
+                _user_module_name,
                 user_result),
               errc::user_code_failure);
         }
@@ -868,6 +821,7 @@ private:
 
     // End ABI exports
 
+    ss::sstring _user_module_name;
     probe _probe;
     mutex _mutex;
     std::vector<WasmEdgeModule> _modules;
@@ -1141,7 +1095,7 @@ struct host_function<engine_func> {
 };
 
 ss::future<std::unique_ptr<wasmedge_wasm_engine>>
-wasmedge_wasm_engine::create(std::string_view module_source) {
+wasmedge_wasm_engine::create(std::string_view module_name, std::string_view module_binary) {
     auto config_ctx = WasmEdgeConfig(
       WasmEdge_ConfigureCreate(), &WasmEdge_ConfigureDelete);
 
@@ -1221,8 +1175,8 @@ wasmedge_wasm_engine::create(std::string_view module_source) {
     result = WasmEdge_LoaderParseFromBuffer(
       loader_ctx.get(),
       &module_ctx_ptr,
-      reinterpret_cast<const uint8_t*>(module_source.data()),
-      module_source.size());
+      reinterpret_cast<const uint8_t*>(module_binary.data()),
+      module_binary.size());
     auto module_ctx = WasmEdgeASTModule(
       module_ctx_ptr, &WasmEdge_ASTModuleDelete);
 
@@ -1348,8 +1302,8 @@ service::wrap_batch_reader(const model::topic_namespace& nt, model::record_batch
 }
 
 ss::future<std::unique_ptr<engine>>
-make_wasm_engine(std::string_view wasm_source) {
-    co_return co_await wasmedge_wasm_engine::create(wasm_source);
+make_wasm_engine(std::string_view wasm_module_name, std::string_view wasm_source) {
+    co_return co_await wasmedge_wasm_engine::create(wasm_module_name, wasm_source);
 }
 
 } // namespace wasm

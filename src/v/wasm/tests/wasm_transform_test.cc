@@ -24,7 +24,7 @@
 SEASTAR_THREAD_TEST_CASE(test_wasm_transforms_work) {
     auto wasm_file
       = ss::util::read_entire_file_contiguous("golang_identity_transform.wasm").get0();
-    auto engine = wasm::make_wasm_engine(std::move(wasm_file)).get0();
+    auto engine = wasm::make_wasm_engine("identity_transform", std::move(wasm_file)).get0();
     auto batch = model::test::make_random_batch(model::test::record_batch_spec{
       .allow_compression = false,
       .count = 1,

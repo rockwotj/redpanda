@@ -4,6 +4,7 @@ v_cc_library(
     wasm.h
   SRCS
     "wasm.cc"
+    "probe.cc"
   DEPS
     wasmedge
     v::storage

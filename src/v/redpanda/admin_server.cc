@@ -4532,7 +4532,9 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
     try {
         co_await _wasm_service.invoke_on_all(
           [&content, &rollback_engines, &nt](wasm::service& service) {
-              return wasm::make_wasm_engine(content).then(
+              // TODO: Split compilation and instance creation so we don't have to compile
+              // on each core.
+              return wasm::make_wasm_engine(nt.tp(), content).then(
                 [&service, &rollback_engines, &nt](auto engine) {
                     service.swap_engine(nt, engine);
                     rollback_engines[ss::this_shard_id()] = std::move(engine);
