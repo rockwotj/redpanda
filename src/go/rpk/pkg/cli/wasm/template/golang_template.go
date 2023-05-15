@@ -35,20 +35,20 @@ func onTransform(e redpanda.TransformEvent) error {
 	}
 
 	// copy over the key
-	_, err = io.CopyBuffer(output.Key, e.Record.Key, buf)
+	_, err = io.CopyBuffer(output.Key(), e.Record().Key(), buf)
 	if err != nil {
 		return err
 	}
 		
 	// copy over the value
-	_, err = io.CopyBuffer(output.Value, e.Record.Value, buf)
+	_, err = io.CopyBuffer(output.Value(), e.Record().Value(), buf)
 	if err != nil {
 		return err
 	}
 
 	// copy over the headers
-	for _, k := range(e.Record.Headers.Keys()) {
-		v := e.Record.Headers.Get(k)
+	for _, k := range(e.Record().Headers().Keys()) {
+		v := e.Record().Headers().Get(k)
 		err = output.AppendHeader(k, v)
 		if err != nil {
 			return err
@@ -63,13 +63,14 @@ func WasmGoMain() string {
 	return wasmMainFile
 }
 
+// You can generate the sha via `go get`ting @branch
 const wasmGoModFile = `
 module example.com/transform
 
 go 1.18
 
 require (
-	github.com/rockwotj/redpanda/src/go/sdk wasmdev
+	github.com/rockwotj/redpanda/src/go/sdk 
 )
 `
 

@@ -44,7 +44,7 @@ type InputRecord interface {
 type OutputRecord interface {
 	Key() io.Writer
 	Value() io.Writer
-	AppendHeader(name string, value string)
+	AppendHeader(name string, value string) error
 }
 
 func CreateOutputRecord() (OutputRecord, error) {

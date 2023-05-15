@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newGenerateCommand(fs afero.Fs) *cobra.Command {
+func newInitializeCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate [PROJECT DIRECTORY]",
 		Short: "Create a template project for Wasm engine",
