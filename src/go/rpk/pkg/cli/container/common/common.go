@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	digest            = "sha256:9868227b2e95cb5bbe4e72632bca18d13304c2f1f8a2e72d5bc8b01cb70f91a1"
+	digest            = "sha256:3bb84df41e43a82f8f9066bb6e3a82e9b98a86ebebbe04755afe7a561eaa1f8c"
 	redpandaImageBase = "us-central1-docker.pkg.dev/rp-byoc-tyler/wasm-feature-branch/redpanda@" + digest
 )
 
