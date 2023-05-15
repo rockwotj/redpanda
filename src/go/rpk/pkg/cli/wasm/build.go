@@ -33,8 +33,8 @@ func newBuildCommand(fs afero.Fs) *cobra.Command {
 			output, err := c.CombinedOutput()
 			out.MaybeDie(err, "failed to build\n:", string(output))
 			fmt.Println("build successful 🚀")
-			fmt.Println("deploy your wasm function to a cluster:")
-			fmt.Println("  rpk wasm deploy redpanda_transform.wasm")
+			fmt.Println("deploy your wasm function to a topic:")
+			fmt.Println("  rpk wasm deploy [TOPIC_NAME] redpanda_transform.wasm")
 		},
 	}
 	return cmd

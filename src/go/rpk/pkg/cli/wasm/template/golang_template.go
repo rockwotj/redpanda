@@ -15,7 +15,7 @@ package main
 import (
 	"io"
 
-	"redpanda.com/wasm-sdk"
+	"github.com/rockwotj/redpanda/src/go/sdk"
 )
 
 func main() {
