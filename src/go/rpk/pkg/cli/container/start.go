@@ -417,12 +417,14 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 
 func renderClusterInteract(nodes []*common.NodeState) {
 	var brokers []string
+	var adminAddrs []string
 	for _, node := range nodes {
 		if node.Running {
 			brokers = append(brokers, nodeAddr(node.HostKafkaPort))
+			adminAddrs = append(adminAddrs, nodeAddr(node.HostAdminPort))
 		}
 	}
-	if len(brokers) == 0 {
+	if len(brokers) == 0 && len(adminAddrs) == 0 {
 		return
 	}
 
@@ -435,10 +437,12 @@ You may also set an environment variable with the comma-separated list of
 broker addresses:
 
 	export REDPANDA_BROKERS="%s"
+	export REDPANDA_API_ADMIN_ADDRS="%s"
 	rpk cluster info
 `
 	b := strings.Join(brokers, ",")
-	fmt.Printf(m, b, b)
+	a := strings.Join(adminAddrs, ",")
+	fmt.Printf(m, b, b, a)
 }
 
 func nodeAddr(port uint) string {
