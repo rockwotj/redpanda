@@ -10,29 +10,144 @@
 package wasm
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/wasm/template"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-func newInitializeCommand(fs afero.Fs) *cobra.Command {
+type transformProject struct {
+	Name  string
+	Path  string
+	Lang  WasmLang
+	Topic string
+}
+
+func newInitializeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "init [PROJECT DIRECTORY]",
+		Use:   "init",
 		Short: "Create a template project for Wasm engine",
-		Args:  cobra.ExactArgs(1),
-		Run: func(_ *cobra.Command, args []string) {
-			path, err := filepath.Abs(args[0])
-			out.MaybeDie(err, "unable to get absolute path for %q: %v", args[0], err)
-			err = executeGenerate(fs, path)
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+			name, path, err := determineTransformName(fs)
+			out.MaybeDie(err, "unable to determine transform name: %v", err)
+			lang, err := determineTransformLang()
+			out.MaybeDie(err, "unable to determine transform language: %v", err)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
+			topic, err := determineTransformTopic(cmd.Context(), adm)
+			out.MaybeDie(err, "unable to determine transform topic: %v", err)
+			err = executeGenerate(fs, transformProject{Name: name, Path: path, Lang: lang, Topic: topic})
 			out.MaybeDie(err, "unable to generate all manifest files: %v", err)
 		},
 	}
 	return cmd
+}
+
+func determineTransformTopic(ctx context.Context, adm *kadm.Client) (topic string, err error) {
+	topics, err := adm.ListTopics(ctx)
+	if err != nil {
+		return "", err
+	}
+	qs := []*survey.Question{
+		{
+			Name: "topic",
+			Prompt: &survey.Select{
+				Message: "select a topic to transform:",
+				Options: topics.Names(),
+			},
+		},
+	}
+	err = survey.Ask(qs, &topic)
+	return
+}
+
+func determineTransformLang() (lang WasmLang, err error) {
+	qs := []*survey.Question{
+		{
+			Name: "lang",
+			Prompt: &survey.Select{
+				Message: "select a language:",
+				Options: AllWasmLangs,
+			},
+		},
+	}
+	var langVal string
+	err = survey.Ask(qs, &langVal)
+	return WasmLang(langVal), err
+}
+
+func determineTransformName(fs afero.Fs) (name string, path string, err error) {
+	qs := []*survey.Question{
+		{
+			Name:   "name",
+			Prompt: &survey.Input{Message: "transform name:"},
+			Validate: func(val interface{}) error {
+				// the reflect value of the result
+				value := reflect.ValueOf(val)
+				// if the value passed in is the zero value of the appropriate type
+				if value.Kind() != reflect.String || val == "" {
+					return errors.New("value is required")
+				}
+				// make sure we can make this into an absolute directory
+				_, err := filepath.Abs(val.(string))
+				return err
+			},
+		},
+	}
+	err = survey.Ask(qs, &name)
+	if err != nil {
+		return
+	}
+	path, err = filepath.Abs(name)
+	if err != nil {
+		return
+	}
+	exists, err := afero.Exists(fs, path)
+	if err != nil {
+		return
+	}
+	if exists {
+		dir, err := afero.IsDir(fs, path)
+		if err != nil {
+			return "", "", fmt.Errorf("unable to get determine if %q is a directory: %v", path, err)
+		}
+		e, err := afero.IsEmpty(fs, path)
+		if err != nil {
+			return "", "", fmt.Errorf("unable to get determine if %q is empty: %v", path, err)
+		}
+		if !dir || !e {
+			var nuke bool
+			err = survey.AskOne(&survey.Confirm{
+				Message: fmt.Sprintf("target directory %q is not empty. Remove existing files and continue?", path),
+				Default: false,
+			}, &nuke)
+			if err != nil {
+				return "", "", fmt.Errorf("unable to get determine if %q should be removed: %v", path, err)
+			}
+			if !nuke {
+				return "", "", errors.New("Initialize cancelled")
+			}
+			err = fs.RemoveAll(path)
+			if err != nil {
+				return "", "", fmt.Errorf("unable to remove directory %q: %v", path, err)
+			}
+		}
+	}
+	err = fs.MkdirAll(path, os.ModeDir|os.ModePerm)
+	return name, path, err
 }
 
 type genFile struct {
@@ -41,47 +156,42 @@ type genFile struct {
 	permission os.FileMode
 }
 
-func generateManifest(version string) map[string][]genFile {
-	return map[string][]genFile{
-		".": {
-			genFile{name: "transform.go", content: template.WasmGoMain()},
-			genFile{name: "go.mod", content: template.WasmGoModule()},
-			genFile{name: "README.md", content: template.WasmGoReadme()},
-		},
+func generateManifest(p transformProject) (map[string][]genFile, error) {
+	switch p.Lang {
+	case WasmLangGo:
+		rpConfig, err := marshalConfig(WasmProjectConfig{Name: p.Name, Topic: p.Topic, Language: p.Lang})
+		if err != nil {
+			return nil, err
+		}
+		goMod, err := template.WasmGoModule(p.Name)
+		if err != nil {
+			return nil, err
+		}
+		return map[string][]genFile{
+			p.Path: {
+				genFile{name: "transform.go", content: template.WasmGoMain()},
+				genFile{name: "redpandarc.yaml", content: string(rpConfig)},
+				genFile{name: "go.mod", content: goMod},
+				genFile{name: "go.sum", content: template.WasmGoChecksums()},
+				genFile{name: "README.md", content: template.WasmGoReadme()},
+			},
+		}, nil
 	}
+	return nil, errors.New("unknown wasm language")
 }
 
-const defAPIVersion = "21.8.2"
-
-func executeGenerate(fs afero.Fs, path string) error {
-	var preexisting []string
-	var version string
-	for dir, templates := range generateManifest(version) {
-		for _, template := range templates {
-			file := filepath.Join(path, dir, template.name)
-			exist, err := afero.Exists(fs, file)
-			if err != nil {
-				return fmt.Errorf("unable to determine if file %q exists: %v", file, err)
-			}
-			if exist {
-				preexisting = append(preexisting, file)
-			}
-		}
-	}
-	if len(preexisting) > 0 {
-		return fmt.Errorf("files already exist; try using a new directory or removing the existing files, existing: %v", preexisting)
-	}
-
-	if err := fs.MkdirAll(path, 0o755); err != nil {
+func executeGenerate(fs afero.Fs, p transformProject) error {
+	fmt.Printf("generating project in %s...\n", p.Path)
+	manifest, err := generateManifest(p)
+	if err != nil {
 		return err
 	}
-	for dir, templates := range generateManifest(version) {
-		dirPath := filepath.Join(path, dir)
-		if err := fs.MkdirAll(dirPath, 0o755); err != nil {
+	for dir, templates := range manifest {
+		if err := fs.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 		for _, template := range templates {
-			file := filepath.Join(dirPath, template.name)
+			file := filepath.Join(dir, template.name)
 			perm := os.FileMode(0o600)
 			if template.permission > 0 {
 				perm = template.permission
@@ -91,6 +201,9 @@ func executeGenerate(fs afero.Fs, path string) error {
 			}
 		}
 	}
-	fmt.Printf("created project in %s\n", path)
+	fmt.Printf("created project in %s. now run:\n\n", p.Path)
+	fmt.Println("  cd", p.Name)
+	fmt.Println("  rpk wasm build")
+	fmt.Println("  rpk wasm deploy")
 	return nil
 }
