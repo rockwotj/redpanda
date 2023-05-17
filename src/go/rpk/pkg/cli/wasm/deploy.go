@@ -3,7 +3,6 @@ package wasm
 import (
 	"bytes"
 	"fmt"
-	"path/filepath"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -14,9 +13,9 @@ import (
 
 func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "deploy [TOPIC] [PATH]",
+		Use:   "deploy",
 		Short: "Deploy Wasm function",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -24,14 +23,14 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			api, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
-			topic := args[0]
-			path := args[1]
-			if filepath.Ext(path) != ".wasm" {
-				out.Die("cannot deploy %q: only .wasm files are supported", path)
-			}
+			wasmCfg, err := loadCfg(fs)
+			out.MaybeDie(err, "Unable to find redpandarc.yaml in the currect directory")
+
+			topic := wasmCfg.Topic
+			path := fmt.Sprintf("%s.wasm", wasmCfg.Name)
 
 			file, err := afero.ReadFile(fs, path)
-			out.MaybeDie(err, "unable to read %q: %v", path, err)
+			out.MaybeDie(err, "missing %q: %v did you run `rpk wasm build`", path, err)
 
 			err = api.DeployWasm(cmd.Context(), topic, bytes.NewReader(file))
 			out.MaybeDie(err, "unable to deploy wasm %q: %v", path, err)
