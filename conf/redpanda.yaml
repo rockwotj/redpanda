@@ -12,7 +12,7 @@
 redpanda:
   # Data directory where all the files will be stored.
   # This directory MUST resides on xfs partion.
-  data_directory: "/var/lib/redpanda/data"
+  data_directory: "~/.root/var/lib/redpanda/data"
 
   # The initial cluster nodes addresses
   seed_servers: []

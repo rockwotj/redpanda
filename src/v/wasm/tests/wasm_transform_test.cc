@@ -11,6 +11,7 @@
 #include "model/tests/random_batch.h"
 #include "seastarx.h"
 #include "wasm/wasm.h"
+#include "wasm/probe.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/thread.hh>
@@ -21,7 +22,9 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <wasmedge/enum_types.h>
 
+
 SEASTAR_THREAD_TEST_CASE(test_wasm_transforms_work) {
+    wasm::probe p;
     auto wasm_file
       = ss::util::read_entire_file_contiguous("golang_identity_transform.wasm").get0();
     auto engine = wasm::make_wasm_engine("identity_transform", std::move(wasm_file)).get0();
@@ -29,7 +32,7 @@ SEASTAR_THREAD_TEST_CASE(test_wasm_transforms_work) {
       .allow_compression = false,
       .count = 1,
     });
-    auto result_batch = engine->transform(batch.copy()).get0();
+    auto result_batch = engine->transform(batch.copy(), &p).get0();
     BOOST_CHECK_EQUAL(result_batch.copy_records(), batch.copy_records());
     BOOST_CHECK_EQUAL(result_batch, batch);
 }
