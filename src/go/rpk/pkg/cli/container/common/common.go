@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -29,10 +30,7 @@ import (
 	"go.uber.org/zap"
 )
 
-var (
-	tag               = "dev"
-	redpandaImageBase = "us-central1-docker.pkg.dev/rp-byoc-tyler/wasm-feature-branch/redpanda:" + tag
-)
+const redpandaImageBase = "us-central1-docker.pkg.dev/rp-byoc-tyler/wasm-feature-branch/redpanda:" + runtime.GOARCH
 
 const (
 	redpandaNetwork   = "redpanda"
