@@ -24,10 +24,12 @@
 
 namespace wasm {
 
+class probe;
+
 class engine {
 public:
     virtual ss::future<model::record_batch>
-    transform(model::record_batch&& batch) = 0;
+    transform(model::record_batch&& batch, probe* probe) = 0;
 
     engine() = default;
     virtual ~engine() = default;
@@ -40,9 +42,9 @@ public:
 
 class service {
   public:
-    service() = default;
+    service();
 
-    ~service() = default;
+    ~service();
     service(const service&) = delete;
     service& operator=(const service&) = delete;
     service(service&&) = default;
@@ -58,6 +60,7 @@ class service {
 
   private:
     ss::gate _gate;
+    std::unique_ptr<probe> _probe;
     absl::flat_hash_map<model::topic_namespace, std::unique_ptr<engine>> _engines;
 };
 
