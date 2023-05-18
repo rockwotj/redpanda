@@ -9,7 +9,7 @@
  */
 #include "wasm.h"
 
-#include "probe.cc"
+#include "probe.h"
 #include "bytes/bytes.h"
 #include "errc.h"
 #include "http/client.h"
@@ -346,7 +346,7 @@ public:
       create(std::string_view module_name, std::string_view module_binary);
 
     ss::future<model::record_batch>
-    transform(model::record_batch&& batch) override {
+    transform(model::record_batch&& batch, probe* probe) override {
         model::record_batch decompressed
           = co_await storage::internal::decompress_batch(std::move(batch));
 
@@ -382,12 +382,12 @@ public:
 
         // TODO: Put in a scheduling group
         co_await ss::async(
-          [this, &transformed_records](model::record_batch decompressed) {
+          [this, &transformed_records, probe](model::record_batch decompressed) {
               decompressed.for_each_record(
-                [this, &transformed_records, &decompressed](
+                [this, &transformed_records, &decompressed, probe](
                   model::record record) {
                     auto output = invoke_transform(
-                      decompressed.header(), std::move(record));
+                      decompressed.header(), std::move(record), probe);
                     transformed_records.insert(
                       transformed_records.end(),
                       std::make_move_iterator(output.begin()),
@@ -413,8 +413,9 @@ public:
     }
 
 private:
-    wasmedge_wasm_engine()
+    wasmedge_wasm_engine(ss::sstring name)
       : engine()
+      , _user_module_name(std::move(name))
       , _store_ctx(nullptr, [](auto) {})
       , _vm_ctx(nullptr, [](auto) {}){};
 
@@ -450,8 +451,8 @@ private:
     }
 
     std::vector<model::record> invoke_transform(
-      const model::record_batch_header& header, model::record&& record) {
-        auto m = _probe.auto_transform_measurement();
+      const model::record_batch_header& header, model::record&& record, probe* probe) {
+        auto m = probe->auto_transform_measurement();
         iobuf key = record.release_key();
         iobuf value = record.release_value();
         _call_ctx.emplace(transform_context{
@@ -474,11 +475,11 @@ private:
           params.size(),
           returns.data(),
           returns.size());
-        _probe.transform_complete();
+        probe->transform_complete();
         // Get the right transform name here
         if (!WasmEdge_ResultOK(result)) {
             _call_ctx = std::nullopt;
-            _probe.transform_error();
+            probe->transform_error();
             throw wasm_exception(
               ss::format("transform execution {} failed", _user_module_name),
               errc::user_code_failure);
@@ -486,7 +487,7 @@ private:
         auto user_result = WasmEdge_ValueGetI32(returns[0]);
         if (user_result != 0) {
             _call_ctx = std::nullopt;
-            _probe.transform_error();
+            probe->transform_error();
             throw wasm_exception(
               ss::format(
                 "transform execution {} resulted in error {}",
@@ -822,7 +823,6 @@ private:
     // End ABI exports
 
     ss::sstring _user_module_name;
-    probe _probe;
     mutex _mutex;
     std::vector<WasmEdgeModule> _modules;
     WasmEdgeStore _store_ctx;
@@ -1106,7 +1106,7 @@ wasmedge_wasm_engine::create(std::string_view module_name, std::string_view modu
       WasmEdge_VMCreate(config_ctx.get(), store_ctx.get()), &WasmEdge_VMDelete);
 
     auto engine = std::unique_ptr<wasmedge_wasm_engine>(
-      new wasmedge_wasm_engine());
+      new wasmedge_wasm_engine(ss::sstring(module_name)));
 
     WasmEdge_Result result;
 
@@ -1247,9 +1247,11 @@ public:
     wasm_transform_applying_reader(
       model::record_batch_reader r,
       engine* engine,
+      probe* probe,
       ss::gate::holder gate_holder)
       : _gate_holder(std::move(gate_holder))
       , _engine(engine)
+      , _probe(probe)
       , _source(std::move(r).release()) {}
 
     bool is_end_of_stream() const final { return _source->is_end_of_stream(); }
@@ -1263,14 +1265,14 @@ public:
             output.reserve(d.size());
             for (auto& batch : d) {
                 auto transformed = co_await _engine->transform(
-                  std::move(batch));
+                  std::move(batch), _probe);
                 output.emplace_back(std::move(transformed));
             }
         } else {
             auto& d = std::get<foreign_data_t>(ret);
             for (auto& batch : *d.buffer) {
                 auto transformed = co_await _engine->transform(
-                  std::move(batch));
+                  std::move(batch), _probe);
                 output.emplace_back(std::move(transformed));
             }
         }
@@ -1284,10 +1286,15 @@ public:
 private:
     ss::gate::holder _gate_holder;
     engine* _engine;
+    probe* _probe;
     std::unique_ptr<model::record_batch_reader::impl> _source;
 };
 
 } // namespace
+
+service::service() : _gate(), _probe(std::make_unique<probe>()), _engines() {}
+
+service::~service() = default;
 
 ss::future<> service::stop() { return _gate.close(); }
 
@@ -1296,7 +1303,7 @@ service::wrap_batch_reader(const model::topic_namespace& nt, model::record_batch
     auto it = _engines.find(nt);
     if (it != _engines.end()) {
         return model::make_record_batch_reader<wasm_transform_applying_reader>(
-          std::move(batch_reader), it->second.get(), _gate.hold());
+          std::move(batch_reader), it->second.get(), _probe.get(), _gate.hold());
     }
     return batch_reader;
 }
