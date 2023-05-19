@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/wasm/template"
@@ -58,15 +59,23 @@ func newInitializeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 func determineTransformTopic(ctx context.Context, adm *kadm.Client) (topic string, err error) {
 	topics, err := adm.ListTopics(ctx)
+	var topicNames []string
 	if err != nil {
-		return "", err
+		topicNames = topics.Names()
 	}
 	qs := []*survey.Question{
 		{
 			Name: "topic",
-			Prompt: &survey.Select{
+			Prompt: &survey.Input{
 				Message: "select a topic to transform:",
-				Options: topics.Names(),
+				Suggest: func(toComplete string) (ret []string) {
+					for _, t := range topicNames {
+						if strings.HasPrefix(t, toComplete) {
+							ret = append(ret, t)
+						}
+					}
+					return
+				},
 			},
 		},
 	}
@@ -90,10 +99,17 @@ func determineTransformLang() (lang WasmLang, err error) {
 }
 
 func determineTransformName(fs afero.Fs) (name string, path string, err error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = ""
+	}
 	qs := []*survey.Question{
 		{
-			Name:   "name",
-			Prompt: &survey.Input{Message: "transform name:"},
+			Name: "name",
+			Prompt: &survey.Input{
+				Message: "transform name:",
+				Default: cwd,
+			},
 			Validate: func(val interface{}) error {
 				// the reflect value of the result
 				value := reflect.ValueOf(val)
