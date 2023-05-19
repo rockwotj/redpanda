@@ -1,0 +1,10 @@
+[package]
+name = "wasmstar"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cxx = { version = "1.0.94", features = ["c++20"] }
+wasmtime = { version = "8.0.1", default-features = false, features = ["async", "cranelift"] }
+futures = "0.3.28"
+anyhow = "1.0.71"
