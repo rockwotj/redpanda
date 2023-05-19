@@ -3,6 +3,7 @@
 #include "bytes/iobuf_parser.h"
 #include "pandawasm/encoding.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/coroutine.hh>
@@ -12,6 +13,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <cstdint>
+#include <iterator>
 #include <vector>
 
 namespace pandawasm {
@@ -19,9 +21,9 @@ namespace pandawasm {
 namespace {
 
 template<typename Type, ss::future<Type> (*parse_type)(iobuf_const_parser&)>
-ss::future<std::vector<Type>> parse_section(iobuf_const_parser& parser) {
+ss::future<fragmented_vector<Type>> parse_section(iobuf_const_parser& parser) {
     auto vector_size = encoding::decode_leb128<uint32_t>(parser);
-    std::vector<Type> vector;
+    fragmented_vector<Type> vector;
     for (uint32_t i = 0; i < vector_size; ++i) {
         vector.push_back(co_await parse_type(parser));
         co_await ss::coroutine::maybe_yield();
@@ -29,9 +31,9 @@ ss::future<std::vector<Type>> parse_section(iobuf_const_parser& parser) {
     co_return vector;
 }
 template<typename Type, Type (*parse_type)(iobuf_const_parser&)>
-ss::future<std::vector<Type>> parse_section(iobuf_const_parser& parser) {
+ss::future<fragmented_vector<Type>> parse_section(iobuf_const_parser& parser) {
     auto vector_size = encoding::decode_leb128<uint32_t>(parser);
-    std::vector<Type> vector;
+    fragmented_vector<Type> vector;
     for (uint32_t i = 0; i < vector_size; ++i) {
         vector.push_back(parse_type(parser));
         co_await ss::coroutine::maybe_yield();
@@ -48,6 +50,10 @@ enum class valtype : uint8_t {
     funcref = 0x70,
     externref = 0x6F,
 };
+
+using value = named_type<
+  std::variant<uint32_t, uint64_t, float, double>,
+  struct wasm_value>;
 
 struct function_type {
     std::vector<valtype> parameter_types;
@@ -120,6 +126,12 @@ using typeidx = named_type<uint32_t, struct typeidx_tag>;
 
 typeidx parse_typeidx(iobuf_const_parser& parser) {
     return typeidx(encoding::decode_leb128<uint32_t>(parser));
+}
+
+using funcidx = named_type<uint32_t, struct funcidx_tag>;
+
+funcidx parse_funcidx(iobuf_const_parser& parser) {
+    return funcidx(encoding::decode_leb128<uint32_t>(parser));
 }
 
 struct tabletype {
@@ -205,14 +217,95 @@ mem parse_memory(iobuf_const_parser& parser) {
     return {.type = parse_memtype(parser)};
 }
 
-struct expression {
-    iobuf instructions;
-};
-
 struct global {
     globaltype type;
-    expression expr;
+    value value;
 };
+
+value parse_const_expr(iobuf_const_parser& parser) {
+    auto opcode = parser.consume_le_type<uint8_t>();
+    switch (opcode) {
+    case 0x41:
+        return value(encoding::decode_leb128<uint32_t>(parser));
+    case 0x42:
+        return value(encoding::decode_leb128<uint64_t>(parser));
+    case 0x43:
+        return value(parser.consume_type<float>());
+    case 0x44:
+        return value(parser.consume_type<float>());
+    default:
+        // TODO: Support refs, other global references, and vectors
+        throw parse_exception();
+    }
+}
+
+global parse_global(iobuf_const_parser& parser) {
+    auto type = parse_globaltype(parser);
+    auto value = parse_const_expr(parser);
+    return {.type = type, .value = value};
+}
+
+struct module_export {
+    using desc = std::variant<typeidx, tabletype, memtype, globaltype>;
+    ss::sstring name;
+    desc description;
+};
+
+module_export parse_export(iobuf_const_parser& parser) {
+    auto name = parse_name(parser);
+    auto type = parser.consume_le_type<uint8_t>();
+    module_export::desc desc;
+    switch (type) {
+    case 0x00: // func
+        desc = parse_typeidx(parser);
+        break;
+    case 0x01: // table
+        desc = parse_tabletype(parser);
+        break;
+    case 0x02: // memory
+        desc = parse_memtype(parser);
+        break;
+    case 0x03: // global
+        desc = parse_globaltype(parser);
+        break;
+    default:
+        throw parse_exception();
+    }
+    return {.name = std::move(name), .description = desc};
+}
+
+using opcode = named_type<uint8_t, struct opcode_tag>;
+using expression = ss::chunked_fifo<opcode>;
+
+
+struct code {
+  std::vector<valtype> locals;
+  expression body;
+};
+
+constexpr size_t MAX_FUNCTION_LOCALS = 256;
+
+code parse_code(iobuf_const_parser& parser) {
+  auto expected_size = encoding::decode_leb128<uint32_t>(parser);
+  auto start_position = parser.bytes_consumed();
+  
+  auto vector_size = encoding::decode_leb128<uint32_t>(parser);
+  std::vector<valtype> locals;
+  for (uint32_t i = 0; i < vector_size; ++i) {
+    auto num_locals = encoding::decode_leb128<uint32_t>(parser);
+    if (num_locals + locals.size() > MAX_FUNCTION_LOCALS) {
+      throw module_too_large_exception();
+    }
+    auto valtype = parse_valtype(parser);
+    std::fill_n(std::back_inserter(locals), num_locals, valtype);
+  }
+  auto actual = parser.bytes_consumed() - start_position;
+  if (actual != expected_size) {
+    throw parse_exception();
+  }
+  // TODO: Other validation
+  return {.locals = locals, .body = {}};
+}
 
 ss::future<> parse_one_section(iobuf_const_parser& parser) {
     auto id = parser.consume_le_type<uint8_t>();
@@ -239,10 +332,19 @@ ss::future<> parse_one_section(iobuf_const_parser& parser) {
         co_await parse_section<mem, parse_memory>(parser);
         co_return;
     case 0x06: // global section
+        co_await parse_section<global, parse_global>(parser);
+        co_return;
     case 0x07: // export section
+        co_await parse_section<module_export, parse_export>(parser);
+        co_return;
     case 0x08: // start section
+        parse_funcidx(parser);
     case 0x09: // element section
+      // TODO: Implement me
+      throw parse_exception();
     case 0x0A: // code section
+        co_await parse_section<code, parse_code>(parser);
+        co_return;
     case 0x0B: // data section
     case 0x0C: // data count section
         break;
