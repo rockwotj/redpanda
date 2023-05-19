@@ -20,15 +20,18 @@ def tag_docker_image(args):
     subprocess.check_call(["docker", "push", tag])
 
 def release_rpk(args):
+    output = subprocess.check_output(["gh", "release", "list", "--repo", "rockwotj/redpanda", "--limit", "1"], text=True)
+    latest_release = int(output.split("\t")[0].split("-")[1])
     for (goos, goarch) in [("linux", "amd64"), ("darwin", "arm64")]:
         subprocess.check_call(["task", "rpk:build", f"GOOS={goos}", f"GOARCH={goarch}"])
     build_dir = pathlib.Path(__file__).parent.parent / "vbuild/go"
     os.chdir(build_dir)
     subprocess.check_call(["zip", "-r", "rpk-linux-amd64", "linux"])
     subprocess.check_call(["zip", "-r", "rpk-darwin-arm64", "darwin"])
-    output = subprocess.check_output(["gh", "release", "list", "--limit", "1"], text=True)
-    latest_release = output.split("\t")[0]
-    subprocess.check_call(["gh", "release", "upload", latest_release, "--clobber", "rpk-linux-amd64.zip", "rpk-darwin-arm64.zip"])
+    subprocess.check_call(["gh", "release", "create",
+                           "--repo", "rockwotj/redpanda",
+                           f"wasmdev-{latest_release + 1}",
+                           "rpk-linux-amd64.zip", "rpk-darwin-arm64.zip"])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
