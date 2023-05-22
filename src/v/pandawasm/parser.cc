@@ -1,7 +1,9 @@
 #include "pandawasm/parser.h"
 
 #include "bytes/iobuf_parser.h"
+#include "pandawasm/ast.h"
 #include "pandawasm/encoding.h"
+#include "pandawasm/instruction.h"
 #include "seastarx.h"
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
@@ -41,25 +43,6 @@ ss::future<fragmented_vector<Type>> parse_section(iobuf_const_parser& parser) {
     co_return vector;
 }
 
-enum class valtype : uint8_t {
-    i32 = 0x7F,
-    i64 = 0x7E,
-    f32 = 0x7D,
-    f64 = 0x7C,
-    v128 = 0x7B,
-    funcref = 0x70,
-    externref = 0x6F,
-};
-
-using value = named_type<
-  std::variant<uint32_t, uint64_t, float, double>,
-  struct wasm_value>;
-
-struct function_type {
-    std::vector<valtype> parameter_types;
-    std::vector<valtype> result_types;
-};
-
 valtype parse_valtype(iobuf_const_parser& parser) {
     auto type_id = parser.consume_le_type<uint8_t>();
     switch (type_id) {
@@ -98,10 +81,6 @@ ss::future<function_type> parse_function_type(iobuf_const_parser& parser) {
       .result_types = std::move(result_types)};
 }
 
-struct limits {
-    uint32_t min;
-    uint32_t max; // Empty maximums use numeric_limits::max
-};
 limits parse_limits(iobuf_const_parser& parser) {
     if (parser.read_bool()) {
         auto min = encoding::decode_leb128<uint32_t>(parser);
@@ -113,8 +92,6 @@ limits parse_limits(iobuf_const_parser& parser) {
     }
 }
 
-using name = named_type<ss::sstring, struct name_tag>;
-
 name parse_name(iobuf_const_parser& parser) {
     auto str_len = encoding::decode_leb128<uint32_t>(parser);
     auto str = parser.read_string(str_len);
@@ -122,22 +99,13 @@ name parse_name(iobuf_const_parser& parser) {
     return name(str);
 }
 
-using typeidx = named_type<uint32_t, struct typeidx_tag>;
-
 typeidx parse_typeidx(iobuf_const_parser& parser) {
     return typeidx(encoding::decode_leb128<uint32_t>(parser));
 }
 
-using funcidx = named_type<uint32_t, struct funcidx_tag>;
-
 funcidx parse_funcidx(iobuf_const_parser& parser) {
     return funcidx(encoding::decode_leb128<uint32_t>(parser));
 }
-
-struct tabletype {
-    limits limits;
-    valtype reftype; // funcref | externref
-};
 
 tabletype parse_tabletype(iobuf_const_parser& parser) {
     auto reftype = parse_valtype(parser);
@@ -148,31 +116,15 @@ tabletype parse_tabletype(iobuf_const_parser& parser) {
     return {.limits = limits, .reftype = reftype};
 }
 
-struct memtype {
-    limits limits;
-};
-
 memtype parse_memtype(iobuf_const_parser& parser) {
     return {.limits = parse_limits(parser)};
 }
-
-struct globaltype {
-    valtype valtype;
-    bool mut;
-};
 
 globaltype parse_globaltype(iobuf_const_parser& parser) {
     auto valtype = parse_valtype(parser);
     auto mut = parser.read_bool();
     return {.valtype = valtype, .mut = mut};
 }
-
-struct module_import {
-    using desc = std::variant<typeidx, tabletype, memtype, globaltype>;
-    ss::sstring module;
-    ss::sstring name;
-    desc description;
-};
 
 module_import parse_import(iobuf_const_parser& parser) {
     auto module = parse_name(parser);
@@ -201,38 +153,25 @@ module_import parse_import(iobuf_const_parser& parser) {
       .description = desc};
 }
 
-struct table {
-    tabletype type;
-};
-
 table parse_table(iobuf_const_parser& parser) {
     return {.type = parse_tabletype(parser)};
 }
-
-struct mem {
-    memtype type;
-};
 
 mem parse_memory(iobuf_const_parser& parser) {
     return {.type = parse_memtype(parser)};
 }
 
-struct global {
-    globaltype type;
-    value value;
-};
-
 value parse_const_expr(iobuf_const_parser& parser) {
     auto opcode = parser.consume_le_type<uint8_t>();
     switch (opcode) {
     case 0x41:
-        return value(encoding::decode_leb128<uint32_t>(parser));
+        return value{.i32 = encoding::decode_leb128<uint32_t>(parser)};
     case 0x42:
-        return value(encoding::decode_leb128<uint64_t>(parser));
+        return value{.i64 = encoding::decode_leb128<uint64_t>(parser)};
     case 0x43:
-        return value(parser.consume_type<float>());
+        return value{.f32 = parser.consume_type<float>()};
     case 0x44:
-        return value(parser.consume_type<float>());
+        return value{.f64 = parser.consume_type<float>()};
     default:
         // TODO: Support refs, other global references, and vectors
         throw parse_exception();
@@ -244,12 +183,6 @@ global parse_global(iobuf_const_parser& parser) {
     auto value = parse_const_expr(parser);
     return {.type = type, .value = value};
 }
-
-struct module_export {
-    using desc = std::variant<typeidx, tabletype, memtype, globaltype>;
-    ss::sstring name;
-    desc description;
-};
 
 module_export parse_export(iobuf_const_parser& parser) {
     auto name = parse_name(parser);
@@ -274,37 +207,67 @@ module_export parse_export(iobuf_const_parser& parser) {
     return {.name = std::move(name), .description = desc};
 }
 
-using opcode = named_type<uint8_t, struct opcode_tag>;
-using expression = ss::chunked_fifo<opcode>;
-
-
-struct code {
-  std::vector<valtype> locals;
-  expression body;
-};
-
 constexpr size_t MAX_FUNCTION_LOCALS = 256;
 
-code parse_code(iobuf_const_parser& parser) {
-  auto expected_size = encoding::decode_leb128<uint32_t>(parser);
-  auto start_position = parser.bytes_consumed();
-  
-  auto vector_size = encoding::decode_leb128<uint32_t>(parser);
-  std::vector<valtype> locals;
-  for (uint32_t i = 0; i < vector_size; ++i) {
-    auto num_locals = encoding::decode_leb128<uint32_t>(parser);
-    if (num_locals + locals.size() > MAX_FUNCTION_LOCALS) {
-      throw module_too_large_exception();
+std::vector<instruction> parse_expression(iobuf_const_parser& parser) {
+    // TODO: Validate that operators are valid to perform
+    std::vector<instruction> instruction_vector;
+    // Ensure this isn't going to be too large
+    for (auto opcode = parser.consume_le_type<uint8_t>(); opcode != 0x0B;
+         opcode = parser.consume_le_type<uint8_t>()) {
+        switch (opcode) {
+        case 0x01:
+            instruction_vector.push_back(op(instructions::noop));
+            break;
+        case 0x0F:
+            instruction_vector.push_back(op(instructions::retrn));
+            break;
+        case 0x20:
+            instruction_vector.push_back(op(instructions::get_local_i32));
+            instruction_vector.push_back(
+              val({.i32 = encoding::decode_leb128<uint32_t>(parser)}));
+            break;
+        case 0x21:
+            instruction_vector.push_back(op(instructions::set_local_i32));
+            instruction_vector.push_back(
+              val({.i32 = encoding::decode_leb128<uint32_t>(parser)}));
+            break;
+        case 0x41:
+            instruction_vector.push_back(op(instructions::const_i32));
+            instruction_vector.push_back(
+              val({.i32 = encoding::decode_leb128<uint32_t>(parser)}));
+            break;
+        case 0x6A:
+            instruction_vector.push_back(op(instructions::add_i32));
+            break;
+        default:
+            throw parse_exception();
+        }
     }
-    auto valtype = parse_valtype(parser);
-    std::fill_n(std::back_inserter(locals), num_locals, valtype);
-  }
-  auto actual = parser.bytes_consumed() - start_position;
-  if (actual != expected_size) {
-    throw parse_exception();
-  }
-  // TODO: Other validation
-  return {.locals = locals, .body = {}};
+    return instruction_vector;
+}
+
+code parse_code(iobuf_const_parser& parser) {
+    auto expected_size = encoding::decode_leb128<uint32_t>(parser);
+    auto start_position = parser.bytes_consumed();
+
+    auto vector_size = encoding::decode_leb128<uint32_t>(parser);
+    std::vector<valtype> locals;
+    for (uint32_t i = 0; i < vector_size; ++i) {
+        auto num_locals = encoding::decode_leb128<uint32_t>(parser);
+        if (num_locals + locals.size() > MAX_FUNCTION_LOCALS) {
+            throw module_too_large_exception();
+        }
+        auto valtype = parse_valtype(parser);
+        std::fill_n(std::back_inserter(locals), num_locals, valtype);
+    }
+    auto body = parse_expression(parser);
+    auto actual = parser.bytes_consumed() - start_position;
+
+    if (actual != expected_size) {
+        throw parse_exception();
+    }
+    return {.locals = locals, .body = std::move(body)};
 }
 
 ss::future<> parse_one_section(iobuf_const_parser& parser) {
@@ -339,9 +302,10 @@ ss::future<> parse_one_section(iobuf_const_parser& parser) {
         co_return;
     case 0x08: // start section
         parse_funcidx(parser);
+        co_return;
     case 0x09: // element section
-      // TODO: Implement me
-      throw parse_exception();
+        // TODO: Implement me
+        throw parse_exception();
     case 0x0A: // code section
         co_await parse_section<code, parse_code>(parser);
         co_return;

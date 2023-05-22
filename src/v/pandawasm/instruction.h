@@ -1,37 +1,46 @@
-
+#include "ast.h"
 
 #pragma once
 
 namespace pandawasm {
 
-class Instruction {
+class value_stack final {
 public:
-    Instruction() = default;
-    virtual ~Instruction() = default;
+    void push(value);
+    value pop();
 
 private:
+    std::vector<value> _underlying;
 };
 
-namespace instruction {
+class environment final {
+public:
+    void set(uint32_t idx, value);
+    value get(uint32_t idx) const;
 
-/// Special instructions
+private:
+    std::vector<value> _underlying;
+};
 
-class Noop : public Instruction {};
+using operation
+  = void (*)(environment*, value_stack* sp, const instruction* pc);
 
-class Trap : public Instruction {};
+union instruction {
+    operation op;
+    value value;
+};
 
-class Const : public Instruction {};
+instruction op(operation);
+instruction val(value);
 
-/// Variable instructions
+namespace instructions {
 
-class GetLocal : public Instruction {};
+void noop(environment*, value_stack*, const instruction*);
+void const_i32(environment*, value_stack*, const instruction*);
+void add_i32(environment*, value_stack*, const instruction*);
+void get_local_i32(environment*, value_stack*, const instruction*);
+void set_local_i32(environment*, value_stack*, const instruction*);
+void retrn(environment*, value_stack*, const instruction*);
 
-class SetLocal : public Instruction {};
-
-class GetGlobal : public Instruction {};
-
-class SetGlobal : public Instruction {};
-
-} // namespace instruction
-
+} // namespace instructions
 } // namespace pandawasm
