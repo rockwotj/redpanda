@@ -1,11 +1,12 @@
+use anyhow::anyhow;
+use anyhow::Result;
 use bridge::ValueType;
-use cxx::UniquePtr;
+use wasmtime::AsContext;
 use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
 use futures::future::BoxFuture;
 use futures::Future;
-use anyhow::Result;
 
 #[cxx::bridge(namespace = "wasmstar")]
 mod bridge {
@@ -16,61 +17,87 @@ mod bridge {
         F64,
     }
 
-    extern "Rust" {
-        type Engine;
-        unsafe fn create_engine() -> Result<Box<Engine>>;
-        type Module;
-        unsafe fn compile_module(self: &mut Engine, wat: &str) -> Result<Box<Module>>;
-        type Store;
-        unsafe fn create_store(self: &mut Engine) -> Result<Box<Store>>;
-        type Instance;
-        unsafe fn create_instance(
-            self: &mut Store,
-            engine: &Engine,
-            module: &Module,
-        ) -> Result<Box<Instance>>;
-        type FunctionHandle;
-        unsafe fn lookup_function(
-            self: &mut Instance,
-            store: &mut Store,
-            func_name: &str,
-        ) -> Result<Box<FunctionHandle>>;
-        unsafe fn invoke<'a>(
-            self: &'a mut FunctionHandle,
-            store: &'a mut Store,
-        ) -> Box<RunningFunction<'a>>;
-
-        type RunningFunction<'a>;
-        // Pump the function and return if it finished or not
-        unsafe fn pump(self: &mut RunningFunction<'_>) -> Result<bool>;
-    }
     unsafe extern "C++" {
         include!("ffi.h");
         type AsyncResult;
         fn poll_async_result(future: &UniquePtr<AsyncResult>) -> Result<bool>;
-        fn consume_u32_async_value(future: UniquePtr<AsyncResult>) -> Result<u32>;
-        fn consume_u64_async_value(future: UniquePtr<AsyncResult>) -> Result<u64>;
 
-        type HostContext;
-        fn call_host_fn(
+        type HostFunc;
+        fn invoke(
+            func: &UniquePtr<HostFunc>,
+            memory: &mut [u8],
+            params: &[u64],
+            results: &mut [u64],
+        ) -> i32;
+    }
+
+    extern "Rust" {
+        type Engine;
+        fn create_engine() -> Result<Box<Engine>>;
+        fn create_linker(self: &mut Engine) -> Box<Linker>;
+
+        type Linker;
+        unsafe fn register_host_fn(
+            self: &mut Linker,
             module: &str,
             name: &str,
-            ctx: UniquePtr<HostContext>,
+            param_types: Vec<ValueType>,
+            result_types: Vec<ValueType>,
+            func: UniquePtr<HostFunc>,
+        ) -> Result<()>;
+
+        type Module;
+        fn compile_module(self: &mut Engine, wat: &str) -> Result<Box<Module>>;
+
+        type Store;
+        fn create_store(self: &mut Engine) -> Result<Box<Store>>;
+
+        type Instance;
+        fn create_instance(
+            self: &mut Store,
+            linker: &Linker,
+            module: &Module,
+        ) -> Result<Box<Instance>>;
+        fn register_memory(
+            self: &mut Instance,
+            store: &mut Store,
+        ) -> Result<()>;
+
+        type FunctionHandle;
+        fn lookup_function(
+            self: &mut Instance,
+            store: &mut Store,
+            func_name: &str,
+            param_types: Vec<ValueType>,
+            result_types: Vec<ValueType>,
+        ) -> Result<Box<FunctionHandle>>;
+        unsafe fn invoke<'a>(
+            self: &'a mut FunctionHandle,
+            store: &'a mut Store,
             params: &[u64],
-            result: &[u64],
-        ) -> UniquePtr<AsyncResult>;
+        ) -> Result<Box<RunningFunction<'a>>>;
+
+        type RunningFunction<'a>;
+        // Pump the function and return if it finished or not
+        fn pump(self: &mut RunningFunction<'_>) -> Result<bool>;
+        unsafe fn results(self: &RunningFunction<'_>) -> Result<Vec<u64>>;
     }
 }
 
 unsafe impl Send for bridge::AsyncResult {}
 
+struct StoreContext {
+    memory: Option<wasmtime::Memory>,
+}
+
 impl bridge::ValueType {
-    fn as_wasmtime_type(self) -> wasmtime::ValType {
-        match self {
-            ValueType::I32 => wasmtime::ValType::I32,
-            ValueType::I64 => wasmtime::ValType::I64,
-            ValueType::F32 => wasmtime::ValType::F32,
-            ValueType::F64 => wasmtime::ValType::F64,
+    fn as_wasmtime_type(&self) -> Result<wasmtime::ValType> {
+        match *self {
+            ValueType::I32 => Ok(wasmtime::ValType::I32),
+            ValueType::I64 => Ok(wasmtime::ValType::I64),
+            ValueType::F32 => Ok(wasmtime::ValType::F32),
+            ValueType::F64 => Ok(wasmtime::ValType::F64),
+            _ => Err(anyhow!("Unexpected ValueType: {}", self.repr)),
         }
     }
 }
@@ -97,45 +124,31 @@ fn create_engine() -> Result<Box<Engine>> {
 impl Engine {
     fn compile_module(self: &mut Engine, wat: &str) -> Result<Box<Module>> {
         return Ok(Box::new(Module {
-            module: wasmtime::Module::new(&self.engine, wat)?,
+            underlying: wasmtime::Module::new(&self.engine, wat)?,
         }));
     }
 
     fn create_store(self: &mut Engine) -> Result<Box<Store>> {
-        let mut store = wasmtime::Store::new(&self.engine, ());
+        let mut store = wasmtime::Store::new(&self.engine, StoreContext { memory: None });
         // If you want to see what happens when fuel is exhausted make these numbers really low.
         store.out_of_fuel_async_yield(
             /*injection_count=*/ 100_000_000_000,
             /*fuel_to_inject=*/ 100_000_000,
         );
-        return Ok(Box::new(Store { store }));
+        return Ok(Box::new(Store { underlying: store }));
     }
 }
 
 pub struct Module {
-    module: wasmtime::Module,
+    underlying: wasmtime::Module,
 }
 
 pub struct Store {
-    store: wasmtime::Store<()>,
-}
-
-pub struct Linker {
-    linker: wasmtime::Linker<()>,
+    underlying: wasmtime::Store<StoreContext>,
 }
 
 pub struct AsyncResultAdapter {
     inner: cxx::UniquePtr<bridge::AsyncResult>,
-}
-
-impl AsyncResultAdapter {
-    fn consume_u32_value(self) -> Result<u32> {
-        bridge::consume_u32_async_value(self.inner).map_err(|err| wasmtime::Error::new(err))
-    }
-
-    fn consume_u64_value(self) -> Result<u64> {
-        bridge::consume_u64_async_value(self.inner).map_err(|err| wasmtime::Error::new(err))
-    }
 }
 
 impl Future for AsyncResultAdapter {
@@ -149,56 +162,118 @@ impl Future for AsyncResultAdapter {
     }
 }
 
+pub struct Linker {
+    underlying: wasmtime::Linker<StoreContext>,
+}
+
 impl Engine {
     fn create_linker(&mut self) -> Box<Linker> {
         Box::new(Linker {
-            linker: wasmtime::Linker::new(&self.engine),
+            underlying: wasmtime::Linker::new(&self.engine),
         })
     }
 }
 
+unsafe impl Send for bridge::HostFunc {}
+unsafe impl Sync for bridge::HostFunc {}
+
 impl Linker {
-    fn add_host_fn(
+    unsafe fn register_host_fn(
         &mut self,
         module: &str,
         name: &str,
-        ctx: UniquePtr<bridge::HostContext>,
-        params: &[ValueType],
-        results: &[ValueType],
+        param_types: Vec<ValueType>,
+        result_types: Vec<ValueType>,
+        func: cxx::UniquePtr<bridge::HostFunc>,
     ) -> Result<()> {
-        self.linker.func_new_async(
+        let module_name = module.to_owned();
+        let function_name = name.to_owned();
+        self.underlying.func_new(
             module,
             name,
             wasmtime::FuncType::new(
-                params.iter().map(|t| t.as_wasmtime_type()),
-                results.iter().map(|t| t.as_wasmtime_type()),
+                param_types
+                    .iter()
+                    .map(|t| t.as_wasmtime_type())
+                    .collect::<Result<Vec<_>>>()?,
+                result_types
+                    .iter()
+                    .map(|t| t.as_wasmtime_type())
+                    .collect::<Result<Vec<_>>>()?,
             ),
-            |caller, params, results| Box::new(),
+            move |caller, params, results| {
+                let ffi_params = params
+                    .iter()
+                    .map(|v| match v {
+                        wasmtime::Val::I32(i) => Ok(*i as u64),
+                        wasmtime::Val::I64(i) => Ok(*i as u64),
+                        wasmtime::Val::F32(f) => Ok(*f as u64),
+                        wasmtime::Val::F64(f) => Ok(*f),
+                        _ => Err(anyhow!("Unexpected value type in host call: {}", v.ty())),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut ffi_results: Vec<u64> = std::iter::repeat(0).take(results.len()).collect();
+                let mut mem = match &caller.data().memory {
+                    // This again is another hack to trick the borrow checker into what we want to
+                    // do here. The wasmtime API makes it very difficult to safely get mutable memory in
+                    // a host call.
+                    Some(m) => unsafe {
+                        std::slice::from_raw_parts_mut(
+                            m.data_ptr(caller.as_context()),
+                            m.data_size(caller.as_context()))
+                    },
+                    None => {
+                        return Err(anyhow!(
+                            "Invariant failure, memory not initialized for host call."
+                        ))
+                    },
+                };
+                let errc = bridge::invoke(&func, &mut mem, &ffi_params, &mut ffi_results);
+                if errc < 0 {
+                    return Err(anyhow!(
+                        "Error calling host function {}.{}, error code: {}",
+                        module_name,
+                        function_name,
+                        errc
+                    ));
+                }
+                for (idx, (val, typ)) in
+                    ffi_results.into_iter().zip(result_types.iter()).enumerate()
+                {
+                    results[idx] = match *typ {
+                        bridge::ValueType::I32 => wasmtime::Val::I32(val as i32),
+                        bridge::ValueType::I64 => wasmtime::Val::I64(val as i64),
+                        bridge::ValueType::F32 => wasmtime::Val::F32(val as u32),
+                        bridge::ValueType::F64 => wasmtime::Val::F64(val),
+                        _ => return Err(anyhow!("Unexpected ValueType: {}", typ.repr)),
+                    }
+                }
+                Ok(())
+            },
         )?;
+        Ok(())
     }
 }
 
 impl Store {
     fn create_instance(
         self: &mut Store,
-        engine: &Engine,
+        linker: &Linker,
         module: &Module,
     ) -> Result<Box<Instance>> {
-        let mut linker = wasmtime::Linker::new(&engine.engine);
-        linker.func_new_async(
-            "host",
-            "sleep",
-            wasmtime::FuncType::new(None, None),
-            |_caller, _params, _results| async_sleep(),
-        )?;
-        let mut instance_future =
-            Box::pin(linker.instantiate_async(&mut self.store, &module.module));
+        let mut instance_future = Box::pin(
+            linker
+                .underlying
+                .instantiate_async(&mut self.underlying, &module.underlying),
+        );
         // TODO: Make creating an engine async too, until then, just poll until completion
         let mut noop_waker = core::task::Context::from_waker(futures::task::noop_waker_ref());
         loop {
             match instance_future.as_mut().poll(&mut noop_waker) {
                 Poll::Pending => {}
-                Poll::Ready(Ok(instance)) => return Ok(Box::new(Instance { instance })),
+                Poll::Ready(Ok(instance)) => {
+                    return Ok(Box::new(Instance { instance }));
+                }
                 Poll::Ready(Err(e)) => {
                     return Err(e);
                 }
@@ -212,32 +287,147 @@ pub struct Instance {
 }
 
 impl Instance {
+    fn register_memory(self: &mut Instance, store: &mut Store) -> Result<()> {
+        let mem = self.instance.get_memory(&mut store.underlying, "memory");
+        match mem {
+            Some(m) => store.underlying.data_mut().memory = Some(m),
+            None => return Err(anyhow!("Invalid module missing memory")),
+        }
+        return Ok(());
+    }
+
     fn lookup_function(
         self: &mut Instance,
         store: &mut Store,
         func_name: &str,
+        param_types: Vec<bridge::ValueType>,
+        result_types: Vec<bridge::ValueType>,
     ) -> Result<Box<FunctionHandle>> {
         let handle = self
             .instance
-            .get_typed_func::<(), ()>(&mut store.store, &func_name)
+            .get_func(&mut store.underlying, &func_name)
             .unwrap();
-        return Ok(Box::new(FunctionHandle { handle }));
+        // Validate the signature is correct
+        let ty = handle.ty(&store.underlying);
+        if ty.params().len() != param_types.len() {
+            return Err(anyhow!(
+                "Function {} has incorrect parameter signature arity {}",
+                func_name,
+                ty.params().len()
+            ));
+        }
+        for (actual, expected) in ty.params().zip(param_types.iter()) {
+            let is_match = *expected
+                == match actual {
+                    wasmtime::ValType::I32 => bridge::ValueType::I32,
+                    wasmtime::ValType::I64 => bridge::ValueType::I64,
+                    wasmtime::ValType::F32 => bridge::ValueType::F32,
+                    wasmtime::ValType::F64 => bridge::ValueType::F64,
+                    _ => {
+                        return Err(anyhow!(
+                            "Unexpected parameter type for {}: {}",
+                            func_name,
+                            actual
+                        ))
+                    }
+                };
+            if !is_match {
+                return Err(anyhow!(
+                    "Function {} has incorrect parameter signature {}",
+                    func_name,
+                    actual
+                ));
+            }
+        }
+        if ty.results().len() != result_types.len() {
+            return Err(anyhow!(
+                "Function {} has incorrect result signature arity {}",
+                func_name,
+                ty.params().len()
+            ));
+        }
+        for (actual, expected) in ty.results().zip(result_types.iter()) {
+            let is_match = *expected
+                == match actual {
+                    wasmtime::ValType::I32 => bridge::ValueType::I32,
+                    wasmtime::ValType::I64 => bridge::ValueType::I64,
+                    wasmtime::ValType::F32 => bridge::ValueType::F32,
+                    wasmtime::ValType::F64 => bridge::ValueType::F64,
+                    _ => {
+                        return Err(anyhow!(
+                            "Unexpected result type for {}: {}",
+                            func_name,
+                            actual
+                        ))
+                    }
+                };
+            if !is_match {
+                return Err(anyhow!(
+                    "Function {} has incorrect result signature {}",
+                    func_name,
+                    actual
+                ));
+            }
+        }
+        return Ok(Box::new(FunctionHandle {
+            param_types,
+            result_types,
+            handle,
+        }));
     }
 }
 
 pub struct FunctionHandle {
-    handle: wasmtime::TypedFunc<(), ()>,
+    param_types: Vec<bridge::ValueType>,
+    result_types: Vec<bridge::ValueType>,
+    handle: wasmtime::Func,
 }
 
 impl FunctionHandle {
-    fn invoke<'a>(self: &'a mut FunctionHandle, store: &'a mut Store) -> Box<RunningFunction<'a>> {
-        return Box::new(RunningFunction {
-            fut: Box::pin(self.handle.call_async(&mut store.store, ())),
+    fn invoke<'a>(
+        self: &'a mut FunctionHandle,
+        store: &'a mut Store,
+        params: &[u64],
+    ) -> Result<Box<RunningFunction<'a>>> {
+        if params.len() != self.param_types.len() {
+            return Err(anyhow!(
+                "Invalid number of parameters to function: {}",
+                params.len()
+            ));
+        }
+        let mut running = Box::new(RunningFunction {
+            params: self
+                .param_types
+                .iter()
+                .zip(params.iter())
+                .map(|(ty, v)| match *ty {
+                    bridge::ValueType::I32 => Ok(wasmtime::Val::I32(*v as i32)),
+                    bridge::ValueType::I64 => Ok(wasmtime::Val::I64(*v as i64)),
+                    bridge::ValueType::F32 => Ok(wasmtime::Val::F32(*v as u32)),
+                    bridge::ValueType::F64 => Ok(wasmtime::Val::F64(*v)),
+                    _ => Err(anyhow!("Unexpected value type in host call: {}", ty.repr)),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            results: std::iter::repeat(wasmtime::Val::I32(0))
+                .take(self.result_types.len())
+                .collect(),
+            fut: Box::pin(std::future::ready(Ok(()))),
         });
+        running.fut = Box::pin(unsafe {
+            // Trick the borrow checker into thinking this is safe (it happens to be), by roundtripping
+            // through a pointer.
+            let p = std::slice::from_raw_parts(running.params.as_ptr(), running.params.len());
+            let r =
+                std::slice::from_raw_parts_mut(running.results.as_mut_ptr(), running.results.len());
+            self.handle.call_async(&mut store.underlying, p, r)
+        });
+        return Ok(running);
     }
 }
 
-pub struct RunningFunction<'a> {
+struct RunningFunction<'a> {
+    params: Vec<wasmtime::Val>,
+    results: Vec<wasmtime::Val>,
     fut: BoxFuture<'a, Result<()>>,
 }
 
@@ -249,5 +439,19 @@ impl<'a> RunningFunction<'a> {
             Poll::Ready(Ok(())) => Ok(true),
             Poll::Ready(Err(e)) => Err(e),
         }
+    }
+
+    fn results(&self) -> Result<Vec<u64>> {
+        let mut ffi_results = Vec::with_capacity(self.results.len());
+        for val in &self.results {
+            ffi_results.push(match *val {
+                wasmtime::Val::I32(i) => i as u64,
+                wasmtime::Val::I64(i) => i as u64,
+                wasmtime::Val::F32(f) => f as u64,
+                wasmtime::Val::F64(f) => f,
+                _ => return Err(anyhow!("Unexpected ValueType: {}", val.ty())),
+            });
+        }
+        return Ok(ffi_results);
     }
 }
