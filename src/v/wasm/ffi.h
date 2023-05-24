@@ -57,8 +57,8 @@ public:
     memory(memory&&) = default;
     memory& operator=(memory&&) = default;
 
-    /* returns the host pointer for a given guest ptr and length. Can be nullptr
-     * if invalid. */
+    /* returns the host pointer for a given guest ptr and length. Throws if out
+     * of bounds. */
     virtual void* translate(size_t guest_ptr, size_t len) = 0;
 };
 

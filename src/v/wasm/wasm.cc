@@ -10,63 +10,10 @@
 #include "wasm.h"
 
 #include "wasm/probe.h"
-#include "bytes/bytes.h"
-#include "wasm/errc.h"
-#include "http/client.h"
-#include "model/metadata.h"
-#include "model/record.h"
-#include "model/record_batch_reader.h"
-#include "model/record_batch_types.h"
-#include "model/record_utils.h"
-#include "model/timestamp.h"
-#include "net/tls.h"
-#include "net/unresolved_address.h"
-#include "outcome.h"
-#include "seastarx.h"
-#include "ssx/metrics.h"
-#include "utils/hdr_hist.h"
-#include "utils/mutex.h"
-#include "utils/uri.h"
-#include "utils/vint.h"
-#include "wasm/ffi.h"
 #include "wasm/wasmtime.h"
+#include "wasm/wasmedge.h"
 
-#include <seastar/core/future.hh>
-#include <seastar/core/metrics.hh>
-#include <seastar/core/print.hh>
-#include <seastar/core/shared_ptr.hh>
-#include <seastar/core/sleep.hh>
-#include <seastar/core/smp.hh>
-#include <seastar/core/temporary_buffer.hh>
-#include <seastar/core/thread.hh>
-#include <seastar/net/tls.hh>
-
-#include <absl/base/casts.h>
-#include <absl/strings/str_split.h>
-#include <boost/beast/http/field.hpp>
-#include <boost/fusion/sequence/io/out.hpp>
-#include <boost/regex.hpp>
-#include <boost/type_traits/function_traits.hpp>
-#include <wasmedge/enum_types.h>
-#include <wasmedge/wasmedge.h>
-
-#include <algorithm>
-#include <bit>
-#include <chrono>
-#include <cstdint>
-#include <exception>
-#include <functional>
-#include <iterator>
-#include <limits>
-#include <memory>
-#include <optional>
-#include <ratio>
-#include <regex>
-#include <stdexcept>
-#include <string_view>
-#include <tuple>
-#include <type_traits>
-#include <variant>
+#include <seastar/util/log.hh>
 
 namespace wasm {
 
