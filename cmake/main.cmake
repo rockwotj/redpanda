@@ -149,5 +149,4 @@ find_package(Valgrind REQUIRED)
 # add code
 include(testing)
 include(v_library)
-include(rust_library)
 add_subdirectory(src)

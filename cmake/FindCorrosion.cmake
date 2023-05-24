@@ -1,7 +1,9 @@
+include(FetchContent)
+
 FetchContent_Declare(
     Corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG master
+    GIT_TAG v0.4-beta2
 )
 FetchContent_MakeAvailable(Corrosion)
 
@@ -15,5 +17,3 @@ if (CXXBRIDGE STREQUAL "CXXBRIDGE-NOTFOUND")
     execute_process(COMMAND ${CARGO} install cxxbridge-cmd)
     find_program(CXXBRIDGE cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
 endif()
-
-# TODO: Wrap normal usage in a function like v_cc_library

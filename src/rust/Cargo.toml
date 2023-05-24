@@ -3,8 +3,12 @@ name = "wasmstar"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
 [dependencies]
-cxx = { version = "1.0.94", features = ["c++20"] }
-wasmtime = { version = "8.0.1", default-features = false, features = ["async", "cranelift"] }
-futures = "0.3.28"
-anyhow = "1.0.71"
+cxx = { version = "1.0", features = ["std", "c++20"] }
+link-cplusplus = { version = "1.0", features = ["libc++"] }
+wasmtime = { version = "9.0", default-features = false, features = ["async", "cranelift"] }
+futures = "0.3"
+anyhow = "1.0"
