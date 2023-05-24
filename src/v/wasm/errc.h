@@ -48,6 +48,23 @@ inline const std::error_category& error_category() noexcept {
 inline std::error_code make_error_code(errc e) noexcept {
     return {static_cast<int>(e), error_category()};
 }
+
+class wasm_exception final : public std::exception {
+public:
+    explicit wasm_exception(std::string msg, errc err_code) noexcept
+      : _msg(std::move(msg))
+      , _err_code(err_code) {}
+
+    const char* what() const noexcept final { return _msg.c_str(); }
+
+    errc error_code() const noexcept { return _err_code; }
+
+private:
+    std::string _msg;
+    errc _err_code;
+};
+
+
 } // namespace wasm
 
 namespace std {

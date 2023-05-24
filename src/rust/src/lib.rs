@@ -1,12 +1,12 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use bridge::ValueType;
-use wasmtime::AsContext;
 use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
 use futures::future::BoxFuture;
 use futures::Future;
+use wasmtime::AsContext;
 
 #[cxx::bridge(namespace = "wasmstar")]
 mod bridge {
@@ -19,6 +19,7 @@ mod bridge {
 
     unsafe extern "C++" {
         include!("ffi.h");
+
         type AsyncResult;
         fn poll_async_result(future: &UniquePtr<AsyncResult>) -> Result<bool>;
 
@@ -28,7 +29,7 @@ mod bridge {
             memory: &mut [u8],
             params: &[u64],
             results: &mut [u64],
-        ) -> i32;
+        ) -> Result<()>;
     }
 
     extern "Rust" {
@@ -47,7 +48,7 @@ mod bridge {
         ) -> Result<()>;
 
         type Module;
-        fn compile_module(self: &mut Engine, wat: &str) -> Result<Box<Module>>;
+        fn compile_module(self: &mut Engine, wasm_binary: &[u8]) -> Result<Box<Module>>;
 
         type Store;
         fn create_store(self: &mut Engine) -> Result<Box<Store>>;
@@ -58,10 +59,7 @@ mod bridge {
             linker: &Linker,
             module: &Module,
         ) -> Result<Box<Instance>>;
-        fn register_memory(
-            self: &mut Instance,
-            store: &mut Store,
-        ) -> Result<()>;
+        fn register_memory(self: &mut Instance, store: &mut Store) -> Result<()>;
 
         type FunctionHandle;
         fn lookup_function(
@@ -122,9 +120,9 @@ fn create_engine() -> Result<Box<Engine>> {
 }
 
 impl Engine {
-    fn compile_module(self: &mut Engine, wat: &str) -> Result<Box<Module>> {
+    fn compile_module(self: &mut Engine, wasm_binary: &[u8]) -> Result<Box<Module>> {
         return Ok(Box::new(Module {
-            underlying: wasmtime::Module::new(&self.engine, wat)?,
+            underlying: wasmtime::Module::new(&self.engine, wasm_binary)?,
         }));
     }
 
@@ -214,29 +212,26 @@ impl Linker {
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut ffi_results: Vec<u64> = std::iter::repeat(0).take(results.len()).collect();
                 let mut mem = match &caller.data().memory {
-                    // This again is another hack to trick the borrow checker into what we want to
-                    // do here. The wasmtime API makes it very difficult to safely get mutable memory in
-                    // a host call.
                     Some(m) => unsafe {
                         std::slice::from_raw_parts_mut(
                             m.data_ptr(caller.as_context()),
-                            m.data_size(caller.as_context()))
+                            m.data_size(caller.as_context()),
+                        )
                     },
                     None => {
                         return Err(anyhow!(
                             "Invariant failure, memory not initialized for host call."
                         ))
-                    },
+                    }
                 };
-                let errc = bridge::invoke(&func, &mut mem, &ffi_params, &mut ffi_results);
-                if errc < 0 {
-                    return Err(anyhow!(
-                        "Error calling host function {}.{}, error code: {}",
+                bridge::invoke(&func, &mut mem, &ffi_params, &mut ffi_results).map_err(|e| {
+                    anyhow!(
+                        "Error calling host function {}.{}, error: {}",
                         module_name,
                         function_name,
-                        errc
-                    ));
-                }
+                        e
+                    )
+                })?;
                 for (idx, (val, typ)) in
                     ffi_results.into_iter().zip(result_types.iter()).enumerate()
                 {
@@ -311,9 +306,10 @@ impl Instance {
         let ty = handle.ty(&store.underlying);
         if ty.params().len() != param_types.len() {
             return Err(anyhow!(
-                "Function {} has incorrect parameter signature arity {}",
+                "Function {} has incorrect parameter signature arity: {} != {}",
                 func_name,
-                ty.params().len()
+                ty.params().len(),
+                param_types.len()
             ));
         }
         for (actual, expected) in ty.params().zip(param_types.iter()) {
@@ -341,9 +337,10 @@ impl Instance {
         }
         if ty.results().len() != result_types.len() {
             return Err(anyhow!(
-                "Function {} has incorrect result signature arity {}",
+                "Function {} has incorrect result signature arity: {} != {}",
                 func_name,
-                ty.params().len()
+                ty.params().len(),
+                result_types.len(),
             ));
         }
         for (actual, expected) in ty.results().zip(result_types.iter()) {
