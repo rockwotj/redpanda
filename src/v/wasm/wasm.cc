@@ -850,7 +850,11 @@ uint16_t clock_time_get(uint32_t, uint64_t, uint64_t) {
 }
 
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1409-L1418C1
-int32_t args_sizes_get(uint32_t*, uint32_t*) { return 0; }
+int32_t args_sizes_get(uint32_t* count, uint32_t* size) {
+  *count = 0;
+  *size = 0;
+  return 0; 
+}
 
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1400-L1408
 int16_t args_get(uint8_t**, uint8_t*) { return WASI_ERRNO_SUCCESS; }
@@ -859,7 +863,11 @@ int16_t args_get(uint8_t**, uint8_t*) { return WASI_ERRNO_SUCCESS; }
 int32_t environ_get(uint8_t**, uint8_t*) { return WASI_ERRNO_SUCCESS; }
 
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1428-L1437
-int32_t environ_sizes_get(uint32_t*, uint32_t*) { return 0; }
+int32_t environ_sizes_get(uint32_t* count, uint32_t* size) { 
+  *count = 0;
+  *size = 0;
+  return WASI_ERRNO_SUCCESS; 
+}
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1504-L1510
 int16_t fd_close(int32_t) { return WASI_ERRNO_NOSYS; }
 // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1518-L1527
