@@ -3,6 +3,7 @@
 #include "utils/mutex.h"
 #include "wasm/ffi.h"
 #include "wasm/probe.h"
+#include "wasm/rp_module.h"
 #include "wasm/wasi.h"
 #include "wasm/wasm.h"
 
@@ -20,22 +21,9 @@ namespace wasm::wasmedge {
 
 static ss::logger wasmedge_log("wasmedge");
 
-using read_result = int32_t;
-using write_result = int32_t;
-using input_record_handle = int32_t;
-using output_record_handle = int32_t;
-
 // Right now we only ever will have a single handle
 constexpr input_record_handle fixed_input_record_handle = 1;
-constexpr size_t max_output_records = 256;
-constexpr std::string_view redpanda_module_name = "redpanda";
-constexpr std::string_view redpanda_on_record_callback_function_name
-  = "redpanda_on_record";
 
-template<class T>
-struct dependent_false : std::false_type {};
-
-// TODO: Use a struct so there is no need for the fn pointer storage
 using WasmEdgeConfig = std::
   unique_ptr<WasmEdge_ConfigureContext, decltype(&WasmEdge_ConfigureDelete)>;
 using WasmEdgeStore
@@ -60,7 +48,18 @@ public:
       , _underlying(mem) {}
 
     void* translate(size_t guest_ptr, size_t len) final {
-        return WasmEdge_MemoryInstanceGetPointer(_underlying, guest_ptr, len);
+        void* ptr = WasmEdge_MemoryInstanceGetPointer(
+          _underlying, guest_ptr, len);
+        if (ptr == nullptr) [[unlikely]] {
+            throw wasm_exception(
+              ss::format(
+                "Out of bounds memory access in FFI: {} + {} >= {} (pages)",
+                guest_ptr,
+                len,
+                WasmEdge_MemoryInstanceGetPageSize(_underlying)),
+              errc::user_code_failure);
+        }
+        return ptr;
     }
 
 private:
@@ -68,6 +67,9 @@ private:
 };
 
 class wasmedge_wasm_engine;
+
+template<class T>
+struct dependent_false : std::false_type {};
 
 template<typename Type>
 void pack_result(WasmEdge_Value* results, Type result) {
@@ -92,22 +94,6 @@ WasmEdgeModule create_module(std::string_view name) {
     return {
       WasmEdge_ModuleInstanceCreate(wrapped), &WasmEdge_ModuleInstanceDelete};
 }
-
-struct record_builder {
-    std::optional<iobuf> key;
-    std::optional<iobuf> value;
-    std::vector<model::record_header> headers;
-};
-
-struct transform_context {
-    iobuf::iterator_consumer key;
-    iobuf::iterator_consumer value;
-    model::offset offset;
-    model::timestamp timestamp;
-    std::vector<model::record_header> headers;
-
-    std::vector<record_builder> output_records;
-};
 
 class wasmedge_wasm_engine : public engine {
 public:
@@ -182,6 +168,12 @@ public:
         co_return std::move(transformed_batch);
     }
 
+    wasi::preview1_module* wasi_module() const noexcept {
+        return _wasi_module.get();
+    }
+
+    redpanda_module* rp_module() const noexcept { return _rp_module.get(); }
+
 private:
     wasmedge_wasm_engine(ss::sstring name)
       : engine()
@@ -225,16 +217,7 @@ private:
       model::record&& record,
       probe* probe) {
         auto m = probe->auto_transform_measurement();
-        iobuf key = record.release_key();
-        iobuf value = record.release_value();
-        _call_ctx.emplace(transform_context{
-          .key = iobuf::iterator_consumer(key.cbegin(), key.cend()),
-          .value = iobuf::iterator_consumer(value.cbegin(), value.cend()),
-          .offset = model::offset(header.base_offset() + record.offset_delta()),
-          .timestamp = model::timestamp(
-            header.first_timestamp() + record.timestamp_delta()),
-          .headers = std::exchange(record.headers(), {}),
-        });
+        _rp_module->prep_call(header, record);
         std::array<WasmEdge_Value, 1> params = {
           WasmEdge_ValueGenI32(fixed_input_record_handle)};
         std::array<WasmEdge_Value, 1> returns = {WasmEdge_ValueGenI32(-1)};
@@ -250,7 +233,7 @@ private:
         probe->transform_complete();
         // Get the right transform name here
         if (!WasmEdge_ResultOK(result)) {
-            _call_ctx = std::nullopt;
+            _rp_module->post_call_unclean();
             probe->transform_error();
             throw wasm_exception(
               ss::format("transform execution {} failed", _user_module_name),
@@ -258,7 +241,7 @@ private:
         }
         auto user_result = WasmEdge_ValueGetI32(returns[0]);
         if (user_result != 0) {
-            _call_ctx = std::nullopt;
+            _rp_module->post_call_unclean();
             probe->transform_error();
             throw wasm_exception(
               ss::format(
@@ -267,210 +250,19 @@ private:
                 user_result),
               errc::user_code_failure);
         }
-        model::record_batch::uncompressed_records records;
-        records.reserve(_call_ctx->output_records.size());
-        // TODO: Encapsulate this in a builder
-        for (auto& output_record : _call_ctx->output_records) {
-            int32_t k_size = output_record.key
-                               ? int32_t(output_record.key->size_bytes())
-                               : -1;
-            int32_t v_size = output_record.value
-                               ? int32_t(output_record.value->size_bytes())
-                               : -1;
-            auto size = sizeof(model::record_attributes::type) // attributes
-                        + vint::vint_size(record.timestamp_delta())
-                        + vint::vint_size(record.offset_delta())
-                        + vint::vint_size(k_size) + std::max(k_size, 0)
-                        + vint::vint_size(v_size) + std::max(v_size, 0)
-                        + vint::vint_size(output_record.headers.size());
-            for (auto& h : output_record.headers) {
-                size += vint::vint_size(h.key_size()) + h.key().size_bytes()
-                        + vint::vint_size(h.value_size())
-                        + h.value().size_bytes();
-            }
-            auto r = model::record(
-              size,
-              record.attributes(),
-              record.timestamp_delta(),
-              record.offset_delta(),
-              k_size,
-              std::move(output_record.key).value_or(iobuf{}),
-              v_size,
-              std::move(output_record.value).value_or(iobuf{}),
-              std::move(output_record.headers));
-            records.push_back(std::move(r));
-        }
-        _call_ctx = std::nullopt;
-        return records;
+
+        return _rp_module->post_call();
     }
-
-    std::optional<transform_context> _call_ctx;
-
-    // Start ABI exports
-    // This is a small set just to get the ball rolling
-
-    read_result read_key(input_record_handle handle, ffi::array<uint8_t> data) {
-        if (handle != fixed_input_record_handle || !_call_ctx || !data) {
-            return -1;
-        }
-        size_t remaining = _call_ctx->key.segment_bytes_left();
-        size_t amount = std::min(size_t(data.size()), remaining);
-        _call_ctx->key.consume_to(amount, data.raw());
-        return int32_t(amount);
-    }
-
-    read_result
-    read_value(input_record_handle handle, ffi::array<uint8_t> data) {
-        if (handle != fixed_input_record_handle || !_call_ctx || !data) {
-            return -1;
-        }
-        size_t remaining = _call_ctx->value.segment_bytes_left();
-        size_t amount = std::min(size_t(data.size()), remaining);
-        _call_ctx->value.consume_to(amount, data.raw());
-        return int32_t(amount);
-    }
-
-    output_record_handle create_output_record() {
-        if (!_call_ctx) {
-            return std::numeric_limits<output_record_handle>::max();
-        }
-        auto idx = _call_ctx->output_records.size();
-        if (idx > max_output_records) {
-            return std::numeric_limits<output_record_handle>::max();
-        }
-        _call_ctx->output_records.emplace_back();
-        return int32_t(idx);
-    }
-
-    write_result
-    write_key(output_record_handle handle, ffi::array<uint8_t> data) {
-        if (
-          !_call_ctx || !data || handle < 0
-          || handle >= int32_t(_call_ctx->output_records.size())) {
-            return -1;
-        }
-        auto& k = _call_ctx->output_records[handle].key;
-        if (!k) {
-            k.emplace();
-        }
-        // TODO: Define a limit here?
-        k->append(data.raw(), data.size());
-        return int32_t(data.size());
-    }
-
-    write_result
-    write_value(output_record_handle handle, ffi::array<uint8_t> data) {
-        if (
-          !_call_ctx || !data || handle < 0
-          || handle >= int32_t(_call_ctx->output_records.size())) {
-            return -1;
-        }
-        // TODO: Define a limit here?
-        auto& v = _call_ctx->output_records[handle].value;
-        if (!v) {
-            v.emplace();
-        }
-        // TODO: Define a limit here?
-        v->append(data.raw(), data.size());
-        return int32_t(data.size());
-    }
-
-    int32_t num_headers(input_record_handle handle) {
-        if (!_call_ctx || handle != fixed_input_record_handle) {
-            return -1;
-        }
-        return int32_t(_call_ctx->headers.size());
-    }
-
-    int32_t
-    find_header_by_key(input_record_handle handle, ffi::array<uint8_t> key) {
-        if (!_call_ctx || !key || handle != fixed_input_record_handle) {
-            return -1;
-        }
-        std::string_view needle(reinterpret_cast<char*>(key.raw()), key.size());
-        for (int32_t i = 0; i < int32_t(_call_ctx->headers.size()); ++i) {
-            if (_call_ctx->headers[i].key() == needle) {
-                return i;
-            }
-        }
-        return -2;
-    }
-
-    int32_t get_header_key_length(input_record_handle handle, int32_t index) {
-        if (
-          !_call_ctx || handle != fixed_input_record_handle || index < 0
-          || index >= int32_t(_call_ctx->headers.size())) {
-            return -1;
-        }
-        return int32_t(_call_ctx->headers[index].key_size());
-    }
-
-    int32_t get_header_value_length(input_record_handle handle, int32_t index) {
-        if (
-          !_call_ctx || handle != fixed_input_record_handle || index < 0
-          || index >= int32_t(_call_ctx->headers.size())) {
-            return -1;
-        }
-        return int32_t(_call_ctx->headers[index].value_size());
-    }
-
-    int32_t get_header_key(
-      input_record_handle handle, int32_t index, ffi::array<uint8_t> key) {
-        if (
-          !_call_ctx || !key || handle != fixed_input_record_handle || index < 0
-          || index >= int32_t(_call_ctx->headers.size())) {
-            return -1;
-        }
-        const iobuf& k = _call_ctx->headers[index].key();
-        if (key.size() < k.size_bytes()) {
-            return -2;
-        }
-        iobuf::iterator_consumer(k.cbegin(), k.cend())
-          .consume_to(k.size_bytes(), key.raw());
-        return int32_t(k.size_bytes());
-    }
-
-    int32_t get_header_value(
-      input_record_handle handle, int32_t index, ffi::array<uint8_t> value) {
-        if (
-          !_call_ctx || !value || handle != fixed_input_record_handle
-          || index < 0 || index >= int32_t(_call_ctx->headers.size())) {
-            return -1;
-        }
-        const iobuf& v = _call_ctx->headers[index].value();
-        if (value.size() < v.size_bytes()) {
-            return -2;
-        }
-        iobuf::iterator_consumer(v.cbegin(), v.cend())
-          .consume_to(v.size_bytes(), value.raw());
-        return int32_t(v.size_bytes());
-    }
-
-    int32_t append_header(
-      output_record_handle handle,
-      ffi::array<uint8_t> key,
-      ffi::array<uint8_t> value) {
-        if (
-          !_call_ctx || handle < 0
-          || handle >= int32_t(_call_ctx->output_records.size())) {
-            return -1;
-        }
-        iobuf k;
-        k.append(key.raw(), key.size());
-        iobuf v;
-        v.append(value.raw(), value.size());
-        _call_ctx->output_records[handle].headers.emplace_back(
-          key.size(), std::move(k), value.size(), std::move(v));
-        return int32_t(key.size() + value.size());
-    }
-
-    // End ABI exports
 
     ss::sstring _user_module_name;
     mutex _mutex;
     std::vector<WasmEdgeModule> _modules;
-    WasmEdgeStore _store_ctx;
-    WasmEdgeVM _vm_ctx;
+    WasmEdgeStore _store_ctx = {nullptr, [](auto) {}};
+    WasmEdgeVM _vm_ctx = {nullptr, [](auto) {}};
+    std::unique_ptr<wasi::preview1_module> _wasi_module
+      = std::make_unique<wasi::preview1_module>();
+    std::unique_ptr<redpanda_module> _rp_module
+      = std::make_unique<redpanda_module>();
     bool _wasi_started = false;
 };
 
@@ -497,101 +289,25 @@ convert_to_wasmedge(const std::vector<ffi::val_type>& ffi_types) {
     return wasmedge_types;
 }
 
-template<typename ResultType, typename... ArgTypes>
-errc register_wasi_function(
-  const WasmEdgeModule& mod,
-  ResultType (*host_fn)(ArgTypes...),
-  std::string_view function_name) {
-    std::vector<ffi::val_type> ffi_inputs;
-    ffi::transform_types<ArgTypes...>(ffi_inputs);
-    std::vector<ffi::val_type> ffi_outputs;
-    ffi::transform_types<ResultType>(ffi_outputs);
-    std::vector<WasmEdge_ValType> inputs = convert_to_wasmedge(ffi_inputs);
-    std::vector<WasmEdge_ValType> outputs = convert_to_wasmedge(ffi_outputs);
-    auto func_type_ctx = WasmEdgeFuncType(
-      WasmEdge_FunctionTypeCreate(
-        inputs.data(), inputs.size(), outputs.data(), outputs.size()),
-      &WasmEdge_FunctionTypeDelete);
-    if (!func_type_ctx.get()) {
-        vlog(
-          wasmedge_log.warn,
-          "Failed to register host function types: {}",
-          function_name);
-        return errc::load_failure;
-    }
-    WasmEdge_FunctionInstanceContext* func = WasmEdge_FunctionInstanceCreate(
-      func_type_ctx.get(),
-      [](
-        void* data,
-        const WasmEdge_CallingFrameContext* calling_ctx,
-        const WasmEdge_Value* guest_params,
-        WasmEdge_Value* guest_results) {
-          auto host_fn = reinterpret_cast<ResultType (*)(ArgTypes...)>(data);
-          auto mem = memory(
-            WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0));
-          std::vector<uint64_t> raw_params;
-          raw_params.reserve(sizeof...(ArgTypes));
-          for (size_t i = 0; i < sizeof...(ArgTypes); ++i) {
-              raw_params.push_back(WasmEdge_ValueGetI64(guest_params[i]));
-          }
-          auto host_params = extract_parameters<ArgTypes...>(
-            &mem, raw_params, 0);
-          try {
-              if constexpr (std::is_same_v<ResultType, ss::future<>>) {
-                  std::apply(host_fn, std::move(host_params)).get();
-              } else if constexpr (std::is_same_v<ResultType, void>) {
-                  std::apply(host_fn, std::move(host_params));
-              } else {
-                  auto host_result = std::apply(
-                    host_fn, std::move(host_params));
-                  pack_result(guest_results, host_result);
-              }
-          } catch (...) {
-              vlog(
-                wasmedge_log.warn,
-                "Error executing host wasi function: {}",
-                std::current_exception());
-              // TODO: When do we fail vs terminate?
-              return WasmEdge_Result_Terminate;
-          }
-          return WasmEdge_Result_Success;
-      },
-      reinterpret_cast<void*>(host_fn),
-      0);
-    if (!func) {
-        vlog(
-          wasmedge_log.warn,
-          "Failed to register host function: {}",
-          function_name);
-        return errc::load_failure;
-    }
-    WasmEdge_ModuleInstanceAddFunction(
-      mod.get(),
-      WasmEdge_StringWrap(function_name.data(), function_name.size()),
-      func);
-    return errc::success;
-}
-
-// TODO: Unify this with the above wasi host function registeration
 template<auto value>
 struct host_function;
 template<
+  typename Module,
   typename ReturnType,
   typename... ArgTypes,
-  ReturnType (wasmedge_wasm_engine::*engine_func)(ArgTypes...)>
-struct host_function<engine_func> {
+  ReturnType (Module::*module_func)(ArgTypes...)>
+struct host_function<module_func> {
     static errc reg(
-      const std::unique_ptr<wasmedge_wasm_engine>& engine,
+      Module* host_module,
       const WasmEdgeModule& mod,
       std::string_view function_name) {
         std::vector<ffi::val_type> ffi_inputs;
         ffi::transform_types<ArgTypes...>(ffi_inputs);
         std::vector<ffi::val_type> ffi_outputs;
         ffi::transform_types<ReturnType>(ffi_outputs);
-        std::vector<WasmEdge_ValType> inputs = convert_to_wasmedge(
-          std::move(ffi_inputs));
+        std::vector<WasmEdge_ValType> inputs = convert_to_wasmedge(ffi_inputs);
         std::vector<WasmEdge_ValType> outputs = convert_to_wasmedge(
-          std::move(ffi_outputs));
+          ffi_outputs);
         auto func_type_ctx = WasmEdgeFuncType(
           WasmEdge_FunctionTypeCreate(
             inputs.data(), inputs.size(), outputs.data(), outputs.size()),
@@ -621,7 +337,7 @@ struct host_function<engine_func> {
               const WasmEdge_CallingFrameContext* calling_ctx,
               const WasmEdge_Value* guest_params,
               WasmEdge_Value* guest_returns) {
-                auto engine = static_cast<wasmedge_wasm_engine*>(data);
+                auto engine = static_cast<Module*>(data);
                 auto mem = memory(
                   WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0));
                 std::vector<uint64_t> raw_params;
@@ -632,10 +348,16 @@ struct host_function<engine_func> {
                 auto host_params = ffi::extract_parameters<ArgTypes...>(
                   &mem, raw_params, 0);
                 try {
-                    ReturnType host_result = std::apply(
-                      engine_func,
-                      std::tuple_cat(std::make_tuple(engine), host_params));
-                    pack_result(guest_returns, std::move(host_result));
+                    if constexpr (std::is_void_v<ReturnType>) {
+                        std::apply(
+                          module_func,
+                          std::tuple_cat(std::make_tuple(engine), host_params));
+                    } else {
+                        ReturnType host_result = std::apply(
+                          module_func,
+                          std::tuple_cat(std::make_tuple(engine), host_params));
+                        pack_result(guest_returns, std::move(host_result));
+                    }
                 } catch (...) {
                     vlog(
                       wasmedge_log.warn,
@@ -646,7 +368,7 @@ struct host_function<engine_func> {
                 }
                 return WasmEdge_Result_Success;
             },
-            static_cast<void*>(engine.get()),
+            static_cast<void*>(host_module),
             /*cost=*/0);
 
         if (!func) {
@@ -681,59 +403,72 @@ ss::future<std::unique_ptr<wasmedge_wasm_engine>> wasmedge_wasm_engine::create(
 
     WasmEdge_Result result;
 
-    auto redpanda_module = create_module(redpanda_module_name);
+    auto redpanda_module = create_module(redpanda_module::name);
 
-    host_function<&wasmedge_wasm_engine::read_key>::reg(
-      engine, redpanda_module, "read_key");
-    host_function<&wasmedge_wasm_engine::read_value>::reg(
-      engine, redpanda_module, "read_value");
-    host_function<&wasmedge_wasm_engine::create_output_record>::reg(
-      engine, redpanda_module, "create_output_record");
-    host_function<&wasmedge_wasm_engine::write_key>::reg(
-      engine, redpanda_module, "write_key");
-    host_function<&wasmedge_wasm_engine::write_value>::reg(
-      engine, redpanda_module, "write_value");
-    host_function<&wasmedge_wasm_engine::num_headers>::reg(
-      engine, redpanda_module, "num_headers");
-    host_function<&wasmedge_wasm_engine::find_header_by_key>::reg(
-      engine, redpanda_module, "find_header_by_key");
-    host_function<&wasmedge_wasm_engine::get_header_key_length>::reg(
-      engine, redpanda_module, "get_header_key_length");
-    host_function<&wasmedge_wasm_engine::get_header_key>::reg(
-      engine, redpanda_module, "get_header_key");
-    host_function<&wasmedge_wasm_engine::get_header_value_length>::reg(
-      engine, redpanda_module, "get_header_value_length");
-    host_function<&wasmedge_wasm_engine::get_header_value>::reg(
-      engine, redpanda_module, "get_header_value");
-    host_function<&wasmedge_wasm_engine::append_header>::reg(
-      engine, redpanda_module, "append_header");
+#define REG_HOST_FN(method)                                                    \
+    host_function<&redpanda_module::method>::reg(                              \
+      engine->rp_module(), redpanda_module, #method)
+    REG_HOST_FN(read_key);
+    REG_HOST_FN(read_value);
+    REG_HOST_FN(create_output_record);
+    REG_HOST_FN(write_key);
+    REG_HOST_FN(write_value);
+    REG_HOST_FN(num_headers);
+    REG_HOST_FN(find_header_by_key);
+    REG_HOST_FN(get_header_key_length);
+    REG_HOST_FN(get_header_key);
+    REG_HOST_FN(get_header_value_length);
+    REG_HOST_FN(get_header_value);
+    REG_HOST_FN(append_header);
+#undef REG_HOST_FN
 
-    WasmEdge_VMRegisterModuleFromImport(vm_ctx.get(), redpanda_module.get());
+    result = WasmEdge_VMRegisterModuleFromImport(
+      vm_ctx.get(), redpanda_module.get());
+    if (!WasmEdge_ResultOK(result)) {
+        vlog(
+          wasmedge_log.warn,
+          "Failed to load module: {}",
+          WasmEdge_ResultGetMessage(result));
+        throw wasm_exception(
+          ss::format(
+            "Failed to load module: {}", WasmEdge_ResultGetMessage(result)),
+          errc::load_failure);
+    }
 
-    auto wasi1_module = create_module(wasi::preview_1_module_name);
+    auto wasi1_module = create_module(wasi::preview1_module::name);
 
-    register_wasi_function(
-      wasi1_module, wasi::clock_time_get, "clock_time_get");
-    register_wasi_function(
-      wasi1_module, wasi::args_sizes_get, "args_sizes_get");
-    register_wasi_function(wasi1_module, wasi::args_get, "args_get");
-    register_wasi_function(wasi1_module, wasi::environ_get, "environ_get");
-    register_wasi_function(
-      wasi1_module, wasi::environ_sizes_get, "environ_sizes_get");
-    register_wasi_function(wasi1_module, wasi::fd_close, "fd_close");
-    register_wasi_function(wasi1_module, wasi::fd_fdstat_get, "fd_fdstat_get");
-    register_wasi_function(
-      wasi1_module, wasi::fd_prestat_get, "fd_prestat_get");
-    register_wasi_function(
-      wasi1_module, wasi::fd_prestat_dir_name, "fd_prestat_dir_name");
-    register_wasi_function(wasi1_module, wasi::fd_read, "fd_read");
-    register_wasi_function(wasi1_module, wasi::fd_write, "fd_write");
-    register_wasi_function(wasi1_module, wasi::fd_seek, "fd_seek");
-    register_wasi_function(wasi1_module, wasi::path_open, "path_open");
-    register_wasi_function(wasi1_module, wasi::proc_exit, "proc_exit");
-    register_wasi_function(wasi1_module, wasi::sched_yield, "sched_yield");
+#define REG_HOST_FN(method)                                                    \
+    host_function<&wasi::preview1_module::method>::reg(                        \
+      engine->wasi_module(), wasi1_module, #method)
+    REG_HOST_FN(clock_time_get);
+    REG_HOST_FN(args_sizes_get);
+    REG_HOST_FN(args_get);
+    REG_HOST_FN(environ_get);
+    REG_HOST_FN(environ_sizes_get);
+    REG_HOST_FN(fd_close);
+    REG_HOST_FN(fd_fdstat_get);
+    REG_HOST_FN(fd_prestat_get);
+    REG_HOST_FN(fd_prestat_dir_name);
+    REG_HOST_FN(fd_read);
+    REG_HOST_FN(fd_write);
+    REG_HOST_FN(fd_seek);
+    REG_HOST_FN(path_open);
+    REG_HOST_FN(proc_exit);
+    REG_HOST_FN(sched_yield);
+#undef REG_HOST_FN
 
-    WasmEdge_VMRegisterModuleFromImport(vm_ctx.get(), wasi1_module.get());
+    result = WasmEdge_VMRegisterModuleFromImport(
+      vm_ctx.get(), wasi1_module.get());
+    if (!WasmEdge_ResultOK(result)) {
+        vlog(
+          wasmedge_log.warn,
+          "Failed to load module: {}",
+          WasmEdge_ResultGetMessage(result));
+        throw wasm_exception(
+          ss::format(
+            "Failed to load module: {}", WasmEdge_ResultGetMessage(result)),
+          errc::load_failure);
+    }
 
     auto loader_ctx = WasmEdgeLoader(
       WasmEdge_LoaderCreate(config_ctx.get()), &WasmEdge_LoaderDelete);
@@ -805,9 +540,10 @@ ss::future<std::unique_ptr<wasmedge_wasm_engine>> wasmedge_wasm_engine::create(
     co_return std::move(engine);
 }
 
-ss::future<std::unique_ptr<engine>>
-make_wasm_engine(std::string_view wasm_module_name, std::string_view wasm_source) {
-    co_return co_await wasmedge_wasm_engine::create(wasm_module_name, wasm_source);
+ss::future<std::unique_ptr<engine>> make_wasm_engine(
+  std::string_view wasm_module_name, std::string_view wasm_source) {
+    co_return co_await wasmedge_wasm_engine::create(
+      wasm_module_name, wasm_source);
 }
 
 } // namespace wasm::wasmedge

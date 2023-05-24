@@ -7,8 +7,11 @@ v_cc_library(
     "probe.cc"
     "wasi.cc"
     "wasmtime.cc"
+    "wasmedge.cc"
     "ffi.cc"
+    "rp_module.cc"
   DEPS
+    wasmedge
     v::storage
     v::http
     v::model

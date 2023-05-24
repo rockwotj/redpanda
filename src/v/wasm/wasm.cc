@@ -10,24 +10,8 @@
 #include "wasm.h"
 
 #include "wasm/probe.h"
-#include "bytes/bytes.h"
-#include "wasm/errc.h"
-#include "http/client.h"
-#include "model/metadata.h"
-#include "model/record.h"
-#include "model/record_batch_reader.h"
-#include "model/record_batch_types.h"
-#include "model/record_utils.h"
-#include "model/timestamp.h"
-#include "outcome.h"
-#include "seastarx.h"
-#include "ssx/metrics.h"
-#include "utils/hdr_hist.h"
-#include "utils/mutex.h"
-#include "utils/uri.h"
-#include "utils/vint.h"
-#include "wasm/ffi.h"
 #include "wasm/wasmtime.h"
+#include "wasm/wasmedge.h"
 
 namespace wasm {
 
