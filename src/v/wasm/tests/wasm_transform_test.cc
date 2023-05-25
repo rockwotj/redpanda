@@ -18,12 +18,6 @@
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/file.hh>
 
-#include <boost/concept_check.hpp>
-#include <boost/test/tools/old/interface.hpp>
-#include <wasmedge/enum_types.h>
-
-#include <pthread.h>
-
 SEASTAR_THREAD_TEST_CASE(test_wasm_transforms_work) {
     wasm::probe p;
     auto wasm_file = ss::util::read_entire_file_contiguous(

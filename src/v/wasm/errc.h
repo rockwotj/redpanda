@@ -64,7 +64,6 @@ private:
     errc _err_code;
 };
 
-
 } // namespace wasm
 
 namespace std {

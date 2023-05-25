@@ -17,6 +17,7 @@
 #include "model/record_batch_reader.h"
 #include "outcome.h"
 #include "seastarx.h"
+
 #include <seastar/core/gate.hh>
 
 #include <memory>
@@ -37,11 +38,10 @@ public:
     engine& operator=(const engine&) = delete;
     engine(engine&&) = default;
     engine& operator=(engine&&) = default;
-
 };
 
 class service {
-  public:
+public:
     service();
 
     ~service();
@@ -52,18 +52,22 @@ class service {
 
     ss::future<> stop();
 
-    model::record_batch_reader wrap_batch_reader(const model::topic_namespace&, model::record_batch_reader);
-  
-    void swap_engine(const model::topic_namespace& nt, std::unique_ptr<engine>& engine) {
-      _engines[nt].swap(engine);
+    model::record_batch_reader wrap_batch_reader(
+      const model::topic_namespace&, model::record_batch_reader);
+
+    void swap_engine(
+      const model::topic_namespace& nt, std::unique_ptr<engine>& engine) {
+        _engines[nt].swap(engine);
     }
 
-  private:
+private:
     ss::gate _gate;
     std::unique_ptr<probe> _probe;
-    absl::flat_hash_map<model::topic_namespace, std::unique_ptr<engine>> _engines;
+    absl::flat_hash_map<model::topic_namespace, std::unique_ptr<engine>>
+      _engines;
 };
 
-ss::future<std::unique_ptr<engine>> make_wasm_engine(std::string_view wasm_module_name, std::string_view wasm_source);
+ss::future<std::unique_ptr<engine>> make_wasm_engine(
+  std::string_view wasm_module_name, std::string_view wasm_source);
 
 } // namespace wasm

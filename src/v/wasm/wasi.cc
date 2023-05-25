@@ -15,10 +15,11 @@ uint16_t preview1_module::clock_time_get(uint32_t, uint64_t, uint64_t*) {
     return ERRNO_NOSYS;
 }
 
-int32_t preview1_module::args_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) { 
-  *count_ptr = 0;
-  *size_ptr = 0;
-  return ERRNO_SUCCESS; 
+int32_t
+preview1_module::args_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
+    *count_ptr = 0;
+    *size_ptr = 0;
+    return ERRNO_SUCCESS;
 }
 
 int16_t preview1_module::args_get(uint8_t**, uint8_t*) { return ERRNO_SUCCESS; }
@@ -27,10 +28,11 @@ int32_t preview1_module::environ_get(uint8_t**, uint8_t*) {
     return ERRNO_SUCCESS;
 }
 
-int32_t preview1_module::environ_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) { 
-  *count_ptr = 0;
-  *size_ptr = 0;
-  return ERRNO_SUCCESS; 
+int32_t
+preview1_module::environ_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
+    *count_ptr = 0;
+    *size_ptr = 0;
+    return ERRNO_SUCCESS;
 }
 int16_t preview1_module::fd_close(int32_t) { return ERRNO_NOSYS; }
 int16_t preview1_module::fd_fdstat_get(int32_t, void*) { return ERRNO_NOSYS; }
@@ -77,7 +79,9 @@ int16_t preview1_module::fd_write(
     }
     return ERRNO_NOSYS;
 }
-int16_t preview1_module::fd_seek(int32_t, int64_t, uint8_t, uint64_t*) { return ERRNO_NOSYS; }
+int16_t preview1_module::fd_seek(int32_t, int64_t, uint8_t, uint64_t*) {
+    return ERRNO_NOSYS;
+}
 int16_t preview1_module::path_open(
   int32_t,
   uint32_t,

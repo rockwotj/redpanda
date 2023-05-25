@@ -4,6 +4,7 @@
 #include "model/record.h"
 #include "seastarx.h"
 #include "storage/parser_utils.h"
+#include "units.h"
 #include "utils/mutex.h"
 #include "vlog.h"
 #include "wasm/errc.h"
@@ -14,8 +15,8 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/thread.hh>
-#include "units.h"
 #include <seastar/coroutine/maybe_yield.hh>
+
 #include <wasmtime/config.h>
 #include <wasmtime/store.h>
 
@@ -144,8 +145,7 @@ public:
 
     void* translate(size_t guest_ptr, size_t len) final {
         auto memory_size = 64_KiB * wasmtime_memory_size(_ctx, _underlying);
-        if ((guest_ptr + len) > memory_size)
-          [[unlikely]] {
+        if ((guest_ptr + len) > memory_size) [[unlikely]] {
             throw wasm_exception(
               ss::format(
                 "Out of bounds memory access in FFI: {} + {} >= {}",
@@ -230,8 +230,8 @@ struct host_function<module_func> {
                         std::tuple_cat(
                           std::make_tuple(host_module), host_params));
                       if constexpr (
-                        std::is_integral_v<
-                          ReturnType> && sizeof(ReturnType) == 8) {
+                        std::is_integral_v<ReturnType>
+                        && sizeof(ReturnType) == 8) {
                           results[0] = wasmtime_val_t{
                             .kind = WASMTIME_I64,
                             .of = {.i64 = static_cast<int64_t>(host_result)}};

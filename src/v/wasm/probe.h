@@ -1,4 +1,5 @@
 #include "ssx/metrics.h"
+
 #include <seastar/core/metrics.hh>
 namespace wasm {
 
@@ -19,4 +20,4 @@ private:
     ss::metrics::metric_groups _public_metrics{
       ssx::metrics::public_metrics_handle};
 };
-}
+} // namespace wasm

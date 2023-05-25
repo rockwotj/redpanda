@@ -111,7 +111,9 @@ template<typename... Args>
 concept EmptyPack = sizeof...(Args) == 0;
 
 template<typename... Rest>
-void transform_types(std::vector<val_type>&) requires EmptyPack<Rest...> {
+void transform_types(std::vector<val_type>&)
+requires EmptyPack<Rest...>
+{
     // Nothing to do
 }
 
@@ -158,10 +160,10 @@ std::tuple<Type> extract_parameter(
 }
 
 template<typename... Rest>
-std::tuple<> extract_parameters(
-  ffi::memory*,
-  std::span<const uint64_t>,
-  unsigned) requires EmptyPack<Rest...> {
+std::tuple<>
+extract_parameters(ffi::memory*, std::span<const uint64_t>, unsigned)
+requires EmptyPack<Rest...>
+{
     return std::make_tuple();
 }
 
