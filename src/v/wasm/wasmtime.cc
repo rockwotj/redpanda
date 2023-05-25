@@ -14,7 +14,10 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/thread.hh>
+#include "units.h"
 #include <seastar/coroutine/maybe_yield.hh>
+#include <wasmtime/config.h>
+#include <wasmtime/store.h>
 
 #include <cstdint>
 #include <cstring>
@@ -140,14 +143,15 @@ public:
       , _underlying(mem) {}
 
     void* translate(size_t guest_ptr, size_t len) final {
-        if ((guest_ptr + len) > wasmtime_memory_size(_ctx, _underlying))
+        auto memory_size = 64_KiB * wasmtime_memory_size(_ctx, _underlying);
+        if ((guest_ptr + len) > memory_size)
           [[unlikely]] {
             throw wasm_exception(
               ss::format(
                 "Out of bounds memory access in FFI: {} + {} >= {}",
                 guest_ptr,
                 len,
-                wasmtime_memory_size(_ctx, _underlying)),
+                memory_size),
               errc::user_code_failure);
         }
         return wasmtime_memory_data(_ctx, _underlying) + guest_ptr;
@@ -177,14 +181,15 @@ struct host_function<module_func> {
         auto inputs = convert_to_wasmtime(ffi_inputs);
         auto outputs = convert_to_wasmtime(ffi_outputs);
         // Takes ownership of inputs and outputs
-        auto functype = wasm_functype_new(&inputs, &outputs);
+        handle<wasm_functype_t, wasm_functype_delete> functype{
+          wasm_functype_new(&inputs, &outputs)};
         auto* err = wasmtime_linker_define_func(
           linker,
           Module::name.data(),
           Module::name.size(),
           function_name.data(),
           function_name.size(),
-          functype,
+          functype.get(),
           [](
             void* env,
             wasmtime_caller_t* caller,
@@ -492,10 +497,21 @@ private:
 ss::future<std::unique_ptr<wasmtime_engine>> wasmtime_engine::make(
   std::string_view wasm_module_name, std::string_view wasm_source) {
     // TODO: The engine should be a global object.
-    handle<wasm_config_t, wasm_config_delete> config{wasm_config_new()};
+    wasm_config_t* config = wasm_config_new();
+
+    wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_NONE);
+    // TODO: Enable fuel consumption
+    wasmtime_config_consume_fuel_set(config, false);
+    wasmtime_config_wasm_bulk_memory_set(config, true);
+    wasmtime_config_parallel_compilation_set(config, false);
+#ifndef NDEBUG
+    wasmtime_config_cranelift_debug_verifier_set(config, true);
+#endif
+    wasmtime_config_max_wasm_stack_set(config, 8_KiB);
+    wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
 
     handle<wasm_engine_t, wasm_engine_delete> engine{
-      wasm_engine_new_with_config(config.get())};
+      wasm_engine_new_with_config(config)};
 
     wasmtime_module_t* user_module_ptr = nullptr;
     handle<wasmtime_error_t, wasmtime_error_delete> error{wasmtime_module_new(
