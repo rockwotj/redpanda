@@ -144,7 +144,7 @@ public:
       , _underlying(mem) {}
 
     void* translate(size_t guest_ptr, size_t len) final {
-        auto memory_size = 64_KiB * wasmtime_memory_size(_ctx, _underlying);
+        auto memory_size = wasmtime_memory_data_size(_ctx, _underlying);
         if ((guest_ptr + len) > memory_size) [[unlikely]] {
             throw wasm_exception(
               ss::format(
@@ -266,21 +266,50 @@ void register_wasi_module(
   wasi::preview1_module* mod, wasmtime_linker_t* linker) {
 #define REG_HOST_FN(name)                                                      \
     host_function<&wasi::preview1_module::name>::reg(linker, mod, #name)
-    REG_HOST_FN(clock_time_get);
     REG_HOST_FN(args_get);
     REG_HOST_FN(args_sizes_get);
     REG_HOST_FN(environ_get);
     REG_HOST_FN(environ_sizes_get);
+    REG_HOST_FN(clock_res_get);
+    REG_HOST_FN(clock_time_get);
+    REG_HOST_FN(fd_advise);
+    REG_HOST_FN(fd_allocate);
     REG_HOST_FN(fd_close);
+    REG_HOST_FN(fd_datasync);
     REG_HOST_FN(fd_fdstat_get);
+    REG_HOST_FN(fd_fdstat_set_flags);
+    REG_HOST_FN(fd_filestat_get);
+    REG_HOST_FN(fd_filestat_set_size);
+    REG_HOST_FN(fd_filestat_set_times);
+    REG_HOST_FN(fd_pread);
     REG_HOST_FN(fd_prestat_get);
     REG_HOST_FN(fd_prestat_dir_name);
+    REG_HOST_FN(fd_pwrite);
     REG_HOST_FN(fd_read);
-    REG_HOST_FN(fd_write);
+    REG_HOST_FN(fd_readdir);
+    REG_HOST_FN(fd_renumber);
     REG_HOST_FN(fd_seek);
+    REG_HOST_FN(fd_sync);
+    REG_HOST_FN(fd_tell);
+    REG_HOST_FN(fd_write);
+    REG_HOST_FN(path_create_directory);
+    REG_HOST_FN(path_filestat_get);
+    REG_HOST_FN(path_filestat_set_times);
+    REG_HOST_FN(path_link);
     REG_HOST_FN(path_open);
+    REG_HOST_FN(path_readlink);
+    REG_HOST_FN(path_remove_directory);
+    REG_HOST_FN(path_rename);
+    REG_HOST_FN(path_symlink);
+    REG_HOST_FN(path_unlink_file);
+    REG_HOST_FN(poll_oneoff);
     REG_HOST_FN(proc_exit);
     REG_HOST_FN(sched_yield);
+    REG_HOST_FN(random_get);
+    REG_HOST_FN(sock_accept);
+    REG_HOST_FN(sock_recv);
+    REG_HOST_FN(sock_send);
+    REG_HOST_FN(sock_shutdown);
 #undef REG_HOST_FN
 }
 
