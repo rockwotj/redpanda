@@ -84,7 +84,7 @@ const wasmGoModFile = `module {{.}}
 go 1.18
 
 require (
-	github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230515173246-4c7537407fcd
+	github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230526161832-f2effb645fef
 )
 `
 
@@ -92,8 +92,9 @@ func WasmGoModule(name string) (string, error) {
 	return ExecTemplate("go.mod", wasmGoModFile, name)
 }
 
-const wasmGoSumFile = `github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230515173246-4c7537407fcd h1:gWU/UBF56nwAy1SsfMWzVQCEN5DtpVE0MKP7Qs9jehs=
-github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230515173246-4c7537407fcd/go.mod h1:vF5WfFB2Ze9hEYCK++UEO8nNUQ6gz4pMuM/KRIOHPJg=
+const wasmGoSumFile = `
+github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230526161832-f2effb645fef h1:O1bJvNQeirCYrAqQu8deFDLyuHNS1bkTSZCxVdXfhkc=
+github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230526161832-f2effb645fef/go.mod h1:vF5WfFB2Ze9hEYCK++UEO8nNUQ6gz4pMuM/KRIOHPJg=
 `
 
 func WasmGoChecksums() string {
