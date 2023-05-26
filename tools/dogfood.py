@@ -10,7 +10,7 @@ import os
 BASE_DOCKER_IMAGE = "us-central1-docker.pkg.dev/rp-byoc-tyler/wasm-feature-branch/redpanda"
 
 def build_docker_image(args):
-    subprocess.check_call(["task", "rp:build-docker-image", "BUILD_TYPE=release", "PKG_FORMATS=deb"])
+    subprocess.check_call(["task", "rp:clean-pkg", "rp:build-docker-image", "BUILD_TYPE=release", "PKG_FORMATS=deb"])
 
 def tag_docker_image(args):
     output = json.loads(subprocess.check_output(["docker", "inspect", "localhost/redpanda:dev"]))
@@ -18,6 +18,12 @@ def tag_docker_image(args):
     tag = f"{BASE_DOCKER_IMAGE}:{arch}"
     subprocess.check_call(["docker", "tag", "localhost/redpanda:dev", tag])
     subprocess.check_call(["docker", "push", tag])
+
+def upload_deb(args):
+    build_dir = pathlib.Path(__file__).parent.parent / "vbuild/release/clang/dist/debian/"
+    deb_files = list(build_dir.glob("*.deb"))
+    assert len(deb_files) == 1, f"Expected only a single deb file, found: {deb_files}"
+    subprocess.check_call(["gcloud", "artifacts", "apt", "upload", "wasm-feature-branch-apt", f"--source={deb_files[0]}"])
 
 def release_rpk(args):
     output = subprocess.check_output(["gh", "release", "list", "--repo", "rockwotj/redpanda", "--limit", "1"], text=True)
@@ -42,6 +48,8 @@ if __name__ == "__main__":
     parser_foo.set_defaults(func=release_rpk)
     parser_foo = subparsers.add_parser('build_docker_image')
     parser_foo.set_defaults(func=build_docker_image)
+    parser_foo = subparsers.add_parser('upload_deb')
+    parser_foo.set_defaults(func=upload_deb)
     args = parser.parse_args()
     if not hasattr(args, 'func'):
             print('Unrecognized command', file=sys.stderr)
