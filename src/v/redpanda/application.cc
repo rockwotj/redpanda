@@ -1467,13 +1467,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
     syschecks::systemd_message("Creating wasm service").get();
     construct_service(wasm_service).get();
 
-    syschecks::systemd_message("Creating tx coordinator mapper").get();
-    construct_service(
-      tx_coordinator_ntp_mapper, std::ref(metadata_cache), model::tx_manager_nt)
-      .get();
-
-    construct_service(wasm_service).get();
-
     syschecks::systemd_message("Creating tx coordinator frontend").get();
     // usually it'a an anti-pattern to let the same object be accessed
     // from different cores without precautionary measures like foreign
