@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark import matrix
+from ducktape.tests.test import Test
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
@@ -16,7 +17,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
-from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
+from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type, make_redpanda_service
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import BucketView
 from rptest.util import expect_exception
@@ -35,6 +36,7 @@ class OpenBenchmarkSelfTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
 
+    @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
     @cluster(num_nodes=6)
     @matrix(driver=["SIMPLE_DRIVER"], workload=["SIMPLE_WORKLOAD"])
     def test_default_omb_configuration(self, driver, workload):
@@ -53,6 +55,7 @@ class KgoRepeaterSelfTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
 
+    @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
     @cluster(num_nodes=4)
     def test_kgo_repeater(self):
         topic = 'test'
@@ -77,6 +80,7 @@ class KgoVerifierSelfTest(PreallocNodesTest):
                          *args,
                          **kwargs)
 
+    @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
     @cluster(num_nodes=4)
     def test_kgo_verifier(self):
         topic = 'test'
@@ -230,3 +234,32 @@ class BucketScrubSelfTest(RedpandaTest):
             self.redpanda.nodes,
             lambda n: self.redpanda.start_node(n, first_start=False),
             parallel=True)
+
+
+class SimpleSelfTest(Test):
+    """
+    Verify instantiation of a RedpandaServiceBase subclass through the factory method.
+
+    Runs a few methods of RedpandaServiceBase.
+    """
+    def __init__(self, test_context):
+        super(SimpleSelfTest, self).__init__(test_context)
+        self.redpanda = make_redpanda_service(test_context, 3)
+
+    def setUp(self):
+        self.redpanda.start()
+
+    @cluster(num_nodes=3, check_allowed_error_logs=False)
+    def test_cloud(self):
+        """
+        Execute a few of the methods that will connect to the k8s pod.
+        """
+
+        node_memory = float(self.redpanda.get_node_memory_mb())
+        assert node_memory > 1.0
+
+        node_cpu_count = self.redpanda.get_node_cpu_count()
+        assert node_cpu_count > 0
+
+        node_disk_free = self.redpanda.get_node_disk_free()
+        assert node_disk_free > 0

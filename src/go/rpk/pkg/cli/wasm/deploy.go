@@ -17,10 +17,10 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Deploy Wasm function",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			api, err := admin.NewClient(fs, cfg)
+			api, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
 			wasmCfg, err := loadCfg(fs)

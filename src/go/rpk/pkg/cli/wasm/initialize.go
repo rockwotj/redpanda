@@ -35,19 +35,19 @@ type transformProject struct {
 	Topic string
 }
 
-func newInitializeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Create a template project for Wasm engine",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
-			cfg, err := p.Load(fs)
+			p, err := cfg.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			name, path, err := determineTransformName(fs)
 			out.MaybeDie(err, "unable to determine transform name: %v", err)
 			lang, err := determineTransformLang()
 			out.MaybeDie(err, "unable to determine transform language: %v", err)
-			adm, err := kafka.NewAdmin(fs, p, cfg)
+			adm, err := kafka.NewAdmin(fs, p)
 			topic, err := determineTransformTopic(cmd.Context(), adm)
 			out.MaybeDie(err, "unable to determine transform topic: %v", err)
 			err = executeGenerate(fs, transformProject{Name: name, Path: path, Lang: lang, Topic: topic})
