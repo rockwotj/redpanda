@@ -4834,6 +4834,13 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
     co_return std::move(rep);
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::list_wasm(
+  std::unique_ptr<ss::http::request>) {
+    auto topics = _wasm_service.local().list_engines();
+    co_return ss::json::json_return_type({});
+}
+
 void admin_server::register_wasm_routes() {
     register_route_raw_async<user>(
       ss::httpd::wasm_json::deploy_wasm,
@@ -4841,6 +4848,11 @@ void admin_server::register_wasm_routes() {
         std::unique_ptr<ss::http::request> req,
         std::unique_ptr<ss::http::reply> rep) {
           return deploy_wasm(std::move(req), std::move(rep));
+      });
+    register_route<user>(
+      ss::httpd::wasm_json::list_wasm,
+      [this](auto req) {
+          return list_wasm(std::move(req));
       });
 }
 

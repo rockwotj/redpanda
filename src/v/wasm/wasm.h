@@ -32,12 +32,19 @@ public:
     virtual ss::future<model::record_batch>
     transform(model::record_batch&& batch, probe* probe) = 0;
 
+    virtual std::string_view function_name() const = 0;
+
     engine() = default;
     virtual ~engine() = default;
     engine(const engine&) = delete;
     engine& operator=(const engine&) = delete;
     engine(engine&&) = default;
     engine& operator=(engine&&) = default;
+};
+
+struct live_wasm_function {
+  ss::sstring function_name;
+  model::topic_namespace topic_namespace;
 };
 
 class service {
@@ -53,7 +60,9 @@ public:
     ss::future<> stop();
 
     model::record_batch_reader wrap_batch_reader(
-      const model::topic_namespace&, model::record_batch_reader);
+      const model::topic_namespace_view&, model::record_batch_reader);
+
+    std::vector<live_wasm_function> list_engines() const;
 
     void swap_engine(
       const model::topic_namespace& nt, std::unique_ptr<engine>& engine) {
@@ -63,7 +72,11 @@ public:
 private:
     ss::gate _gate;
     std::unique_ptr<probe> _probe;
-    absl::flat_hash_map<model::topic_namespace, std::unique_ptr<engine>>
+    absl::flat_hash_map<
+      model::topic_namespace,
+      std::unique_ptr<engine>,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>
       _engines;
 };
 

@@ -1,39 +1,72 @@
 {
-    "apiVersion": "0.0.1",
-    "swaggerVersion": "1.2",
-    "basePath": "/v1",
-    "resourcePath": "/wasm",
-    "produces": [
-        "application/json"
-    ],
-    "apis": [
+  "apiVersion": "0.0.1",
+  "swaggerVersion": "1.2",
+  "basePath": "/v1",
+  "resourcePath": "/wasm",
+  "produces": [
+    "application/json"
+  ],
+  "apis": [
+    {
+      "path": "/v1/wasm/{namespace}/{topic}/deploy",
+      "operations": [
         {
-            "path": "/v1/wasm/{namespace}/{topic}/deploy",
-            "operations": [
-                {
-                    "method": "POST",
-                    "summary": "Deploy wasm",
-                    "type": "void",
-                    "nickname": "deploy_wasm",
-                    "produces": [
-                        "application/json"
-                    ],
-                    "parameters": [
-                        {
-                            "name": "namespace",
-                            "in": "path",
-                            "required": true,
-                            "type": "string"
-                        },
-                        {
-                            "name": "topic",
-                            "in": "path",
-                            "required": true,
-                            "type": "string"
-                        }
-                    ]
-                }
-            ]
+          "method": "POST",
+          "summary": "Deploy wasm",
+          "type": "void",
+          "nickname": "deploy_wasm",
+          "produces": [
+            "application/json"
+          ],
+          "parameters": [
+            {
+              "name": "namespace",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            }
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "path": "/v1/wasm/list",
+      "operations": [
+        {
+          "method": "GET",
+          "summary": "List wasm functions",
+          "nickname": "list_wasm",
+          "produces": [
+            "application/json"
+          ],
+          "type": "array",
+          "items": {
+            "type": "wasm_enable_topic"
+          }
+        }
+      ]
+    }
+  ],
+  "models": {
+    "wasm_enable_topic": {
+      "id": "wasm_enabled_topic",
+      "properties": {
+        "topic_namespace": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        },
+        "function": {
+          "type": "string"
+        }
+      }
+    }
+  }
 }

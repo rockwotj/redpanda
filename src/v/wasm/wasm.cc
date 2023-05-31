@@ -83,7 +83,7 @@ service::~service() = default;
 ss::future<> service::stop() { return _gate.close(); }
 
 model::record_batch_reader service::wrap_batch_reader(
-  const model::topic_namespace& nt, model::record_batch_reader batch_reader) {
+  const model::topic_namespace_view& nt, model::record_batch_reader batch_reader) {
     auto it = _engines.find(nt);
     if (it != _engines.end()) {
         return model::make_record_batch_reader<wasm_transform_applying_reader>(
@@ -93,6 +93,15 @@ model::record_batch_reader service::wrap_batch_reader(
           _gate.hold());
     }
     return batch_reader;
+}
+
+std::vector<live_wasm_function> service::list_engines() const {
+  std::vector<live_wasm_function> functions;
+  functions.reserve(_engines.size());
+  for (auto& [tp_ns, engine] : _engines) {
+    functions.emplace_back(ss::sstring(engine->function_name()), tp_ns);
+  }
+  return functions;
 }
 
 ss::future<std::unique_ptr<engine>> make_wasm_engine(

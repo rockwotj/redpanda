@@ -346,7 +346,7 @@ ss::future<> replicate_batcher::do_flush(
          * replicate batcher
          */
         if (leader_result && needs_flush) {
-            (void)stm->wait_for_majority()
+            ssx::background = stm->wait_for_majority()
               .then([holder = std::move(holder),
                      notifications = std::move(notifications)](
                       result<replicate_result> quorum_result) mutable {

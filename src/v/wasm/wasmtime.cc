@@ -343,6 +343,10 @@ public:
 
     ~wasmtime_engine() override = default;
 
+    std::string_view function_name() const final {
+      return _user_module_name;
+    }
+
     ss::future<model::record_batch>
     transform(model::record_batch&& batch, probe* probe) override {
         model::record_batch decompressed
