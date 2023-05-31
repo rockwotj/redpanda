@@ -43,8 +43,8 @@ public:
 };
 
 struct live_wasm_function {
-  ss::sstring function_name;
-  model::topic_namespace topic_namespace;
+    ss::sstring function_name;
+    model::topic_namespace topic_namespace;
 };
 
 class service {

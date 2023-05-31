@@ -4800,10 +4800,10 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
     try {
         co_await _wasm_service.invoke_on_all(
           [&content, &rollback_engines, &nt](wasm::service& service) {
-              // TODO: Split compilation and instance creation so we don't have to compile
-              // on each core.
-              return wasm::make_wasm_engine(nt.tp(), content).then(
-                [&service, &rollback_engines, &nt](auto engine) {
+              // TODO: Split compilation and instance creation so we don't have
+              // to compile on each core.
+              return wasm::make_wasm_engine(nt.tp(), content)
+                .then([&service, &rollback_engines, &nt](auto engine) {
                     service.swap_engine(nt, engine);
                     rollback_engines[ss::this_shard_id()] = std::move(engine);
                 });
@@ -4835,10 +4835,30 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::list_wasm(
-  std::unique_ptr<ss::http::request>) {
+admin_server::list_wasm(std::unique_ptr<ss::http::request>) {
+    using namespace ss::httpd::wasm_json;
     auto topics = _wasm_service.local().list_engines();
-    co_return ss::json::json_return_type({});
+    std::vector<wasm_enabled_topic> output;
+    output.reserve(topics.size());
+    for (auto& topic : topics) {
+        wasm_enabled_topic tp;
+        tp.ns = topic.topic_namespace.ns();
+        tp.topic = topic.topic_namespace.tp();
+        tp.function = topic.function_name;
+        output.push_back(std::move(tp));
+    }
+    co_return output;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::undeploy_wasm(std::unique_ptr<ss::http::request> req) {
+    auto nt = model::topic_namespace(
+      model::ns(req->param["namespace"]), model::topic(req->param["topic"]));
+    co_await _wasm_service.invoke_on_all([&nt](wasm::service& service) {
+        std::unique_ptr<wasm::engine> engine = nullptr;
+        service.swap_engine(nt, engine);
+    });
+    co_return ss::json::json_void();
 }
 
 void admin_server::register_wasm_routes() {
@@ -4849,11 +4869,12 @@ void admin_server::register_wasm_routes() {
         std::unique_ptr<ss::http::reply> rep) {
           return deploy_wasm(std::move(req), std::move(rep));
       });
-    register_route<user>(
-      ss::httpd::wasm_json::list_wasm,
-      [this](auto req) {
-          return list_wasm(std::move(req));
-      });
+    register_route<user>(ss::httpd::wasm_json::list_wasm, [this](auto req) {
+        return list_wasm(std::move(req));
+    });
+    register_route<user>(ss::httpd::wasm_json::undeploy_wasm, [this](auto req) {
+        return undeploy_wasm(std::move(req));
+    });
 }
 
 constexpr std::string_view to_string_view(service_kind kind) {

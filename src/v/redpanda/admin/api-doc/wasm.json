@@ -36,6 +36,34 @@
       ]
     },
     {
+      "path": "/v1/wasm/{namespace}/{topic}/deploy",
+      "operations": [
+        {
+          "method": "DELETE",
+          "summary": "Undeploy wasm",
+          "type": "void",
+          "nickname": "undeploy_wasm",
+          "produces": [
+            "application/json"
+          ],
+          "parameters": [
+            {
+              "name": "namespace",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "path": "/v1/wasm/list",
       "operations": [
         {
@@ -47,17 +75,17 @@
           ],
           "type": "array",
           "items": {
-            "type": "wasm_enable_topic"
+            "type": "wasm_enabled_topic"
           }
         }
       ]
     }
   ],
   "models": {
-    "wasm_enable_topic": {
+    "wasm_enabled_topic": {
       "id": "wasm_enabled_topic",
       "properties": {
-        "topic_namespace": {
+        "ns": {
           "type": "string"
         },
         "topic": {
