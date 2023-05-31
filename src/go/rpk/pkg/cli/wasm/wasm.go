@@ -26,6 +26,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newInitializeCommand(fs, p),
 		newBuildCommand(fs),
 		newDeployCommand(fs, p),
+		newListCommand(fs, p),
 	)
 	return cmd
 }

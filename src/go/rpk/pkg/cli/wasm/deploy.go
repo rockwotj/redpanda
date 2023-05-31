@@ -32,7 +32,7 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			file, err := afero.ReadFile(fs, path)
 			out.MaybeDie(err, "missing %q: %v did you run `rpk wasm build`", path, err)
 
-			err = api.DeployWasm(cmd.Context(), topic, bytes.NewReader(file))
+			err = api.DeployWasmTransform(cmd.Context(), topic, bytes.NewReader(file))
 			out.MaybeDie(err, "unable to deploy wasm %q: %v", path, err)
 
 			fmt.Println("Deploy successful!")
