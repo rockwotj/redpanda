@@ -107,8 +107,10 @@ std::vector<live_wasm_function> service::list_engines() const {
 
 ss::future<std::unique_ptr<engine>> make_wasm_engine(
   std::string_view wasm_module_name, std::string_view wasm_source) {
-    co_return co_await wasmtime::make_wasm_engine(
+    auto engine = co_await wasmtime::make_wasm_engine(
       wasm_module_name, wasm_source);
+    co_await engine->start();
+    co_return engine;
 }
 
 } // namespace wasm

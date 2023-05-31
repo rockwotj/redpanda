@@ -4826,8 +4826,20 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
             // 😱 What do we do?
             vlog(logger.error, "Unable to rollback wasm engines {}", ex.what());
         }
+        for (auto& engine : rollback_engines) {
+            if (!engine.has_value() || engine.value() == nullptr) {
+                continue;
+            }
+            co_await engine->get()->stop();
+        }
         throw ss::httpd::server_error_exception(
           fmt::format("Unknown issue deploying wasm"));
+    }
+    for (auto& engine : rollback_engines) {
+        if (!engine.has_value() || engine.value() == nullptr) {
+            continue;
+        }
+        co_await engine->get()->stop();
     }
     rep->set_status(ss::http::reply::status_type::ok);
     rep->write_body("json", ss::json::json_void().to_json());
@@ -4857,6 +4869,10 @@ admin_server::undeploy_wasm(std::unique_ptr<ss::http::request> req) {
     co_await _wasm_service.invoke_on_all([&nt](wasm::service& service) {
         std::unique_ptr<wasm::engine> engine = nullptr;
         service.swap_engine(nt, engine);
+        if (engine) {
+            return engine->stop();
+        }
+        return ss::now();
     });
     co_return ss::json::json_void();
 }

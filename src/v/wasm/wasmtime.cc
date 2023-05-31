@@ -347,6 +347,14 @@ public:
       return _user_module_name;
     }
 
+    ss::future<> start() final {
+      return initialize_wasi();
+    }
+
+    ss::future<> stop() final {
+      return _gate.close();
+    }
+
     ss::future<model::record_batch>
     transform(model::record_batch&& batch, probe* probe) override {
         model::record_batch decompressed
@@ -375,12 +383,8 @@ public:
         // In the case of an async host call, don't allow multiple
         // calls into the wasm engine concurrently (I think there
         // are mutex in wasmedge that would deadlock for us).
-        auto holder = _mutex.get_units();
-
-        if (!_wasi_started) {
-            co_await initialize_wasi();
-            _wasi_started = true;
-        }
+        auto m_holder = _mutex.get_units();
+        auto g_holder = _gate.hold();
 
         // TODO: Put in a scheduling group
         co_await model::for_each_record(
@@ -517,6 +521,7 @@ private:
 
     std::string _user_module_name;
     mutex _mutex;
+    ss::gate _gate;
     handle<wasm_engine_t, wasm_engine_delete> _engine;
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
     handle<wasmtime_module_t, wasmtime_module_delete> _user_module;
@@ -524,7 +529,6 @@ private:
     std::unique_ptr<wasi::preview1_module> _wasi_module;
     handle<wasmtime_linker_t, wasmtime_linker_delete> _linker;
     wasmtime_instance_t _instance;
-    bool _wasi_started = false;
 };
 
 ss::future<std::unique_ptr<wasmtime_engine>> wasmtime_engine::make(

@@ -34,6 +34,9 @@ public:
 
     virtual std::string_view function_name() const = 0;
 
+    virtual ss::future<> start() = 0;
+    virtual ss::future<> stop() = 0;
+
     engine() = default;
     virtual ~engine() = default;
     engine(const engine&) = delete;
