@@ -380,11 +380,8 @@ public:
             header.ctx.term, ss::this_shard_id()),
         };
 
-        // In the case of an async host call, don't allow multiple
-        // calls into the wasm engine concurrently (I think there
-        // are mutex in wasmedge that would deadlock for us).
-        auto m_holder = _mutex.get_units();
         auto g_holder = _gate.hold();
+        auto m_holder = _mutex.get_units();
 
         // TODO: Put in a scheduling group
         co_await model::for_each_record(
