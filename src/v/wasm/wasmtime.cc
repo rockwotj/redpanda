@@ -352,6 +352,8 @@ public:
     }
 
     ss::future<> stop() final {
+      auto m_holder = _mutex.get_units();
+      _mutex.broken();
       return _gate.close();
     }
 
