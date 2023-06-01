@@ -4791,55 +4791,77 @@ void admin_server::register_shadow_indexing_routes() {
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> rep) {
-    auto nt = model::topic_namespace(
-      model::ns(req->param["namespace"]), model::topic(req->param["topic"]));
+    auto input_nt = model::topic_namespace(
+      model::ns(req->param["namespace"]),
+      model::topic(req->param["input_topic"]));
+    auto output_nt = model::topic_namespace(
+      model::ns(req->param["namespace"]),
+      model::topic(req->param["output_topic"]));
+    auto name = req->param["function_name"];
     auto content = req->content;
-    std::vector<std::optional<std::unique_ptr<wasm::engine>>> rollback_engines(
+    std::vector<std::optional<wasm::transform>> rollback_transforms(
       ss::smp::count);
     std::exception_ptr ex;
     try {
-        co_await _wasm_service.invoke_on_all(
-          [&content, &rollback_engines, &nt](wasm::service& service) {
-              // TODO: Split compilation and instance creation so we don't have
-              // to compile on each core.
-              return wasm::make_wasm_engine(nt.tp(), content)
-                .then([&service, &rollback_engines, &nt](auto engine) {
-                    service.swap_engine(nt, engine);
-                    rollback_engines[ss::this_shard_id()] = std::move(engine);
-                });
-          });
+        co_await _wasm_service.invoke_on_all([&content,
+                                              &rollback_transforms,
+                                              &input_nt,
+                                              &output_nt,
+                                              &name](wasm::service& service) {
+            // TODO: Split compilation and instance creation so we don't have
+            // to compile on each core.
+            return wasm::make_wasm_engine(name, content)
+              .then([&service,
+                     &rollback_transforms,
+                     &input_nt,
+                     &output_nt,
+                     &name](auto engine) {
+                  wasm::transform transform{
+                    .meta
+                    = {.function_name = name, .input = input_nt, .output = output_nt},
+                    .engine = std::move(engine)};
+                  auto old_transform = service.swap_transform(
+                    std::move(transform));
+                  rollback_transforms[ss::this_shard_id()] = std::move(
+                    old_transform);
+              });
+        });
     } catch (...) {
         ex = std::current_exception();
         vlog(logger.error, "Unknown issue deploying wasm {}, rolling back", ex);
     }
+    content = ""; // Free the content while this is going on.
     if (ex) {
-        content = ""; // Free the content while this is going on.
         try {
             co_await _wasm_service.invoke_on_all(
-              [&rollback_engines, &nt](wasm::service& service) {
-                  auto& prev_engine = rollback_engines[ss::this_shard_id()];
-                  if (prev_engine.has_value()) {
-                      service.swap_engine(nt, prev_engine.value());
+              [&rollback_transforms](wasm::service& service) {
+                  auto prev_transform = std::move(
+                    rollback_transforms[ss::this_shard_id()]);
+                  if (prev_transform.has_value()) {
+                      auto new_transform = service.swap_transform(
+                        std::move(prev_transform.value()));
+                      rollback_transforms[ss::this_shard_id()] = std::move(
+                        new_transform);
                   }
               });
         } catch (const std::exception& ex) {
-            // 😱 What do we do?
+            // 😱 What do we do? This shouldn't happen.
             vlog(logger.error, "Unable to rollback wasm engines {}", ex.what());
         }
-        for (auto& engine : rollback_engines) {
-            if (!engine.has_value() || engine.value() == nullptr) {
+        for (auto& transform : rollback_transforms) {
+            if (!transform || transform->engine == nullptr) {
                 continue;
             }
-            co_await engine->get()->stop();
+            co_await transform->engine->stop();
         }
         throw ss::httpd::server_error_exception(
           fmt::format("Unknown issue deploying wasm"));
     }
-    for (auto& engine : rollback_engines) {
-        if (!engine.has_value() || engine.value() == nullptr) {
+    for (auto& transform : rollback_transforms) {
+        if (!transform || transform->engine == nullptr) {
             continue;
         }
-        co_await engine->get()->stop();
+        co_await transform->engine->stop();
     }
     rep->set_status(ss::http::reply::status_type::ok);
     rep->write_body("json", ss::json::json_void().to_json());
@@ -4849,13 +4871,13 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
 ss::future<ss::json::json_return_type>
 admin_server::list_wasm(std::unique_ptr<ss::http::request>) {
     using namespace ss::httpd::wasm_json;
-    auto topics = _wasm_service.local().list_engines();
+    auto topics = _wasm_service.local().list_transforms();
     std::vector<wasm_enabled_topic> output;
     output.reserve(topics.size());
     for (auto& topic : topics) {
         wasm_enabled_topic tp;
-        tp.ns = topic.topic_namespace.ns();
-        tp.topic = topic.topic_namespace.tp();
+        tp.ns = topic.input.ns();
+        tp.topic = topic.input.tp();
         tp.function = topic.function_name;
         output.push_back(std::move(tp));
     }
@@ -4864,16 +4886,24 @@ admin_server::list_wasm(std::unique_ptr<ss::http::request>) {
 
 ss::future<ss::json::json_return_type>
 admin_server::undeploy_wasm(std::unique_ptr<ss::http::request> req) {
-    auto nt = model::topic_namespace(
-      model::ns(req->param["namespace"]), model::topic(req->param["topic"]));
-    co_await _wasm_service.invoke_on_all([&nt](wasm::service& service) {
-        std::unique_ptr<wasm::engine> engine = nullptr;
-        service.swap_engine(nt, engine);
-        if (engine) {
-            return engine->stop();
-        }
-        return ss::now();
-    });
+    auto input_nt = model::topic_namespace(
+      model::ns(req->param["namespace"]),
+      model::topic(req->param["input_topic"]));
+    auto name = req->param["function_name"];
+    auto output_nt = model::topic_namespace(
+      model::ns(req->param["namespace"]),
+      model::topic(req->param["output_topic"]));
+    co_await _wasm_service.invoke_on_all(
+      [&input_nt, &name, &output_nt](wasm::service& service) {
+          wasm::transform::metadata meta{
+            .function_name = name, .input = input_nt, .output = output_nt};
+          auto transform = service.remove_transform(meta);
+          if (transform.engine) {
+              return transform.engine->stop().finally(
+                [t = std::move(transform)] {});
+          }
+          return ss::now();
+      });
     co_return ss::json::json_void();
 }
 

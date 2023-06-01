@@ -8,7 +8,7 @@
   ],
   "apis": [
     {
-      "path": "/v1/wasm/{namespace}/{topic}/deploy",
+      "path": "/v1/wasm/{namespace}/{topic}/{function_name}/deploy",
       "operations": [
         {
           "method": "POST",
@@ -30,13 +30,19 @@
               "in": "path",
               "required": true,
               "type": "string"
+            },
+            {
+              "name": "function_name",
+              "in": "path",
+              "required": true,
+              "type": "string"
             }
           ]
         }
       ]
     },
     {
-      "path": "/v1/wasm/{namespace}/{topic}/deploy",
+      "path": "/v1/wasm/{namespace}/{topic}/{function_name}/deploy",
       "operations": [
         {
           "method": "DELETE",
@@ -55,6 +61,12 @@
             },
             {
               "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "function_name",
               "in": "path",
               "required": true,
               "type": "string"

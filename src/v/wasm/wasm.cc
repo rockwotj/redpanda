@@ -9,6 +9,7 @@
  */
 #include "wasm.h"
 
+#include "model/metadata.h"
 #include "wasm/probe.h"
 #include "wasm/wasmedge.h"
 #include "wasm/wasmtime.h"
@@ -76,7 +77,7 @@ private:
 service::service()
   : _gate()
   , _probe(std::make_unique<probe>())
-  , _engines() {}
+  , _transforms() {}
 
 service::~service() = default;
 
@@ -85,22 +86,31 @@ ss::future<> service::stop() { return _gate.close(); }
 model::record_batch_reader service::wrap_batch_reader(
   const model::topic_namespace_view& nt,
   model::record_batch_reader batch_reader) {
-    auto it = _engines.find(nt);
-    if (it != _engines.end()) {
+    auto it = _transforms.find(nt);
+    if (it != _transforms.end()) {
         return model::make_record_batch_reader<wasm_transform_applying_reader>(
           std::move(batch_reader),
-          it->second.get(),
+          it->second.engine.get(),
           _probe.get(),
           _gate.hold());
     }
     return batch_reader;
 }
 
-std::vector<live_wasm_function> service::list_engines() const {
+std::optional<model::topic_namespace> service::wasm_transform_output_topic(
+  const model::topic_namespace_view& nt) const {
+    auto it = _transforms.find(nt);
+    if (it != _transforms.end()) {
+        return it->second.output;
+    }
+    return std::nullopt;
+}
+
+std::vector<live_wasm_function> service::list_transforms() const {
     std::vector<live_wasm_function> functions;
-    functions.reserve(_engines.size());
-    for (auto& [tp_ns, engine] : _engines) {
-        functions.emplace_back(ss::sstring(engine->function_name()), tp_ns);
+    functions.reserve(_transforms.size());
+    for (auto& [tp_ns, t] : _transforms) {
+        functions.emplace_back(t.function_name, tp_ns, t.output);
     }
     return functions;
 }

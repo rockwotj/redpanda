@@ -21,6 +21,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"
 #include "raft/errc.h"
@@ -42,6 +43,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
 #include <string_view>
 
 namespace kafka {
@@ -232,6 +234,41 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
         .partition_index = ntp.tp.partition, .error_code = ec});
 }
 
+namespace {
+
+ss::future<> produce_wasm_function(
+  produce_ctx& octx, model::ntp ntp, model::record_batch batch) {
+    auto shard = octx.rctx.shards().shard_for(ntp);
+    if (!shard) {
+        throw std::runtime_error("Unexpected multi cluster setup for wasm!");
+    }
+    auto& wasm_service = octx.rctx.connection()->server().wasm_service();
+    auto reader = reader_from_lcore_batch(std::move(batch));
+    reader = wasm_service.wrap_batch_reader(
+      {ntp.ns, ntp.tp.topic}, std::move(reader));
+
+    auto outcome = co_await octx.rctx.partition_manager().invoke_on(
+      *shard,
+      octx.ssg,
+      [reader = std::move(reader), ntp = std::move(ntp)](
+        cluster::partition_manager& mgr) mutable {
+          auto partition = mgr.get(ntp);
+          if (!partition || partition->is_elected_leader()) {
+            throw std::runtime_error("Expected partition to be the leader for wasm");
+          }
+          return partition->replicate(
+            std::move(reader),
+            raft::replicate_options(raft::consistency_level::quorum_ack));
+      });
+
+    // Assert this thing works
+    outcome.assume_value();
+
+    co_return;
+}
+
+} // namespace
+
 /**
  * \brief handle writing to a single topic partition.
  */
@@ -280,16 +317,26 @@ static partition_produce_stages produce_topic_partition(
           model::timestamp_type::append_time, model::timestamp::now());
     }
 
+    auto& wasm_service = octx.rctx.connection()->server().wasm_service();
+    auto wasm_transform_output = wasm_service.wasm_transform_output_topic(
+      model::topic_namespace_view(model::kafka_namespace, topic.name));
+    // STOPSHIP: Huge hack to get this working
+    ss::future<> wasm_transform_result = ss::now();
+    if (wasm_transform_output.has_value()) {
+        wasm_transform_result = produce_wasm_function(
+          octx,
+          model::ntp(
+            wasm_transform_output->ns,
+            wasm_transform_output->tp,
+            part.partition_index),
+          batch.copy());
+    }
+
     const auto& hdr = batch.header();
     auto bid = model::batch_identity::from(hdr);
     auto batch_size = batch.size_bytes();
     auto num_records = batch.record_count();
     auto reader = reader_from_lcore_batch(std::move(batch));
-    auto& wasm_service = octx.rctx.connection()->server().wasm_service();
-    // STOPSHIP: Wrap with wasm transform!
-    reader = wasm_service.wrap_batch_reader(
-        model::topic_namespace(model::kafka_namespace, topic.name),
-        std::move(reader));
     auto start = std::chrono::steady_clock::now();
 
     auto dispatch = std::make_unique<ss::promise<>>();
@@ -387,7 +434,8 @@ static partition_produce_stages produce_topic_partition(
           });
     return partition_produce_stages{
       .dispatched = std::move(dispatch_f),
-      .produced = std::move(f),
+      .produced = wasm_transform_result.then(
+        [f = std::move(f)]() mutable { return std::move(f); }),
     };
 }
 
