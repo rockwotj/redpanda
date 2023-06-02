@@ -1,8 +1,6 @@
 package wasm
 
 import (
-	"fmt"
-
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -22,10 +20,13 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			api, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
-			f, err := api.ListWasmTransforms(cmd.Context())
+			l, err := api.ListWasmTransforms(cmd.Context())
 			out.MaybeDie(err, "unable to list wasm functions: %v", err)
 
-			fmt.Println("%v", f)
+			w := out.NewTable("NAME", "INPUT TOPIC", "OUTPUT TOPIC")
+			for _, t := range l {
+				w.PrintStrings(t.FunctionName, t.InputTopic, t.OutputTopic)
+			}
 		},
 	}
 	return cmd

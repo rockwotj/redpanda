@@ -17,9 +17,6 @@ func newBuildCommand(fs afero.Fs) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			tgo, err := exec.LookPath("tinygo")
 			out.MaybeDie(err, "tinygo is not available on $PATH, please download and install it: https://tinygo.org/getting-started/install/")
-			cfg, err := loadCfg(fs)
-			out.MaybeDie(err, "Unable to find redpandarc.yaml in the currect directory")
-
 			_, err = fs.Stat("transform.go")
 			out.MaybeDie(err, "unable to find the transform, are you in the same directory as the `transform.go` file?")
 			c := exec.CommandContext(
@@ -31,13 +28,13 @@ func newBuildCommand(fs afero.Fs) *cobra.Command {
 				"-panic=trap",
 				"-scheduler=none",
 				"-gc=conservative",
-				"-o", fmt.Sprintf("%s.wasm", cfg.Name),
-				"transform.go")
+				"-o", "transform.wasm",
+				".")
 			output, err := c.CombinedOutput()
 			out.MaybeDie(err, "failed to build\n:", string(output))
 			fmt.Println("build successful 🚀")
 			fmt.Println("deploy your wasm function to a topic:")
-			fmt.Println("  rpk wasm deploy")
+			fmt.Println("  rpk wasm deploy transform.wasm")
 		},
 	}
 	return cmd

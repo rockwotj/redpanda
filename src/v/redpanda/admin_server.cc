@@ -4872,13 +4872,14 @@ ss::future<ss::json::json_return_type>
 admin_server::list_wasm(std::unique_ptr<ss::http::request>) {
     using namespace ss::httpd::wasm_json;
     auto topics = _wasm_service.local().list_transforms();
-    std::vector<wasm_enabled_topic> output;
+    std::vector<wasm_transform> output;
     output.reserve(topics.size());
     for (auto& topic : topics) {
-        wasm_enabled_topic tp;
+        wasm_transform tp;
         tp.ns = topic.input.ns();
-        tp.topic = topic.input.tp();
-        tp.function = topic.function_name;
+        tp.input_topic = topic.input.tp();
+        tp.output_topic = topic.output.tp();
+        tp.function_name = topic.function_name;
         output.push_back(std::move(tp));
     }
     co_return output;

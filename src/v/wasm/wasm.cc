@@ -101,16 +101,16 @@ std::optional<model::topic_namespace> service::wasm_transform_output_topic(
   const model::topic_namespace_view& nt) const {
     auto it = _transforms.find(nt);
     if (it != _transforms.end()) {
-        return it->second.output;
+        return it->second.meta.output;
     }
     return std::nullopt;
 }
 
-std::vector<live_wasm_function> service::list_transforms() const {
-    std::vector<live_wasm_function> functions;
+std::vector<transform::metadata> service::list_transforms() const {
+    std::vector<transform::metadata> functions;
     functions.reserve(_transforms.size());
-    for (auto& [tp_ns, t] : _transforms) {
-        functions.emplace_back(t.function_name, tp_ns, t.output);
+    for (auto& [_, t] : _transforms) {
+        functions.push_back(t.meta);
     }
     return functions;
 }

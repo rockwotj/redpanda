@@ -8,7 +8,7 @@
   ],
   "apis": [
     {
-      "path": "/v1/wasm/{namespace}/{topic}/{function_name}/deploy",
+      "path": "/v1/wasm/deploy",
       "operations": [
         {
           "method": "POST",
@@ -21,19 +21,25 @@
           "parameters": [
             {
               "name": "namespace",
-              "in": "path",
+              "in": "query",
               "required": true,
               "type": "string"
             },
             {
-              "name": "topic",
-              "in": "path",
+              "name": "input_topic",
+              "in": "query",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "output_topic",
+              "in": "query",
               "required": true,
               "type": "string"
             },
             {
               "name": "function_name",
-              "in": "path",
+              "in": "query",
               "required": true,
               "type": "string"
             }
@@ -42,7 +48,7 @@
       ]
     },
     {
-      "path": "/v1/wasm/{namespace}/{topic}/{function_name}/deploy",
+      "path": "/v1/wasm/deploy",
       "operations": [
         {
           "method": "DELETE",
@@ -55,19 +61,25 @@
           "parameters": [
             {
               "name": "namespace",
-              "in": "path",
+              "in": "query",
               "required": true,
               "type": "string"
             },
             {
-              "name": "topic",
-              "in": "path",
+              "name": "input_topic",
+              "in": "query",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "output_topic",
+              "in": "query",
               "required": true,
               "type": "string"
             },
             {
               "name": "function_name",
-              "in": "path",
+              "in": "query",
               "required": true,
               "type": "string"
             }
@@ -87,23 +99,26 @@
           ],
           "type": "array",
           "items": {
-            "type": "wasm_enabled_topic"
+            "type": "wasm_transform"
           }
         }
       ]
     }
   ],
   "models": {
-    "wasm_enabled_topic": {
-      "id": "wasm_enabled_topic",
+    "wasm_transform": {
+      "id": "wasm_transform",
       "properties": {
         "ns": {
           "type": "string"
         },
-        "topic": {
+        "input_topic": {
           "type": "string"
         },
-        "function": {
+        "output_topic": {
+          "type": "string"
+        },
+        "function_name": {
           "type": "string"
         }
       }

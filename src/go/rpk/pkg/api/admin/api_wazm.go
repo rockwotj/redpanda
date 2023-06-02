@@ -15,33 +15,57 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 const baseWasmEndpoint = "/v1/wasm/"
-const deploySuffix = "/deploy"
-const undeploySuffix = "/deploy"
+const deploySuffix = "deploy"
+const undeploySuffix = "undeploy"
 const listSuffix = "list"
 
+func generatePath(suffix string) string {
+	return generatePathQuery(suffix, url.Values{})
+}
+func generatePathQuery(suffix string, params url.Values) string {
+	if len(params) == 0 {
+		return baseWasmEndpoint + suffix
+	}
+	return baseWasmEndpoint + suffix + "?" + params.Encode()
+}
+
 // Deploy a wasm transform to a cluster
-func (a *AdminAPI) DeployWasmTransform(ctx context.Context, topic string, file io.Reader) error {
-	return a.sendAny(ctx, http.MethodPost, baseWasmEndpoint+"kafka/"+topic+deploySuffix, file, nil)
+func (a *AdminAPI) DeployWasmTransform(ctx context.Context, inputTopic string, outputTopic string, functionName string, file io.Reader) error {
+	params := url.Values{
+		"namespace":     {"kafka"},
+		"input_topic":   {inputTopic},
+		"output_topic":  {outputTopic},
+		"function_name": {functionName},
+	}
+	return a.sendAny(ctx, http.MethodPost, generatePathQuery(deploySuffix, params), file, nil)
 }
 
 // These are the wasm functions available
 type LiveWasmFunction struct {
-	Namespace string `json:"ns"`
-	Topic     string `json:"topic"`
-	Function  string `json:"function"`
+	Namespace    string `json:"ns"`
+	InputTopic   string `json:"input_topic"`
+	OutputTopic  string `json:"output_topic"`
+	FunctionName string `json:"function"`
 }
 
 // List wasm transforms in a cluster
 func (a *AdminAPI) ListWasmTransforms(ctx context.Context) ([]LiveWasmFunction, error) {
 	var f []LiveWasmFunction
-	err := a.sendAny(ctx, http.MethodGet, baseWasmEndpoint+listSuffix, nil, f)
+	err := a.sendAny(ctx, http.MethodGet, generatePath(listSuffix), nil, f)
 	return f, err
 }
 
 // Delete a wasm transforms in a cluster
-func (a *AdminAPI) DeleteWasmTransforms(ctx context.Context, topic string) error {
-	return a.sendAny(ctx, http.MethodDelete, baseWasmEndpoint+"kafka/"+topic+undeploySuffix, nil, nil)
+func (a *AdminAPI) DeleteWasmTransform(ctx context.Context, inputTopic string, outputTopic string, functionName string) error {
+	params := url.Values{
+		"namespace":     {"kafka"},
+		"input_topic":   {inputTopic},
+		"output_topic":  {outputTopic},
+		"function_name": {functionName},
+	}
+	return a.sendAny(ctx, http.MethodDelete, generatePathQuery(undeploySuffix, params), nil, nil)
 }
