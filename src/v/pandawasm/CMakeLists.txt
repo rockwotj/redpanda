@@ -5,6 +5,7 @@ v_cc_library(
   HDRS
     encoding.h
   DEPS
+    asmjit
     Seastar::seastar
     v::utils
 )
