@@ -1,5 +1,6 @@
 #include "pandawasm/parser.h"
 
+#include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
 #include "pandawasm/ast.h"
 #include "pandawasm/encoding.h"
@@ -54,7 +55,7 @@ valtype parse_valtype(iobuf_const_parser& parser) {
     case uint8_t(valtype::externref):
         return valtype(type_id);
     default:
-        throw parse_exception();
+        throw parse_exception(ss::format("unknown valtype: {}", type_id));
     }
 }
 
@@ -72,7 +73,8 @@ ss::future<std::vector<valtype>> parse_result_type(iobuf_const_parser& parser) {
 ss::future<function_type> parse_function_type(iobuf_const_parser& parser) {
     auto magic = parser.consume_le_type<uint8_t>();
     if (magic != 0x60) {
-        throw parse_exception();
+        throw parse_exception(
+          ss::format("function type magic mismatch: {}", magic));
     }
     auto parameter_types = co_await parse_result_type(parser);
     auto result_types = co_await parse_result_type(parser);
@@ -110,7 +112,8 @@ funcidx parse_funcidx(iobuf_const_parser& parser) {
 tabletype parse_tabletype(iobuf_const_parser& parser) {
     auto reftype = parse_valtype(parser);
     if (reftype != valtype::externref && reftype != valtype::funcref) {
-        throw parse_exception();
+        throw parse_exception(
+          ss::format("invalid tabletype type: {}", reftype));
     }
     auto limits = parse_limits(parser);
     return {.limits = limits, .reftype = reftype};
@@ -145,7 +148,7 @@ module_import parse_import(iobuf_const_parser& parser) {
         desc = parse_globaltype(parser);
         break;
     default:
-        throw parse_exception();
+        throw parse_exception(ss::format("unknown import type: {}", type));
     }
     return {
       .module = std::move(module),
@@ -174,7 +177,8 @@ value parse_const_expr(iobuf_const_parser& parser) {
         return value{.f64 = parser.consume_type<float>()};
     default:
         // TODO: Support refs, other global references, and vectors
-        throw parse_exception();
+        throw parse_exception(
+          ss::format("unimplemented global value: {}", opcode));
     }
 }
 
@@ -202,7 +206,7 @@ module_export parse_export(iobuf_const_parser& parser) {
         desc = parse_globaltype(parser);
         break;
     default:
-        throw parse_exception();
+        throw parse_exception(ss::format("unknown export type: {}", type));
     }
     return {.name = std::move(name), .description = desc};
 }
@@ -241,7 +245,7 @@ std::vector<instruction> parse_expression(iobuf_const_parser& parser) {
             instruction_vector.emplace_back(op::add_i32());
             break;
         default:
-            throw parse_exception();
+            throw parse_exception(ss::format("unsupported opcode: {}", opcode));
         }
     }
     return instruction_vector;
@@ -261,7 +265,8 @@ code parse_code(iobuf_const_parser& parser) {
     for (uint32_t i = 0; i < vector_size; ++i) {
         auto num_locals = encoding::decode_leb128<uint32_t>(parser);
         if (num_locals + locals.size() > MAX_FUNCTION_LOCALS) {
-            throw module_too_large_exception();
+            throw module_too_large_exception(
+              ss::format("too many locals: {}", num_locals + locals.size()));
         }
         auto valtype = parse_valtype(parser);
         std::fill_n(std::back_inserter(locals), num_locals, valtype);
@@ -270,7 +275,10 @@ code parse_code(iobuf_const_parser& parser) {
     auto actual = parser.bytes_consumed() - start_position;
 
     if (actual != expected_size) {
-        throw parse_exception();
+        throw parse_exception(ss::format(
+          "unexpection bytes in function, actual: {} expected: {}",
+          actual,
+          expected_size));
     }
     return {.locals = locals, .body = std::move(body)};
 }
@@ -294,21 +302,25 @@ struct module_builder {
     ~module_builder() = default;
 
     ss::future<parsed_module> build() && {
-        fragmented_vector<function> functions;
+        parsed_module parsed;
         if (codes.size() != functions.size()) {
-            throw parse_exception();
+            throw parse_exception(ss::format(
+              "invalid number of functions: {} vs code: {}",
+              functions.size(),
+              codes.size()));
         }
         for (size_t i = 0; i < functions.size(); ++i) {
-            auto func = this->functions[i];
+            auto func = functions[i];
             if (func() >= func_types.size()) {
-                throw parse_exception();
+                throw parse_exception(
+                  ss::format("invalid function type: {}", func()));
             }
             auto type = func_types[func()];
             auto code = codes[i];
-            functions.emplace_back(type, code.locals, code.body);
+            parsed.functions.emplace_back(type, code.locals, code.body);
             co_await ss::coroutine::maybe_yield();
         }
-        co_return parsed_module{.functions = std::move(functions)};
+        co_return parsed;
     }
 };
 
@@ -352,16 +364,16 @@ parse_one_section(module_builder& builder, iobuf_const_parser& parser) {
         co_return;
     case 0x09: // element section
         // TODO: Implement me
-        throw parse_exception();
+        throw parse_exception("unimplemented");
     case 0x0A: // code section
         builder.codes = co_await parse_section<code, parse_code>(parser);
         co_return;
     case 0x0B: // data section
     case 0x0C: // data count section
         // TODO: Implement me
-        throw parse_exception();
+        throw parse_exception("unimplemented");
     default:
-        throw parse_exception();
+        throw parse_exception("unknown section");
     }
 }
 
@@ -370,12 +382,17 @@ parse_one_section(module_builder& builder, iobuf_const_parser& parser) {
 ss::future<parsed_module> parse_module(iobuf buffer) {
     iobuf_const_parser parser(buffer);
     bytes magic = parser.read_bytes(4);
-    if (magic != "\0asm") {
-        throw parse_exception();
+    if (magic != to_bytes_view<char, 4>({0x00, 0x61, 0x73, 0x6D})) {
+        throw parse_exception(ss::format(
+          "magic bytes mismatch: {:#x} {:#x} {:#x} {:#x}",
+          magic[0],
+          magic[1],
+          magic[2],
+          magic[3]));
     }
     auto version = parser.consume_le_type<int32_t>();
     if (version != 1) {
-        throw parse_exception();
+        throw parse_exception("unsupported wasm version");
     }
     module_builder builder;
     while (parser.bytes_left() > 0) {

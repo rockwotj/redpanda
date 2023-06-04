@@ -13,6 +13,7 @@
 // limitations under the License.
 #pragma once
 #include <cstdint>
+#include <ostream>
 
 namespace pandawasm {
 
@@ -28,6 +29,7 @@ enum class valtype : uint8_t {
     funcref = 0x70,
     externref = 0x6F,
 };
+std::ostream& operator<<(std::ostream&, valtype);
 
 /**
  * See: https://webassembly.github.io/spec/core/syntax/types.html
@@ -38,4 +40,5 @@ union value {
     float f32;
     double f64;
 };
+std::ostream& operator<<(std::ostream&, valtype);
 } // namespace pandawasm
