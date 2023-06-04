@@ -1,8 +1,11 @@
 
 #pragma once
 
+#include "instruction.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
+#include "value.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sstring.hh>
@@ -12,26 +15,6 @@
 #include <vector>
 
 namespace pandawasm {
-
-union instruction;
-
-enum class valtype : uint8_t {
-    i32 = 0x7F,
-    i64 = 0x7E,
-    f32 = 0x7D,
-    f64 = 0x7C,
-    v128 = 0x7B,
-    funcref = 0x70,
-    externref = 0x6F,
-};
-
-/** */
-union value {
-    uint32_t i32;
-    uint64_t i64;
-    float f32;
-    double f64;
-};
 
 struct function_type {
     std::vector<valtype> parameter_types;
@@ -46,6 +29,7 @@ struct limits {
 using name = named_type<ss::sstring, struct name_tag>;
 using typeidx = named_type<uint32_t, struct typeidx_tag>;
 using funcidx = named_type<uint32_t, struct funcidx_tag>;
+using localidx = named_type<uint32_t, struct funcidx_tag>;
 struct tabletype {
     limits limits;
     valtype reftype; // funcref | externref
@@ -86,9 +70,13 @@ struct module_export {
     desc description;
 };
 
-struct code {
+struct function {
+    function_type type;
     std::vector<valtype> locals;
     std::vector<instruction> body;
 };
 
+struct parsed_module {
+    fragmented_vector<function> functions;
+};
 } // namespace pandawasm

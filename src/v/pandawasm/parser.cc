@@ -216,29 +216,29 @@ std::vector<instruction> parse_expression(iobuf_const_parser& parser) {
     for (auto opcode = parser.consume_le_type<uint8_t>(); opcode != 0x0B;
          opcode = parser.consume_le_type<uint8_t>()) {
         switch (opcode) {
-        case 0x01:
-            instruction_vector.push_back(op(instructions::noop));
+        case 0x01: // noop
+            // instruction_vector.push_back(op(instructions::noop));
             break;
-        case 0x0F:
-            instruction_vector.push_back(op(instructions::retrn));
+        case 0x0F: // return
+            instruction_vector.emplace_back(op::retrn());
             break;
-        case 0x20:
-            instruction_vector.push_back(op(instructions::get_local_i32));
-            instruction_vector.push_back(
-              val({.i32 = encoding::decode_leb128<uint32_t>(parser)}));
+        case 0x20: { // get_local_i32
+            auto idx = encoding::decode_leb128<uint32_t>(parser);
+            instruction_vector.emplace_back(op::get_local_i32(idx));
             break;
-        case 0x21:
-            instruction_vector.push_back(op(instructions::set_local_i32));
-            instruction_vector.push_back(
-              val({.i32 = encoding::decode_leb128<uint32_t>(parser)}));
+        }
+        case 0x21: { // set_local_i32
+            auto idx = encoding::decode_leb128<uint32_t>(parser);
+            instruction_vector.emplace_back(op::set_local_i32(idx));
             break;
-        case 0x41:
-            instruction_vector.push_back(op(instructions::const_i32));
-            instruction_vector.push_back(
-              val({.i32 = encoding::decode_leb128<uint32_t>(parser)}));
+        }
+        case 0x41: { // const_i32
+            auto v = encoding::decode_leb128<uint32_t>(parser);
+            instruction_vector.emplace_back(op::const_i32(value{.i32 = v}));
             break;
-        case 0x6A:
-            instruction_vector.push_back(op(instructions::add_i32));
+        }
+        case 0x6A: // add_i32
+            instruction_vector.emplace_back(op::add_i32());
             break;
         default:
             throw parse_exception();
@@ -246,6 +246,11 @@ std::vector<instruction> parse_expression(iobuf_const_parser& parser) {
     }
     return instruction_vector;
 }
+
+struct code {
+    std::vector<valtype> locals;
+    std::vector<instruction> body;
+};
 
 code parse_code(iobuf_const_parser& parser) {
     auto expected_size = encoding::decode_leb128<uint32_t>(parser);
@@ -270,7 +275,45 @@ code parse_code(iobuf_const_parser& parser) {
     return {.locals = locals, .body = std::move(body)};
 }
 
-ss::future<> parse_one_section(iobuf_const_parser& parser) {
+struct module_builder {
+    fragmented_vector<function_type> func_types;
+    fragmented_vector<module_import> imports;
+    fragmented_vector<typeidx> functions;
+    fragmented_vector<table> tables;
+    fragmented_vector<mem> memories;
+    fragmented_vector<global> globals;
+    fragmented_vector<module_export> exports;
+    std::optional<funcidx> start;
+    fragmented_vector<code> codes;
+
+    module_builder() = default;
+    module_builder(const module_builder&) = delete;
+    module_builder& operator=(const module_builder&) = delete;
+    module_builder(module_builder&&) = delete;
+    module_builder& operator=(module_builder&&) = delete;
+    ~module_builder() = default;
+
+    ss::future<parsed_module> build() && {
+        fragmented_vector<function> functions;
+        if (codes.size() != functions.size()) {
+            throw parse_exception();
+        }
+        for (size_t i = 0; i < functions.size(); ++i) {
+            auto func = this->functions[i];
+            if (func() >= func_types.size()) {
+                throw parse_exception();
+            }
+            auto type = func_types[func()];
+            auto code = codes[i];
+            functions.emplace_back(type, code.locals, code.body);
+            co_await ss::coroutine::maybe_yield();
+        }
+        co_return parsed_module{.functions = std::move(functions)};
+    }
+};
+
+ss::future<>
+parse_one_section(module_builder& builder, iobuf_const_parser& parser) {
     auto id = parser.consume_le_type<uint8_t>();
     auto size = encoding::decode_leb128<uint32_t>(parser);
     switch (id) {
@@ -280,38 +323,43 @@ ss::future<> parse_one_section(iobuf_const_parser& parser) {
         parser.skip(size);
         co_return;
     case 0x01: // type section
-        co_await parse_section<function_type, parse_function_type>(parser);
+        builder.func_types
+          = co_await parse_section<function_type, parse_function_type>(parser);
         co_return;
     case 0x02: // import section
-        co_await parse_section<module_import, parse_import>(parser);
+        builder.imports = co_await parse_section<module_import, parse_import>(
+          parser);
         co_return;
     case 0x03: // function section
-        co_await parse_section<typeidx, parse_typeidx>(parser);
+        builder.functions = co_await parse_section<typeidx, parse_typeidx>(
+          parser);
         co_return;
     case 0x04: // table section
-        co_await parse_section<table, parse_table>(parser);
+        builder.tables = co_await parse_section<table, parse_table>(parser);
         co_return;
     case 0x05: // memory section
-        co_await parse_section<mem, parse_memory>(parser);
+        builder.memories = co_await parse_section<mem, parse_memory>(parser);
         co_return;
     case 0x06: // global section
-        co_await parse_section<global, parse_global>(parser);
+        builder.globals = co_await parse_section<global, parse_global>(parser);
         co_return;
     case 0x07: // export section
-        co_await parse_section<module_export, parse_export>(parser);
+        builder.exports = co_await parse_section<module_export, parse_export>(
+          parser);
         co_return;
     case 0x08: // start section
-        parse_funcidx(parser);
+        builder.start = parse_funcidx(parser);
         co_return;
     case 0x09: // element section
         // TODO: Implement me
         throw parse_exception();
     case 0x0A: // code section
-        co_await parse_section<code, parse_code>(parser);
+        builder.codes = co_await parse_section<code, parse_code>(parser);
         co_return;
     case 0x0B: // data section
     case 0x0C: // data count section
-        break;
+        // TODO: Implement me
+        throw parse_exception();
     default:
         throw parse_exception();
     }
@@ -319,7 +367,7 @@ ss::future<> parse_one_section(iobuf_const_parser& parser) {
 
 } // namespace
 
-ss::future<> parse_module(iobuf buffer) {
+ss::future<parsed_module> parse_module(iobuf buffer) {
     iobuf_const_parser parser(buffer);
     bytes magic = parser.read_bytes(4);
     if (magic != "\0asm") {
@@ -329,11 +377,12 @@ ss::future<> parse_module(iobuf buffer) {
     if (version != 1) {
         throw parse_exception();
     }
-
+    module_builder builder;
     while (parser.bytes_left() > 0) {
-        co_await parse_one_section(parser);
+        co_await parse_one_section(builder, parser);
         co_await ss::coroutine::maybe_yield();
     }
+    co_return co_await std::move(builder).build();
 }
 
 } // namespace pandawasm

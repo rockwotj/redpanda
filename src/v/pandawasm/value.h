@@ -11,19 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "instruction.h"
+#pragma once
+#include <cstdint>
 
 namespace pandawasm {
 
-void value_stack::push(value v) { _underlying.push_back(v); }
+/**
+ * See: https://webassembly.github.io/spec/core/syntax/types.html
+ */
+enum class valtype : uint8_t {
+    i32 = 0x7F,
+    i64 = 0x7E,
+    f32 = 0x7D,
+    f64 = 0x7C,
+    v128 = 0x7B,
+    funcref = 0x70,
+    externref = 0x6F,
+};
 
-value value_stack::pop() {
-    value v = _underlying.back();
-    _underlying.pop_back();
-    return v;
-}
-
-void frame::set(uint32_t idx, value v) { _underlying[idx] = v; }
-value frame::get(uint32_t idx) const { return _underlying[idx]; }
-
+/**
+ * See: https://webassembly.github.io/spec/core/syntax/types.html
+ */
+union value {
+    uint32_t i32;
+    uint64_t i64;
+    float f32;
+    double f64;
+};
 } // namespace pandawasm
