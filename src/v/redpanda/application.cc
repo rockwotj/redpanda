@@ -1465,7 +1465,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       .get();
 
     syschecks::systemd_message("Creating wasm service").get();
-    construct_service(wasm_service).get();
+    construct_service(wasm_service, thread_worker.get()).get();
+    wasm_service.invoke_on_all(&wasm::service::install_signal_handlers).get();
 
     syschecks::systemd_message("Creating tx coordinator frontend").get();
     // usually it'a an anti-pattern to let the same object be accessed

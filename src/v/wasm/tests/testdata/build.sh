@@ -23,3 +23,15 @@ tinygo build -target wasi -opt=z \
 tinygo build -target wasi -opt=z \
   -panic trap -scheduler none -gc custom -tags custommalloc \
   -o golang_redaction_transform.wasm redaction/redaction_transform.go
+
+tinygo build -target wasi -opt=z \
+  -panic trap -scheduler none \
+  -o setup_panic.wasm setup_panic/main.go
+
+tinygo build -target wasi -opt=z \
+  -panic trap -scheduler none \
+  -o transform_panic.wasm transform_panic/main.go
+  
+tinygo build -target wasi -opt=z \
+  -panic trap -scheduler none \
+  -o transform_error.wasm transform_error/main.go

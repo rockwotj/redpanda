@@ -18,6 +18,7 @@
 #include "model/record_batch_reader.h"
 #include "outcome.h"
 #include "seastarx.h"
+#include "ssx/thread_worker.h"
 
 #include <seastar/core/gate.hh>
 
@@ -61,14 +62,15 @@ struct transform {
 
 class service {
 public:
-    service();
+    explicit service(ssx::thread_worker*);
 
     ~service();
     service(const service&) = delete;
     service& operator=(const service&) = delete;
-    service(service&&) = default;
-    service& operator=(service&&) = default;
+    service(service&&) = delete;
+    service& operator=(service&&) = delete;
 
+    ss::future<> start();
     ss::future<> stop();
 
     model::record_batch_reader wrap_batch_reader(
@@ -78,6 +80,14 @@ public:
     wasm_transform_output_topic(const model::topic_namespace_view&) const;
 
     std::vector<transform::metadata> list_transforms() const;
+
+    /**
+     * This is a wasmtime hack!
+     *
+     * We need to ignore some signals as wasmtime intentionally triggers some
+     * signals to make these happen.
+     */
+    void install_signal_handlers();
 
     transform swap_transform(transform transform) {
         auto& current = _transforms[transform.meta.input];
@@ -89,10 +99,15 @@ public:
         _transforms.erase(it);
         return removed;
     }
+    ss::future<std::unique_ptr<engine>> make_wasm_engine(
+      std::string_view wasm_module_name, std::string_view wasm_source);
+
+    probe* get_probe() const { return _probe.get(); }
 
 private:
     ss::gate _gate;
     std::unique_ptr<probe> _probe;
+    ssx::thread_worker* _worker;
 
     absl::flat_hash_map<
       model::topic_namespace,
@@ -101,8 +116,5 @@ private:
       model::topic_namespace_eq>
       _transforms;
 };
-
-ss::future<std::unique_ptr<engine>> make_wasm_engine(
-  std::string_view wasm_module_name, std::string_view wasm_source);
 
 } // namespace wasm

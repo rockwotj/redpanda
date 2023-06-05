@@ -59,7 +59,7 @@ func redpandaOnRecord(h inputRecordHandle) EventErrorCode {
 	}
 	err := userTransformFunction(TransformEvent{InputRecord{h, &keyReader{h}, &valueReader{h}, Headers{h}}})
 	if err != nil {
-		fmt.Println("transforming record failed: %v", err)
+		fmt.Println("transforming record failed:", err)
 		return evtUserError
 	}
 	return evtSuccess

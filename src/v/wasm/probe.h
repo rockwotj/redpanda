@@ -6,6 +6,11 @@ namespace wasm {
 class probe {
 public:
     probe();
+    probe(const probe&) = delete;
+    probe& operator=(const probe&) = delete;
+    probe(probe&&) = delete;
+    probe& operator=(probe&&) = delete;
+    ~probe() = default;
 
     std::unique_ptr<hdr_hist::measurement> auto_transform_measurement() {
         return _transform_latency.auto_measure();

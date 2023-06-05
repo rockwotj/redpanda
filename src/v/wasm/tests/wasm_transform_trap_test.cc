@@ -13,12 +13,15 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
-#include <exception>
-
-FIXTURE_TEST(test_wasm_transforms_work, wasm_test_fixture) {
-    auto engine = load_engine("golang_identity_transform.wasm");
+FIXTURE_TEST(test_transform_panic, wasm_test_fixture) {
+#ifdef NDEBUG
+    auto engine = load_engine("transform_panic.wasm");
     auto batch = make_tiny_batch();
-    auto result_batch = engine->transform(batch.copy(), probe()).get();
-    BOOST_CHECK_EQUAL(result_batch.copy_records(), batch.copy_records());
-    BOOST_CHECK_EQUAL(result_batch, batch);
+    BOOST_CHECK_EXCEPTION(
+      engine->transform(std::move(batch), probe()).get(),
+      wasm::wasm_exception,
+      [](const wasm::wasm_exception& ex) {
+          return ex.error_code() == wasm::errc::user_code_failure;
+      });
+#endif
 }

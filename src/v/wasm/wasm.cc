@@ -10,9 +10,17 @@
 #include "wasm.h"
 
 #include "model/metadata.h"
+#include "ssx/thread_worker.h"
+#include "wasm/errc.h"
 #include "wasm/probe.h"
 #include "wasm/wasmedge.h"
 #include "wasm/wasmtime.h"
+
+#include <seastar/core/reactor.hh>
+
+#include <csignal>
+#include <exception>
+#include <stdexcept>
 
 namespace wasm {
 
@@ -74,14 +82,16 @@ private:
 
 } // namespace
 
-service::service()
+service::service(ssx::thread_worker* worker)
   : _gate()
   , _probe(std::make_unique<probe>())
+  , _worker(worker)
   , _transforms() {}
 
 service::~service() = default;
 
-ss::future<> service::stop() { return _gate.close(); }
+ss::future<> service::start() { return ss::now(); }
+ss::future<> service::stop() { co_await _gate.close(); }
 
 model::record_batch_reader service::wrap_batch_reader(
   const model::topic_namespace_view& nt,
@@ -105,6 +115,15 @@ std::optional<model::topic_namespace> service::wasm_transform_output_topic(
     }
     return std::nullopt;
 }
+void service::install_signal_handlers() {
+    // TODO: Be able to uninstall this handler if the service is stopped.
+    ss::engine().handle_signal(SIGILL, [] {
+        if (!wasmtime::is_running()) {
+            ss::engine_exit(std::make_exception_ptr(
+              std::runtime_error("Illegal instruction")));
+        }
+    });
+}
 
 std::vector<transform::metadata> service::list_transforms() const {
     std::vector<transform::metadata> functions;
@@ -115,10 +134,11 @@ std::vector<transform::metadata> service::list_transforms() const {
     return functions;
 }
 
-ss::future<std::unique_ptr<engine>> make_wasm_engine(
+ss::future<std::unique_ptr<engine>> service::make_wasm_engine(
   std::string_view wasm_module_name, std::string_view wasm_source) {
-    auto engine = co_await wasmtime::make_wasm_engine(
-      wasm_module_name, wasm_source);
+    auto engine = co_await _worker->submit([wasm_module_name, wasm_source] {
+        return wasmtime::make_wasm_engine(wasm_module_name, wasm_source);
+    });
     co_await engine->start();
     co_return engine;
 }

@@ -4792,12 +4792,12 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> rep) {
     auto input_nt = model::topic_namespace(
-      model::ns(req->param["namespace"]),
-      model::topic(req->param["input_topic"]));
+      model::ns(req->get_query_param("namespace")),
+      model::topic(req->get_query_param("input_topic")));
     auto output_nt = model::topic_namespace(
-      model::ns(req->param["namespace"]),
-      model::topic(req->param["output_topic"]));
-    auto name = req->param["function_name"];
+      model::ns(req->get_query_param("namespace")),
+      model::topic(req->get_query_param("output_topic")));
+    auto name = req->get_query_param("function_name");
     auto content = req->content;
     std::vector<std::optional<wasm::transform>> rollback_transforms(
       ss::smp::count);
@@ -4810,7 +4810,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
                                               &name](wasm::service& service) {
             // TODO: Split compilation and instance creation so we don't have
             // to compile on each core.
-            return wasm::make_wasm_engine(name, content)
+            return service.make_wasm_engine(name, content)
               .then([&service,
                      &rollback_transforms,
                      &input_nt,
@@ -4888,12 +4888,12 @@ admin_server::list_wasm(std::unique_ptr<ss::http::request>) {
 ss::future<ss::json::json_return_type>
 admin_server::undeploy_wasm(std::unique_ptr<ss::http::request> req) {
     auto input_nt = model::topic_namespace(
-      model::ns(req->param["namespace"]),
-      model::topic(req->param["input_topic"]));
-    auto name = req->param["function_name"];
+      model::ns(req->get_query_param("namespace")),
+      model::topic(req->get_query_param("input_topic")));
+    auto name = req->get_query_param("function_name");
     auto output_nt = model::topic_namespace(
-      model::ns(req->param["namespace"]),
-      model::topic(req->param["output_topic"]));
+      model::ns(req->get_query_param("namespace")),
+      model::topic(req->get_query_param("output_topic")));
     co_await _wasm_service.invoke_on_all(
       [&input_nt, &name, &output_nt](wasm::service& service) {
           wasm::transform::metadata meta{
