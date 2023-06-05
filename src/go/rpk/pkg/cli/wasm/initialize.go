@@ -45,10 +45,6 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 				cwd, err := os.Getwd()
 				out.MaybeDie(err, "unable to get current directory: %v", err)
 				path = cwd
-				if name == "" {
-					name, err = out.Prompt("name this transform:")
-					out.MaybeDie(err, "unable to determine project name: %v", err)
-				}
 			} else {
 				path = args[0]
 				ok, err := afero.Exists(fs, path)
@@ -62,14 +58,15 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 				if !f.IsDir() {
 					out.Die("please remove file %q to initialize a transform there", path)
 				}
-				if name == "" {
-					suggestion := filepath.Base(path)
-					if suggestion == "." {
-						suggestion = ""
-					}
-					name, err = out.PromptWithSuggestion(suggestion, "name this transform:")
-					out.MaybeDie(err, "unable to determine project name: %v", err)
+			}
+			for name == "" {
+				suggestion := filepath.Base(path)
+				if suggestion == "." {
+					suggestion = ""
 				}
+				var err error
+				name, err = out.PromptWithSuggestion(suggestion, "name this transform:")
+				out.MaybeDie(err, "unable to determine project name: %v", err)
 			}
 			c := filepath.Join(path, configFileName)
 			ok, err := afero.Exists(fs, c)
