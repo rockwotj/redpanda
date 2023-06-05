@@ -19,24 +19,6 @@
 
 namespace pandawasm {
 
-class value_stack final {
-public:
-    void push(value);
-    value pop();
-
-private:
-    std::vector<value> _underlying;
-};
-
-class frame final {
-public:
-    void set(uint32_t idx, value);
-    value get(uint32_t idx) const;
-
-private:
-    std::vector<value> _underlying;
-};
-
 namespace op {
 // Push the constant onto the top of the stack.
 struct const_i32 {
@@ -52,7 +34,7 @@ struct set_local_i32 {
     uint32_t idx;
 };
 // Return the rest of the stack to the caller.
-struct retrn {};
+struct return_values {};
 } // namespace op
 
 using instruction = std::variant<
@@ -60,6 +42,6 @@ using instruction = std::variant<
   op::add_i32,
   op::get_local_i32,
   op::set_local_i32,
-  op::retrn>;
+  op::return_values>;
 
 } // namespace pandawasm

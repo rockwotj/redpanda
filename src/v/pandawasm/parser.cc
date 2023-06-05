@@ -224,7 +224,7 @@ std::vector<instruction> parse_expression(iobuf_const_parser& parser) {
             // instruction_vector.push_back(op(instructions::noop));
             break;
         case 0x0F: // return
-            instruction_vector.emplace_back(op::retrn());
+            instruction_vector.emplace_back(op::return_values());
             break;
         case 0x20: { // get_local_i32
             auto idx = encoding::decode_leb128<uint32_t>(parser);

@@ -13,17 +13,4 @@
 // limitations under the License.
 #include "instruction.h"
 
-namespace pandawasm {
-
-void value_stack::push(value v) { _underlying.push_back(v); }
-
-value value_stack::pop() {
-    value v = _underlying.back();
-    _underlying.pop_back();
-    return v;
-}
-
-void frame::set(uint32_t idx, value v) { _underlying[idx] = v; }
-value frame::get(uint32_t idx) const { return _underlying[idx]; }
-
-} // namespace pandawasm
+namespace pandawasm {} // namespace pandawasm
