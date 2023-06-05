@@ -12,29 +12,33 @@ import (
 func newBuildCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
-		Short: "Build Wasm function",
+		Short: "Build a Wasm transform",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			tgo, err := exec.LookPath("tinygo")
-			out.MaybeDie(err, "tinygo is not available on $PATH, please download and install it: https://tinygo.org/getting-started/install/")
-			_, err = fs.Stat("transform.go")
-			out.MaybeDie(err, "unable to find the transform, are you in the same directory as the `transform.go` file?")
-			c := exec.CommandContext(
-				cmd.Context(),
-				tgo,
-				"build",
-				"-target=wasi",
-				"-opt=z",
-				"-panic=trap",
-				"-scheduler=none",
-				"-gc=conservative",
-				"-o", "transform.wasm",
-				".")
-			output, err := c.CombinedOutput()
-			out.MaybeDie(err, "failed to build\n:", string(output))
-			fmt.Println("build successful 🚀")
+			cfg, err := loadCfg(fs)
+			out.MaybeDie(err, "unable to find the transform, are you in the same directory as the %q?", configFileName)
+			switch cfg.Language {
+			case WasmLangTinygo:
+				tgo, err := exec.LookPath("tinygo")
+				out.MaybeDie(err, "tinygo is not available on $PATH, please download and install it: https://tinygo.org/getting-started/install/")
+				c := exec.CommandContext(
+					cmd.Context(),
+					tgo,
+					"build",
+					"-target=wasi",
+					"-opt=z",
+					"-panic=trap",
+					"-scheduler=none",
+					"-gc=conservative",
+					"-o", fmt.Sprintf("%s.wasm", cfg.Name),
+					".")
+				out.MaybeDieErr(c.Run())
+			default:
+				out.Die("unknown language: %q", cfg.Language)
+			}
+			fmt.Println("build succssful 🚀")
 			fmt.Println("deploy your wasm function to a topic:")
-			fmt.Println("  rpk wasm deploy transform.wasm")
+			fmt.Println("\trpk wasm deploy")
 		},
 	}
 	return cmd

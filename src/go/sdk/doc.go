@@ -8,6 +8,6 @@
 // by the Apache License, Version 2.0
 
 /*
-Package redpanda is the SDK for Redpanda's inline WASM transforms. 
+Package redpanda is the SDK for Redpanda's inline WASM transforms.
 */
 package redpanda

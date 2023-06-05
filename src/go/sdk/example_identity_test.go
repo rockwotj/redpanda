@@ -16,6 +16,7 @@ package redpanda_test
 
 import (
 	"io"
+
 	"github.com/rockwotj/redpanda/src/go/sdk"
 )
 

@@ -20,8 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"unsafe"
 	"time"
+	"unsafe"
 )
 
 // Tinygo documentation on wasi: https://tinygo.org/docs/guides/webassembly/

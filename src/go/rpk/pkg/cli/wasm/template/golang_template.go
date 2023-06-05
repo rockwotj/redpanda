@@ -82,22 +82,10 @@ func ExecTemplate(filename string, source string, data interface{}) (string, err
 const wasmGoModFile = `module {{.}}
 
 go 1.18
-
-require (
-	github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230527042812-ec47da50a292
-)
 `
 
 func WasmGoModule(name string) (string, error) {
 	return ExecTemplate("go.mod", wasmGoModFile, name)
-}
-
-const wasmGoSumFile = `github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230527042812-ec47da50a292 h1:HZCFOd5MJBUKg+zJIoEwIjmQ2REUGagGC0i+Dq7ADVY=
-github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230527042812-ec47da50a292/go.mod h1:vF5WfFB2Ze9hEYCK++UEO8nNUQ6gz4pMuM/KRIOHPJg=
-`
-
-func WasmGoChecksums() string {
-	return wasmGoSumFile
 }
 
 const wasmGoReadme = `
@@ -125,4 +113,3 @@ and is not persisted to disk, so if you restart your container you'll need to re
 func WasmGoReadme() string {
 	return wasmGoReadme
 }
-

@@ -18,14 +18,17 @@ import (
 	"net/url"
 )
 
-const baseWasmEndpoint = "/v1/wasm/"
-const deploySuffix = "deploy"
-const undeploySuffix = "undeploy"
-const listSuffix = "list"
+const (
+	baseWasmEndpoint = "/v1/wasm/"
+	deploySuffix     = "deploy"
+	undeploySuffix   = "undeploy"
+	listSuffix       = "list"
+)
 
 func generatePath(suffix string) string {
 	return generatePathQuery(suffix, url.Values{})
 }
+
 func generatePathQuery(suffix string, params url.Values) string {
 	if len(params) == 0 {
 		return baseWasmEndpoint + suffix
