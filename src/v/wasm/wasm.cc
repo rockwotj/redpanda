@@ -17,6 +17,8 @@
 #include "wasm/wasmtime.h"
 
 #include <seastar/core/reactor.hh>
+#include <seastar/core/smp.hh>
+#include <seastar/core/sstring.hh>
 
 #include <csignal>
 #include <exception>
@@ -80,13 +82,18 @@ private:
     std::unique_ptr<model::record_batch_reader::impl> _source;
 };
 
+constexpr ss::shard_id runtime_shard = 0;
 } // namespace
 
 service::service(ssx::thread_worker* worker)
   : _gate()
   , _probe(std::make_unique<probe>())
   , _worker(worker)
-  , _transforms() {}
+  , _transforms() {
+    if (ss::this_shard_id() == runtime_shard) {
+        _runtime = wasmtime::make_runtime();
+    }
+}
 
 service::~service() = default;
 
@@ -134,13 +141,46 @@ std::vector<transform::metadata> service::list_transforms() const {
     return functions;
 }
 
-ss::future<std::unique_ptr<engine>> service::make_wasm_engine(
-  std::string_view wasm_module_name, std::string_view wasm_source) {
-    auto engine = co_await _worker->submit([wasm_module_name, wasm_source] {
-        return wasmtime::make_wasm_engine(wasm_module_name, wasm_source);
+ss::future<>
+service::deploy_transform(transform::metadata meta, ss::sstring source) {
+    if (ss::this_shard_id() != runtime_shard) {
+        co_return co_await container().invoke_on(
+          runtime_shard,
+          &service::deploy_transform,
+          std::move(meta),
+          std::move(source));
+    }
+    vassert(
+      ss::this_shard_id() == runtime_shard && _runtime,
+      "Expected deploys on the runtime_shard only.");
+    vlog(wasm_log.info, "Creating wasm engine: {}", meta.function_name);
+    auto engine_factory = co_await _worker->submit(
+      [this, meta, source = std::move(source)] {
+          return wasmtime::compile(_runtime.get(), meta.function_name, source);
+      });
+    vlog(wasm_log.info, "Created wasm engine: {}", meta.function_name);
+    co_await container().invoke_on_all([&engine_factory, &meta](service& s) {
+        auto e = engine_factory->make_engine();
+        return e->start().then([&meta, &s, e = std::move(e)]() mutable {
+            auto& m = s._transforms;
+            auto it = m.find(meta.input);
+            ss::future<> stopped = it != m.end() ? it->second.engine->stop()
+                                                 : ss::now();
+            // TODO: How to handle stop failures?
+            return stopped.then([&m, &meta, e = std::move(e)]() mutable {
+                m.emplace(meta, std::move(e));
+            });
+        });
     });
-    co_await engine->start();
-    co_return engine;
+}
+
+ss::future<> service::undeploy_transform(transform::metadata meta) {
+    return container().invoke_on_all([meta](service& s) {
+        auto it = s._transforms.find(meta.input);
+        auto removed = std::move(it->second);
+        s._transforms.erase(it);
+        return removed.engine->stop().finally([r = std::move(removed)] {});
+    });
 }
 
 } // namespace wasm

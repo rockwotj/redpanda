@@ -58,7 +58,7 @@ type LiveWasmFunction struct {
 // List wasm transforms in a cluster
 func (a *AdminAPI) ListWasmTransforms(ctx context.Context) ([]LiveWasmFunction, error) {
 	var f []LiveWasmFunction
-	err := a.sendAny(ctx, http.MethodGet, generatePath(listSuffix), nil, f)
+	err := a.sendAny(ctx, http.MethodGet, generatePath(listSuffix), nil, &f)
 	return f, err
 }
 

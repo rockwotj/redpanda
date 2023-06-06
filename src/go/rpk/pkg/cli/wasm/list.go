@@ -24,6 +24,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to list wasm functions: %v", err)
 
 			w := out.NewTable("NAME", "INPUT TOPIC", "OUTPUT TOPIC")
+			defer w.Flush()
 			for _, t := range l {
 				w.PrintStrings(t.FunctionName, t.InputTopic, t.OutputTopic)
 			}

@@ -242,6 +242,7 @@ vbuild/
 /Taskfile.yml
 /.dockerignore
 /.task/
+usertasks.yml
 
 # helm chart dependencies
 *.tgz

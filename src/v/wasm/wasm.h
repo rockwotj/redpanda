@@ -21,6 +21,7 @@
 #include "ssx/thread_worker.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -30,6 +31,9 @@
 
 namespace wasm {
 
+namespace wasmtime {
+class runtime;
+}
 class probe;
 
 class engine {
@@ -48,6 +52,17 @@ public:
     engine& operator=(const engine&) = delete;
     engine(engine&&) = default;
     engine& operator=(engine&&) = default;
+
+    class factory {
+    public:
+        factory() = default;
+        factory(const factory&) = delete;
+        factory& operator=(const factory&) = delete;
+        factory(factory&&) = delete;
+        factory& operator=(factory&&) = delete;
+        virtual std::unique_ptr<engine> make_engine() = 0;
+        virtual ~factory() = default;
+    };
 };
 
 struct transform {
@@ -60,7 +75,7 @@ struct transform {
     std::unique_ptr<engine> engine;
 };
 
-class service {
+class service : ss::peering_sharded_service<service> {
 public:
     explicit service(ssx::thread_worker*);
 
@@ -89,18 +104,9 @@ public:
      */
     void install_signal_handlers();
 
-    transform swap_transform(transform transform) {
-        auto& current = _transforms[transform.meta.input];
-        return std::exchange(current, std::move(transform));
-    }
-    transform remove_transform(const transform::metadata& meta) {
-        auto it = _transforms.find(meta.input);
-        auto removed = std::move(it->second);
-        _transforms.erase(it);
-        return removed;
-    }
-    ss::future<std::unique_ptr<engine>> make_wasm_engine(
-      std::string_view wasm_module_name, std::string_view wasm_source);
+    ss::future<> deploy_transform(transform::metadata, ss::sstring source);
+
+    ss::future<> undeploy_transform(transform::metadata);
 
     probe* get_probe() const { return _probe.get(); }
 
@@ -109,6 +115,7 @@ private:
     std::unique_ptr<probe> _probe;
     ssx::thread_worker* _worker;
 
+    std::unique_ptr<wasmtime::runtime> _runtime;
     absl::flat_hash_map<
       model::topic_namespace,
       transform,
