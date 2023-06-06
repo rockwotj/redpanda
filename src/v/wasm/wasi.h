@@ -1,3 +1,12 @@
+/*
+ * Copyright 2023 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
 #pragma once
 
 #include "ffi.h"
@@ -41,7 +50,8 @@ struct iovec_t {
 };
 
 /**
- * Implementation of the wasi preview1 which is a snapshot of the wasi spec from 2020.
+ * Implementation of the wasi preview1 which is a snapshot of the wasi spec from
+ * 2020.
  */
 class preview1_module {
 public:

@@ -73,6 +73,7 @@ struct transform {
     };
     metadata meta;
     std::unique_ptr<engine> engine;
+    std::unique_ptr<probe> probe;
 };
 
 class service : public ss::peering_sharded_service<service> {
@@ -106,13 +107,10 @@ public:
 
     ss::future<> deploy_transform(transform::metadata, ss::sstring source);
 
-    ss::future<> undeploy_transform(transform::metadata);
-
-    probe* get_probe() const { return _probe.get(); }
+    ss::future<> undeploy_transform(const transform::metadata&);
 
 private:
     ss::gate _gate;
-    std::unique_ptr<probe> _probe;
     ssx::thread_worker* _worker;
 
     std::unique_ptr<wasmtime::runtime> _runtime;

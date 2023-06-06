@@ -13,7 +13,6 @@
 #include "ssx/thread_worker.h"
 #include "wasm/errc.h"
 #include "wasm/probe.h"
-#include "wasm/wasmedge.h"
 #include "wasm/wasmtime.h"
 
 #include <seastar/core/reactor.hh>
@@ -23,6 +22,7 @@
 #include <algorithm>
 #include <csignal>
 #include <exception>
+#include <memory>
 #include <stdexcept>
 
 namespace wasm {
@@ -88,7 +88,6 @@ constexpr ss::shard_id runtime_shard = 0;
 
 service::service(ssx::thread_worker* worker)
   : _gate()
-  , _probe(std::make_unique<probe>())
   , _worker(worker)
   , _transforms() {
     if (ss::this_shard_id() == runtime_shard) {
@@ -113,7 +112,7 @@ model::record_batch_reader service::wrap_batch_reader(
         return model::make_record_batch_reader<wasm_transform_applying_reader>(
           std::move(batch_reader),
           it->second.engine.get(),
-          _probe.get(),
+          it->second.probe.get(),
           _gate.hold());
     }
     throw std::runtime_error(ss::format("Unknown input topic: {}", nt));
@@ -170,22 +169,36 @@ service::deploy_transform(transform::metadata meta, ss::sstring source) {
         return e->start().then([&meta, &s, e = std::move(e)]() mutable {
             auto& m = s._transforms;
             auto it = m.find(meta.input);
-            ss::future<> stopped = it != m.end() ? it->second.engine->stop()
-                                                 : ss::now();
-            // TODO: How to handle stop failures?
-            return stopped.then([&m, &meta, e = std::move(e)]() mutable {
+            if (it == m.end()) {
+                auto p = std::make_unique<probe>();
+                p->setup_metrics(meta.function_name);
                 m.insert_or_assign(
-                  meta.input, {.meta = meta, .engine = std::move(e)});
-            });
+                  meta.input,
+                  {.meta = meta,
+                   .engine = std::move(e),
+                   .probe = std::move(p)});
+                return ss::now();
+            }
+            auto old = std::move(it->second);
+            m.insert_or_assign(
+              meta.input,
+              {
+                .meta = meta,
+                .engine = std::move(e),
+                .probe = std::move(old.probe),
+              });
+            // TODO: How to handle stop failures?
+            return old.engine->stop().finally([old = std::move(old)] {});
         });
     });
 }
 
-ss::future<> service::undeploy_transform(transform::metadata meta) {
+ss::future<> service::undeploy_transform(const transform::metadata& meta) {
     return container().invoke_on_all([meta](service& s) {
         auto it = s._transforms.find(meta.input);
         auto removed = std::move(it->second);
         s._transforms.erase(it);
+        removed.probe->clear_metrics();
         return removed.engine->stop().finally([r = std::move(removed)] {});
     });
 }
