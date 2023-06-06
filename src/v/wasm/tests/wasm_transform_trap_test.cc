@@ -15,10 +15,9 @@
 
 FIXTURE_TEST(test_transform_panic, wasm_test_fixture) {
 #ifdef NDEBUG
-    auto engine = load_engine("transform_panic.wasm");
-    auto batch = make_tiny_batch();
+    load_wasm("transform_panic.wasm");
     BOOST_CHECK_EXCEPTION(
-      engine->transform(std::move(batch), probe()).get(),
+      transform(make_tiny_batch()),
       wasm::wasm_exception,
       [](const wasm::wasm_exception& ex) {
           return ex.error_code() == wasm::errc::user_code_failure;

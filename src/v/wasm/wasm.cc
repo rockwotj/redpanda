@@ -20,6 +20,7 @@
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 
+#include <algorithm>
 #include <csignal>
 #include <exception>
 #include <stdexcept>
@@ -103,7 +104,11 @@ ss::future<> service::stop() { co_await _gate.close(); }
 model::record_batch_reader service::wrap_batch_reader(
   const model::topic_namespace_view& nt,
   model::record_batch_reader batch_reader) {
-    auto it = _transforms.find(nt);
+    // TODO: make this a boost multi-index so lookup is O(1).
+    auto it = std::find_if(
+      _transforms.begin(), _transforms.end(), [nt](const auto& e) {
+          return e.second.meta.output == nt;
+      });
     if (it != _transforms.end()) {
         return model::make_record_batch_reader<wasm_transform_applying_reader>(
           std::move(batch_reader),
@@ -111,6 +116,7 @@ model::record_batch_reader service::wrap_batch_reader(
           _probe.get(),
           _gate.hold());
     }
+    throw std::runtime_error(ss::format("Unknown input topic: {}", nt));
     return batch_reader;
 }
 
@@ -168,7 +174,8 @@ service::deploy_transform(transform::metadata meta, ss::sstring source) {
                                                  : ss::now();
             // TODO: How to handle stop failures?
             return stopped.then([&m, &meta, e = std::move(e)]() mutable {
-                m.emplace(meta, std::move(e));
+                m.insert_or_assign(
+                  meta.input, {.meta = meta, .engine = std::move(e)});
             });
         });
     });

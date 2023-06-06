@@ -41,9 +41,11 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			var path string
+			cwd, err := os.Getwd()
+			out.MaybeDie(err, "unable to get current directory: %v", err)
+			cwd, err = filepath.Abs(path)
+			out.MaybeDie(err, "unable to determine path for %q: %v", cwd, err)
 			if len(args) == 0 {
-				cwd, err := os.Getwd()
-				out.MaybeDie(err, "unable to get current directory: %v", err)
 				path = cwd
 			} else {
 				path = args[0]
@@ -53,11 +55,19 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 					err = fs.MkdirAll(path, os.ModeDir|os.ModePerm)
 					out.MaybeDie(err, "unable to create directory %q: %v", path, err)
 				}
+				path, err = filepath.Abs(path)
+				out.MaybeDie(err, "unable to determine an absolute path for %q: %v", path, err)
 				f, err := fs.Stat(path)
 				out.MaybeDie(err, "unable to determine if %q exists: %v", path, err)
 				if !f.IsDir() {
 					out.Die("please remove file %q to initialize a transform there", path)
 				}
+			}
+			c := filepath.Join(path, configFileName)
+			ok, err := afero.Exists(fs, c)
+			out.MaybeDie(err, "unable to determine if %q exists: %v", c, err)
+			if ok {
+				out.Die("there is already a transform at %q", c)
 			}
 			for name == "" {
 				suggestion := filepath.Base(path)
@@ -67,12 +77,6 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 				var err error
 				name, err = out.PromptWithSuggestion(suggestion, "name this transform:")
 				out.MaybeDie(err, "unable to determine project name: %v", err)
-			}
-			c := filepath.Join(path, configFileName)
-			ok, err := afero.Exists(fs, c)
-			out.MaybeDie(err, "unable to determine if %q exists: %v", c, err)
-			if ok {
-				out.Die("there is already a transform at %q", c)
 			}
 			var lang WasmLang
 			if langVal == "" {
@@ -91,8 +95,6 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 					out.Die("unknown wasm language %q", langVal)
 				}
 			}
-			path, err = filepath.Abs(path)
-			out.MaybeDie(err, "unable to determine path for %q: %v", path, err)
 			p := transformProject{Name: name, Path: path, Lang: lang}
 			err = executeGenerate(fs, p)
 			out.MaybeDie(err, "unable to generate all manifest files: %v", err)
@@ -101,6 +103,12 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 				installDeps(cmd.Context(), p)
 			}
 			fmt.Println("deploy your transform using:")
+			if cwd != path {
+				rel, err := filepath.Rel(cwd, path)
+				if err == nil {
+					fmt.Println("\tcd", rel)
+				}
+			}
 			fmt.Println("\trpk wasm build")
 			fmt.Println("\trpk wasm deploy")
 		},
@@ -151,7 +159,7 @@ func executeGenerate(fs afero.Fs, p transformProject) error {
 		}
 		for _, template := range templates {
 			file := filepath.Join(dir, template.name)
-			perm := os.FileMode(0o600)
+			perm := os.FileMode(0o644)
 			if template.permission > 0 {
 				perm = template.permission
 			}

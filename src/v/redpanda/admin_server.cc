@@ -4823,6 +4823,7 @@ admin_server::list_wasm(std::unique_ptr<ss::http::request>) {
         tp.input_topic = topic.input.tp();
         tp.output_topic = topic.output.tp();
         tp.function_name = topic.function_name;
+        tp.status = "running";
         output.push_back(std::move(tp));
     }
     co_return output;

@@ -75,7 +75,7 @@ struct transform {
     std::unique_ptr<engine> engine;
 };
 
-class service : ss::peering_sharded_service<service> {
+class service : public ss::peering_sharded_service<service> {
 public:
     explicit service(ssx::thread_worker*);
 

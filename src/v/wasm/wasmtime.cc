@@ -55,13 +55,6 @@ namespace {
 
 thread_local bool is_executing = false;
 
-template<typename T, auto fn>
-struct deleter {
-    void operator()(T* ptr) { fn(ptr); }
-};
-template<typename T, auto fn>
-using handle = std::unique_ptr<T, deleter<T, fn>>;
-
 void check_error(const wasmtime_error_t* error) {
     if (error) {
         wasm_name_t msg;
@@ -371,6 +364,10 @@ public:
 
     ss::future<model::record_batch>
     transform(model::record_batch&& batch, probe* probe) override {
+        vlog(
+          wasmtime_log.info,
+          "Transforming batch: {}",
+          batch.header().record_count);
         model::record_batch decompressed
           = co_await storage::internal::decompress_batch(std::move(batch));
 
@@ -598,17 +595,6 @@ private:
 
 } // namespace
 
-class runtime {
-public:
-    explicit runtime(wasm_engine_t* e)
-      : _engine(e) {}
-
-    wasm_engine_t* get() const { return _engine.get(); }
-
-private:
-    handle<wasm_engine_t, wasm_engine_delete> _engine;
-};
-
 std::unique_ptr<runtime> make_runtime() {
     wasm_config_t* config = wasm_config_new();
 
@@ -629,8 +615,6 @@ std::unique_ptr<engine::factory> compile(
   runtime* rt,
   std::string_view wasm_module_name,
   std::string_view wasm_source) {
-    // TODO: This should probably just be another class somewhere that lives on
-    // shard0 of the wasm service.
     wasmtime_module_t* user_module_ptr = nullptr;
     handle<wasmtime_error_t, wasmtime_error_delete> error{wasmtime_module_new(
       rt->get(),

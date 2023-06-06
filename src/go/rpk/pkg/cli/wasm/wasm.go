@@ -17,8 +17,8 @@ import (
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "wasm",
-		Short:  "Develop, deploy and manage Wasm data transforms",
+		Use:   "wasm",
+		Short: "Develop, deploy and manage Wasm data transforms",
 	}
 	p.InstallKafkaFlags(cmd)
 	cmd.AddCommand(
@@ -26,6 +26,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newBuildCommand(fs),
 		newDeployCommand(fs, p),
 		newListCommand(fs, p),
+		newUndeployCommand(fs, p),
 	)
 	return cmd
 }

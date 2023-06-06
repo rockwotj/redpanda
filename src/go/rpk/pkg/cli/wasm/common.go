@@ -10,6 +10,8 @@
 package wasm
 
 import (
+	"os"
+
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 )
@@ -33,6 +35,14 @@ var configFileName = "transform.yaml"
 
 func marshalConfig(c WasmProjectConfig) ([]byte, error) {
 	return yaml.Marshal(c)
+}
+
+func saveCfg(fs afero.Fs, c WasmProjectConfig) error {
+	b, err := yaml.Marshal(&c)
+	if err != nil {
+		return err
+	}
+	return afero.WriteFile(fs, configFileName, b, os.FileMode(0o644))
 }
 
 func loadCfg(fs afero.Fs) (WasmProjectConfig, error) {

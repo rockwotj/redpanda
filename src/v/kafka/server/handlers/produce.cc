@@ -242,20 +242,20 @@ ss::future<> produce_wasm_function(
     if (!shard) {
         throw std::runtime_error("Unexpected multi cluster setup for wasm!");
     }
-    auto& wasm_service = octx.rctx.connection()->server().wasm_service();
     auto reader = reader_from_lcore_batch(std::move(batch));
-    reader = wasm_service.wrap_batch_reader(
-      {ntp.ns, ntp.tp.topic}, std::move(reader));
-
+    auto& server = octx.rctx.connection()->server();
     auto outcome = co_await octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
-      [reader = std::move(reader), ntp = std::move(ntp)](
+      [reader = std::move(reader), &server, ntp = std::move(ntp)](
         cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
-          if (!partition || partition->is_elected_leader()) {
-            throw std::runtime_error("Expected partition to be the leader for wasm");
+          if (!partition || !partition->is_elected_leader()) {
+              throw std::runtime_error(ss::format(
+                "Expected partition to be the leader for wasm: {}", partition));
           }
+          reader = server.wasm_service().wrap_batch_reader(
+            {ntp.ns, ntp.tp.topic}, std::move(reader));
           return partition->replicate(
             std::move(reader),
             raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -322,6 +322,7 @@ static partition_produce_stages produce_topic_partition(
       model::topic_namespace_view(model::kafka_namespace, topic.name));
     // STOPSHIP: Huge hack to get this working
     ss::future<> wasm_transform_result = ss::now();
+    vlog(klog.info, "[WASM] Transforming topic to {}", wasm_transform_output);
     if (wasm_transform_output.has_value()) {
         wasm_transform_result = produce_wasm_function(
           octx,
@@ -434,8 +435,10 @@ static partition_produce_stages produce_topic_partition(
           });
     return partition_produce_stages{
       .dispatched = std::move(dispatch_f),
-      .produced = wasm_transform_result.then(
-        [f = std::move(f)]() mutable { return std::move(f); }),
+      .produced
+      = std::move(wasm_transform_result).then([f = std::move(f)]() mutable {
+            return std::move(f);
+        }),
     };
 }
 

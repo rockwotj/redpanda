@@ -16,10 +16,9 @@
 #include <exception>
 
 FIXTURE_TEST(test_transform_error, wasm_test_fixture) {
-    auto engine = load_engine("transform_error.wasm");
-    auto batch = make_tiny_batch();
+    load_wasm("transform_error.wasm");
     BOOST_CHECK_EXCEPTION(
-      engine->transform(std::move(batch), probe()).get(),
+      transform(make_tiny_batch()),
       wasm::wasm_exception,
       [](const wasm::wasm_exception& ex) {
           return ex.error_code() == wasm::errc::user_code_failure;

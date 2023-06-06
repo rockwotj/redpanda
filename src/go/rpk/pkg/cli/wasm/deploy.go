@@ -54,17 +54,55 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				}
 			}
 			if outputTopic == "" {
-				outputTopic, err = out.Prompt("Select an output topic:")
-				out.MaybeDie(err, "no input topic: %v", err)
+				cfg, err := loadCfg(fs)
+				if err == nil && cfg.OutputTopic != "" {
+					outputTopic = cfg.OutputTopic
+				} else {
+					outputTopic, err = out.Prompt("Select an output topic:")
+					out.MaybeDie(err, "no output topic: %v", err)
+				}
 			}
 
 			file, err := afero.ReadFile(fs, path)
 			out.MaybeDie(err, "missing %q: %v did you run `rpk wasm build`", path, err)
 
+			transforms, err := api.ListWasmTransforms(cmd.Context())
+			out.MaybeDie(err, "unable to list existing transforms: %v", err)
+
+			// Validate that this transform is unique in name and topics that it uses
+			for _, t := range transforms {
+				if t.FunctionName == functionName && t.InputTopic == inputTopic && t.OutputTopic == outputTopic {
+					// We're redeploying!
+					break
+				}
+				if t.FunctionName == functionName {
+					out.Die("a transform named %q from %q into %q already exists", functionName, t.InputTopic, t.OutputTopic)
+				}
+				if t.InputTopic == inputTopic || t.OutputTopic == inputTopic {
+					out.Die("topic %q is already attached to a transform", t.InputTopic)
+				}
+				if t.OutputTopic == outputTopic || t.InputTopic == outputTopic {
+					out.Die("topic %q is already attached to a transform", t.OutputTopic)
+				}
+			}
+
 			err = api.DeployWasmTransform(cmd.Context(), inputTopic, outputTopic, functionName, bytes.NewReader(file))
 			out.MaybeDie(err, "unable to deploy wasm %q: %v", path, err)
 
 			fmt.Println("Deploy successful!")
+
+			// Do we support saving after the first deploy?
+			// cfg, err := loadCfg(fs)
+			// s := false
+			// if !rd && err == nil {
+			// 	s, err = out.Confirm("save input and output topics to %s for the next deploy of %q", configFileName, functionName)
+			// 	if s && err != nil {
+			// 		cfg.InputTopic = inputTopic
+			// 		cfg.OutputTopic = outputTopic
+			// 		err = saveCfg(fs, cfg)
+			// 		out.MaybeDie(err, "unable to save %q: %v", configFileName, err)
+			// 	}
+			// }
 		},
 	}
 	cmd.Flags().StringVar(&inputTopic, "input-topic", "", "The input topic to apply the transform to")
