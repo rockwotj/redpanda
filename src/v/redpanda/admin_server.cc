@@ -4803,7 +4803,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
           {.function_name = name, .input = input_nt, .output = output_nt},
           std::move(req->content));
     } catch (const std::exception& ex) {
-        vlog(logger.error, "Unknown issue deploying wasm {}, rolling back", ex);
+        vlog(logger.error, "Unknown issue deploying wasm {}", ex);
         throw ex;
     }
     rep->set_status(ss::http::reply::status_type::ok);

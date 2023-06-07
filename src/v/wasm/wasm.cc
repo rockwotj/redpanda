@@ -129,12 +129,16 @@ std::optional<model::topic_namespace> service::wasm_transform_output_topic(
 }
 void service::install_signal_handlers() {
     // TODO: Be able to uninstall this handler if the service is stopped.
-    ss::engine().handle_signal(SIGILL, [] {
-        if (!wasmtime::is_running()) {
-            ss::engine_exit(std::make_exception_ptr(
-              std::runtime_error("Illegal instruction")));
-        }
-    });
+    // ss::engine().handle_signal(SIGILL, [] {
+    //     vlog(
+    //       wasm_log.warn,
+    //       "SIGILL handler triggered, wasmtime running: {}",
+    //       wasmtime::is_running());
+    //     if (!wasmtime::is_running()) {
+    //         ss::engine_exit(std::make_exception_ptr(
+    //           std::runtime_error("Illegal instruction")));
+    //     }
+    // });
 }
 
 std::vector<transform::metadata> service::list_transforms() const {
@@ -164,6 +168,7 @@ service::deploy_transform(transform::metadata meta, ss::sstring source) {
           return wasmtime::compile(_runtime.get(), meta.function_name, source);
       });
     vlog(wasm_log.info, "Created wasm engine: {}", meta.function_name);
+    // TODO: Handle engines failing to start.
     co_await container().invoke_on_all([&engine_factory, &meta](service& s) {
         auto e = engine_factory->make_engine();
         return e->start().then([&meta, &s, e = std::move(e)]() mutable {
