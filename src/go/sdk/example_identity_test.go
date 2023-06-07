@@ -15,8 +15,6 @@
 package redpanda_test
 
 import (
-	"io"
-
 	"github.com/rockwotj/redpanda/src/go/sdk"
 )
 
@@ -26,15 +24,6 @@ func Example_identityTransform() {
 	redpanda.OnTransform(onTransform)
 }
 
-func onTransform(e redpanda.TransformEvent) error {
-	output, err := redpanda.CreateOutputRecord()
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(output.Key(), e.Record().Key())
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(output.Key(), e.Record().Value())
-	return err
+func onTransform(e redpanda.TransformEvent) ([]redpanda.Record, error) {
+	return nil, nil
 }
