@@ -1,16 +1,12 @@
-// Copyright 2023 Redpanda Data, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2023 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
 #include "value.h"
 
 #include <variant>
@@ -22,15 +18,25 @@ namespace pandawasm {
 namespace op {
 // Push the constant onto the top of the stack.
 struct const_i32 {
+    constexpr static std::array<valtype, 0> stack_params = {};
+    constexpr static std::array stack_results = {valtype::i32};
+
     value v;
 };
-struct add_i32 {};
+struct add_i32 {
+    constexpr static std::array stack_params = {valtype::i32, valtype::i32};
+    constexpr static std::array stack_results = {valtype::i32};
+};
 // Push the local indexed by `idx` onto the top of the stack.
 struct get_local_i32 {
+    constexpr static std::array<valtype, 0> stack_params = {};
+    constexpr static std::array stack_results = {valtype::i32};
     uint32_t idx;
 };
 // Pop the top of the stack into local indexed by `idx`.
 struct set_local_i32 {
+    constexpr static std::array stack_params = {valtype::i32};
+    constexpr static std::array<valtype, 0> stack_results = {};
     uint32_t idx;
 };
 // Return the rest of the stack to the caller.

@@ -22,22 +22,22 @@ struct testcase {
     bytes encoded;
 };
 
-using pandawasm::encoding::decode_exception;
-using pandawasm::encoding::decode_leb128;
-using pandawasm::encoding::encode_leb128;
+using pandawasm::leb128::decode;
+using pandawasm::leb128::decode_exception;
+using pandawasm::leb128::encode;
 
 template<typename int_type>
 void run_testcase(const testcase<int_type>& testcase) {
     BOOST_TEST_INFO("encoding: " << testcase.decoded);
-    BOOST_CHECK_EQUAL(
-      encode_leb128<int_type>(testcase.decoded), testcase.encoded);
+    BOOST_CHECK_EQUAL(encode<int_type>(testcase.decoded), testcase.encoded);
 
     BOOST_TEST_INFO("decoding: " << testcase.decoded);
     auto iobuf = bytes_to_iobuf(testcase.encoded);
     auto parser = iobuf_const_parser(iobuf);
-    BOOST_CHECK_EQUAL(decode_leb128<int_type>(parser), testcase.decoded);
+    BOOST_CHECK_EQUAL(decode<int_type>(&parser), testcase.decoded);
 }
 
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
 BOOST_AUTO_TEST_CASE(leb128_int32) {
     std::vector<testcase<int32_t>> testcases(
       {{.decoded = -165675008, .encoded = {0x80, 0x80, 0x80, 0xb1, 0x7f}},
@@ -120,16 +120,17 @@ BOOST_AUTO_TEST_CASE(overflow_64) {
     bytes encoded(size_t(11), 0xff);
     auto iobuf = bytes_to_iobuf(encoded);
     auto parser = iobuf_const_parser(iobuf);
-    BOOST_CHECK_THROW(decode_leb128<int64_t>(parser), decode_exception);
+    BOOST_CHECK_THROW(decode<int64_t>(&parser), decode_exception);
     parser = iobuf_const_parser(iobuf);
-    BOOST_CHECK_THROW(decode_leb128<int64_t>(parser), decode_exception);
+    BOOST_CHECK_THROW(decode<int64_t>(&parser), decode_exception);
 }
 
 BOOST_AUTO_TEST_CASE(overflow_32) {
     bytes encoded = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     auto iobuf = bytes_to_iobuf(encoded);
     auto parser = iobuf_const_parser(iobuf);
-    BOOST_CHECK_THROW(decode_leb128<int32_t>(parser), decode_exception);
+    BOOST_CHECK_THROW(decode<int32_t>(&parser), decode_exception);
     parser = iobuf_const_parser(iobuf);
-    BOOST_CHECK_THROW(decode_leb128<uint32_t>(parser), decode_exception);
+    BOOST_CHECK_THROW(decode<uint32_t>(&parser), decode_exception);
 }
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers)

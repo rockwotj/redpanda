@@ -23,9 +23,9 @@ namespace pandawasm {
 
 namespace {
 
-template<typename Type, ss::future<Type> (*parse_type)(iobuf_const_parser&)>
-ss::future<fragmented_vector<Type>> parse_section(iobuf_const_parser& parser) {
-    auto vector_size = encoding::decode_leb128<uint32_t>(parser);
+template<typename Type, ss::future<Type> (*parse_type)(iobuf_const_parser*)>
+ss::future<fragmented_vector<Type>> parse_section(iobuf_const_parser* parser) {
+    auto vector_size = leb128::decode<uint32_t>(parser);
     fragmented_vector<Type> vector;
     for (uint32_t i = 0; i < vector_size; ++i) {
         vector.push_back(co_await parse_type(parser));
@@ -33,9 +33,9 @@ ss::future<fragmented_vector<Type>> parse_section(iobuf_const_parser& parser) {
     }
     co_return vector;
 }
-template<typename Type, Type (*parse_type)(iobuf_const_parser&)>
-ss::future<fragmented_vector<Type>> parse_section(iobuf_const_parser& parser) {
-    auto vector_size = encoding::decode_leb128<uint32_t>(parser);
+template<typename Type, Type (*parse_type)(iobuf_const_parser*)>
+ss::future<fragmented_vector<Type>> parse_section(iobuf_const_parser* parser) {
+    auto vector_size = leb128::decode<uint32_t>(parser);
     fragmented_vector<Type> vector;
     for (uint32_t i = 0; i < vector_size; ++i) {
         vector.push_back(parse_type(parser));
@@ -44,8 +44,8 @@ ss::future<fragmented_vector<Type>> parse_section(iobuf_const_parser& parser) {
     co_return vector;
 }
 
-valtype parse_valtype(iobuf_const_parser& parser) {
-    auto type_id = parser.consume_le_type<uint8_t>();
+valtype parse_valtype(iobuf_const_parser* parser) {
+    auto type_id = parser->consume_le_type<uint8_t>();
     switch (type_id) {
     case uint8_t(valtype::i32):
     case uint8_t(valtype::i64):
@@ -59,8 +59,8 @@ valtype parse_valtype(iobuf_const_parser& parser) {
     }
 }
 
-ss::future<std::vector<valtype>> parse_result_type(iobuf_const_parser& parser) {
-    auto vector_size = encoding::decode_leb128<uint32_t>(parser);
+ss::future<std::vector<valtype>> parse_result_type(iobuf_const_parser* parser) {
+    auto vector_size = leb128::decode<uint32_t>(parser);
     std::vector<valtype> result_type;
     result_type.reserve(vector_size);
     for (uint32_t i = 0; i < vector_size; ++i) {
@@ -70,8 +70,9 @@ ss::future<std::vector<valtype>> parse_result_type(iobuf_const_parser& parser) {
     co_return result_type;
 }
 
-ss::future<function_type> parse_function_type(iobuf_const_parser& parser) {
-    auto magic = parser.consume_le_type<uint8_t>();
+ss::future<function_type> parse_function_type(iobuf_const_parser* parser) {
+    auto magic = parser->consume_le_type<uint8_t>();
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     if (magic != 0x60) {
         throw parse_exception(
           ss::format("function type magic mismatch: {}", magic));
@@ -83,33 +84,33 @@ ss::future<function_type> parse_function_type(iobuf_const_parser& parser) {
       .result_types = std::move(result_types)};
 }
 
-limits parse_limits(iobuf_const_parser& parser) {
-    if (parser.read_bool()) {
-        auto min = encoding::decode_leb128<uint32_t>(parser);
-        auto max = encoding::decode_leb128<uint32_t>(parser);
+limits parse_limits(iobuf_const_parser* parser) {
+    if (parser->read_bool()) {
+        auto min = leb128::decode<uint32_t>(parser);
+        auto max = leb128::decode<uint32_t>(parser);
         return {.min = min, .max = max};
     } else {
-        auto min = encoding::decode_leb128<uint32_t>(parser);
+        auto min = leb128::decode<uint32_t>(parser);
         return {.min = min, .max = std::numeric_limits<uint32_t>::max()};
     }
 }
 
-name parse_name(iobuf_const_parser& parser) {
-    auto str_len = encoding::decode_leb128<uint32_t>(parser);
-    auto str = parser.read_string(str_len);
+name parse_name(iobuf_const_parser* parser) {
+    auto str_len = leb128::decode<uint32_t>(parser);
+    auto str = parser->read_string(str_len);
     // TODO: validate utf8
     return name(str);
 }
 
-typeidx parse_typeidx(iobuf_const_parser& parser) {
-    return typeidx(encoding::decode_leb128<uint32_t>(parser));
+typeidx parse_typeidx(iobuf_const_parser* parser) {
+    return typeidx(leb128::decode<uint32_t>(parser));
 }
 
-funcidx parse_funcidx(iobuf_const_parser& parser) {
-    return funcidx(encoding::decode_leb128<uint32_t>(parser));
+funcidx parse_funcidx(iobuf_const_parser* parser) {
+    return funcidx(leb128::decode<uint32_t>(parser));
 }
 
-tabletype parse_tabletype(iobuf_const_parser& parser) {
+tabletype parse_tabletype(iobuf_const_parser* parser) {
     auto reftype = parse_valtype(parser);
     if (reftype != valtype::externref && reftype != valtype::funcref) {
         throw parse_exception(
@@ -119,20 +120,20 @@ tabletype parse_tabletype(iobuf_const_parser& parser) {
     return {.limits = limits, .reftype = reftype};
 }
 
-memtype parse_memtype(iobuf_const_parser& parser) {
+memtype parse_memtype(iobuf_const_parser* parser) {
     return {.limits = parse_limits(parser)};
 }
 
-globaltype parse_globaltype(iobuf_const_parser& parser) {
+globaltype parse_globaltype(iobuf_const_parser* parser) {
     auto valtype = parse_valtype(parser);
-    auto mut = parser.read_bool();
+    auto mut = parser->read_bool();
     return {.valtype = valtype, .mut = mut};
 }
 
-module_import parse_import(iobuf_const_parser& parser) {
+module_import parse_import(iobuf_const_parser* parser) {
     auto module = parse_name(parser);
     auto name = parse_name(parser);
-    auto type = parser.consume_le_type<uint8_t>();
+    auto type = parser->consume_le_type<uint8_t>();
     module_import::desc desc;
     switch (type) {
     case 0x00: // func
@@ -156,41 +157,43 @@ module_import parse_import(iobuf_const_parser& parser) {
       .description = desc};
 }
 
-table parse_table(iobuf_const_parser& parser) {
+table parse_table(iobuf_const_parser* parser) {
     return {.type = parse_tabletype(parser)};
 }
 
-mem parse_memory(iobuf_const_parser& parser) {
+mem parse_memory(iobuf_const_parser* parser) {
     return {.type = parse_memtype(parser)};
 }
 
-value parse_const_expr(iobuf_const_parser& parser) {
-    auto opcode = parser.consume_le_type<uint8_t>();
+value parse_const_expr(iobuf_const_parser* parser) {
+    auto opcode = parser->consume_le_type<uint8_t>();
+    // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
     switch (opcode) {
     case 0x41:
-        return value{.i32 = encoding::decode_leb128<uint32_t>(parser)};
+        return value{.i32 = leb128::decode<uint32_t>(parser)};
     case 0x42:
-        return value{.i64 = encoding::decode_leb128<uint64_t>(parser)};
+        return value{.i64 = leb128::decode<uint64_t>(parser)};
     case 0x43:
-        return value{.f32 = parser.consume_type<float>()};
+        return value{.f32 = parser->consume_type<float>()};
     case 0x44:
-        return value{.f64 = parser.consume_type<float>()};
+        return value{.f64 = parser->consume_type<float>()};
     default:
         // TODO: Support refs, other global references, and vectors
         throw parse_exception(
           ss::format("unimplemented global value: {}", opcode));
     }
+    // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
 }
 
-global parse_global(iobuf_const_parser& parser) {
+global parse_global(iobuf_const_parser* parser) {
     auto type = parse_globaltype(parser);
     auto value = parse_const_expr(parser);
     return {.type = type, .value = value};
 }
 
-module_export parse_export(iobuf_const_parser& parser) {
+module_export parse_export(iobuf_const_parser* parser) {
     auto name = parse_name(parser);
-    auto type = parser.consume_le_type<uint8_t>();
+    auto type = parser->consume_le_type<uint8_t>();
     module_export::desc desc;
     switch (type) {
     case 0x00: // func
@@ -213,12 +216,12 @@ module_export parse_export(iobuf_const_parser& parser) {
 
 constexpr size_t MAX_FUNCTION_LOCALS = 256;
 
-std::vector<instruction> parse_expression(iobuf_const_parser& parser) {
+std::vector<instruction> parse_expression(iobuf_const_parser* parser) {
     // TODO: Validate that operators are valid to perform
     std::vector<instruction> instruction_vector;
-    // Ensure this isn't going to be too large
-    for (auto opcode = parser.consume_le_type<uint8_t>(); opcode != 0x0B;
-         opcode = parser.consume_le_type<uint8_t>()) {
+    // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
+    for (auto opcode = parser->consume_le_type<uint8_t>(); opcode != 0x0B;
+         opcode = parser->consume_le_type<uint8_t>()) {
         switch (opcode) {
         case 0x01: // noop
             // instruction_vector.push_back(op(instructions::noop));
@@ -227,17 +230,17 @@ std::vector<instruction> parse_expression(iobuf_const_parser& parser) {
             instruction_vector.emplace_back(op::return_values());
             break;
         case 0x20: { // get_local_i32
-            auto idx = encoding::decode_leb128<uint32_t>(parser);
+            auto idx = leb128::decode<uint32_t>(parser);
             instruction_vector.emplace_back(op::get_local_i32(idx));
             break;
         }
         case 0x21: { // set_local_i32
-            auto idx = encoding::decode_leb128<uint32_t>(parser);
+            auto idx = leb128::decode<uint32_t>(parser);
             instruction_vector.emplace_back(op::set_local_i32(idx));
             break;
         }
         case 0x41: { // const_i32
-            auto v = encoding::decode_leb128<uint32_t>(parser);
+            auto v = leb128::decode<uint32_t>(parser);
             instruction_vector.emplace_back(op::const_i32(value{.i32 = v}));
             break;
         }
@@ -248,6 +251,7 @@ std::vector<instruction> parse_expression(iobuf_const_parser& parser) {
             throw parse_exception(ss::format("unsupported opcode: {}", opcode));
         }
     }
+    // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
     return instruction_vector;
 }
 
@@ -256,14 +260,14 @@ struct code {
     std::vector<instruction> body;
 };
 
-code parse_code(iobuf_const_parser& parser) {
-    auto expected_size = encoding::decode_leb128<uint32_t>(parser);
-    auto start_position = parser.bytes_consumed();
+code parse_code(iobuf_const_parser* parser) {
+    auto expected_size = leb128::decode<uint32_t>(parser);
+    auto start_position = parser->bytes_consumed();
 
-    auto vector_size = encoding::decode_leb128<uint32_t>(parser);
+    auto vector_size = leb128::decode<uint32_t>(parser);
     std::vector<valtype> locals;
     for (uint32_t i = 0; i < vector_size; ++i) {
-        auto num_locals = encoding::decode_leb128<uint32_t>(parser);
+        auto num_locals = leb128::decode<uint32_t>(parser);
         if (num_locals + locals.size() > MAX_FUNCTION_LOCALS) {
             throw module_too_large_exception(
               ss::format("too many locals: {}", num_locals + locals.size()));
@@ -272,7 +276,7 @@ code parse_code(iobuf_const_parser& parser) {
         std::fill_n(std::back_inserter(locals), num_locals, valtype);
     }
     auto body = parse_expression(parser);
-    auto actual = parser.bytes_consumed() - start_position;
+    auto actual = parser->bytes_consumed() - start_position;
 
     if (actual != expected_size) {
         throw parse_exception(ss::format(
@@ -325,48 +329,49 @@ struct module_builder {
 };
 
 ss::future<>
-parse_one_section(module_builder& builder, iobuf_const_parser& parser) {
-    auto id = parser.consume_le_type<uint8_t>();
-    auto size = encoding::decode_leb128<uint32_t>(parser);
+parse_one_section(module_builder* builder, iobuf_const_parser* parser) {
+    auto id = parser->consume_le_type<uint8_t>();
+    auto size = leb128::decode<uint32_t>(parser);
+    // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
     switch (id) {
     case 0x00: // Custom section
         // Skip over custom sections for now
         // TODO: Support debug symbols if included.
-        parser.skip(size);
+        parser->skip(size);
         co_return;
     case 0x01: // type section
-        builder.func_types
+        builder->func_types
           = co_await parse_section<function_type, parse_function_type>(parser);
         co_return;
     case 0x02: // import section
-        builder.imports = co_await parse_section<module_import, parse_import>(
+        builder->imports = co_await parse_section<module_import, parse_import>(
           parser);
         co_return;
     case 0x03: // function section
-        builder.functions = co_await parse_section<typeidx, parse_typeidx>(
+        builder->functions = co_await parse_section<typeidx, parse_typeidx>(
           parser);
         co_return;
     case 0x04: // table section
-        builder.tables = co_await parse_section<table, parse_table>(parser);
+        builder->tables = co_await parse_section<table, parse_table>(parser);
         co_return;
     case 0x05: // memory section
-        builder.memories = co_await parse_section<mem, parse_memory>(parser);
+        builder->memories = co_await parse_section<mem, parse_memory>(parser);
         co_return;
     case 0x06: // global section
-        builder.globals = co_await parse_section<global, parse_global>(parser);
+        builder->globals = co_await parse_section<global, parse_global>(parser);
         co_return;
     case 0x07: // export section
-        builder.exports = co_await parse_section<module_export, parse_export>(
+        builder->exports = co_await parse_section<module_export, parse_export>(
           parser);
         co_return;
     case 0x08: // start section
-        builder.start = parse_funcidx(parser);
+        builder->start = parse_funcidx(parser);
         co_return;
     case 0x09: // element section
         // TODO: Implement me
         throw parse_exception("unimplemented");
     case 0x0A: // code section
-        builder.codes = co_await parse_section<code, parse_code>(parser);
+        builder->codes = co_await parse_section<code, parse_code>(parser);
         co_return;
     case 0x0B: // data section
     case 0x0C: // data count section
@@ -375,14 +380,18 @@ parse_one_section(module_builder& builder, iobuf_const_parser& parser) {
     default:
         throw parse_exception("unknown section");
     }
+    // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
 }
+
+constexpr std::array<const uint8_t, 4> wasm_magic_bytes = {
+  0x00, 0x61, 0x73, 0x6D};
 
 } // namespace
 
 ss::future<parsed_module> parse_module(iobuf buffer) {
     iobuf_const_parser parser(buffer);
     bytes magic = parser.read_bytes(4);
-    if (magic != to_bytes_view<char, 4>({0x00, 0x61, 0x73, 0x6D})) {
+    if (magic != to_bytes_view(wasm_magic_bytes)) {
         throw parse_exception(ss::format(
           "magic bytes mismatch: {:#x} {:#x} {:#x} {:#x}",
           magic[0],
@@ -396,7 +405,7 @@ ss::future<parsed_module> parse_module(iobuf buffer) {
     }
     module_builder builder;
     while (parser.bytes_left() > 0) {
-        co_await parse_one_section(builder, parser);
+        co_await parse_one_section(&builder, &parser);
         co_await ss::coroutine::maybe_yield();
     }
     co_return co_await std::move(builder).build();
