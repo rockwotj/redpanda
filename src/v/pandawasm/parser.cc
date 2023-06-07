@@ -321,7 +321,13 @@ struct module_builder {
             }
             auto type = func_types[func()];
             auto code = codes[i];
-            parsed.functions.emplace_back(type, code.locals, code.body);
+            function::metadata meta = {
+              .type = type,
+              .locals = code.locals,
+              // TODO: Determine this
+              .max_stack_size = 0,
+            };
+            parsed.functions.emplace_back(std::move(meta), code.body);
             co_await ss::coroutine::maybe_yield();
         }
         co_return parsed;

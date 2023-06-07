@@ -14,6 +14,26 @@
 #include <seastar/util/log.hh>
 
 namespace pandawasm {
+bool is_32bit(valtype vt) {
+    switch (vt) {
+    case valtype::i32:
+    case valtype::f32:
+        return true;
+    default:
+        return false;
+    }
+}
+bool is_64bit(valtype vt) {
+    switch (vt) {
+    case valtype::i64:
+    case valtype::f64:
+    case valtype::externref:
+    case valtype::funcref:
+        return true;
+    default:
+        return false;
+    }
+}
 std::ostream& operator<<(std::ostream& os, valtype vt) {
     switch (vt) {
     case valtype::i32:

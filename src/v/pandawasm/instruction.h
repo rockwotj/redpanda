@@ -31,13 +31,13 @@ struct add_i32 {
 struct get_local_i32 {
     constexpr static std::array<valtype, 0> stack_params = {};
     constexpr static std::array stack_results = {valtype::i32};
-    uint32_t idx;
+    int32_t idx;
 };
 // Pop the top of the stack into local indexed by `idx`.
 struct set_local_i32 {
     constexpr static std::array stack_params = {valtype::i32};
     constexpr static std::array<valtype, 0> stack_results = {};
-    uint32_t idx;
+    int32_t idx;
 };
 // Return the rest of the stack to the caller.
 struct return_values {};

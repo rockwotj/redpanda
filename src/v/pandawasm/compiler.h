@@ -19,23 +19,38 @@
 #include <asmjit/asmjit.h>
 #include <asmjit/core/compiler.h>
 #include <asmjit/x86.h>
+#include <asmjit/x86/x86assembler.h>
 #include <asmjit/x86/x86operand.h>
+
+#include <exception>
+#include <memory>
 
 namespace pandawasm {
 
+class compilation_exception : public std::exception {
+public:
+    explicit compilation_exception(std::string msg)
+      : _msg(std::move(msg)) {}
+
+    const char* what() const noexcept final { return _msg.c_str(); }
+
+private:
+    std::string _msg;
+};
+struct runtime_value_location;
+class runtime_value_location_stack;
 class jit_function_compiler {
 public:
     jit_function_compiler(
-      asmjit::FuncNode*,
-      asmjit::x86::Compiler*,
-      std::vector<asmjit::x86::Gp> registers);
+      asmjit::CodeHolder*, function_type ft, std::vector<valtype> locals);
     jit_function_compiler(const jit_function_compiler&) = delete;
     jit_function_compiler& operator=(const jit_function_compiler&) = delete;
     jit_function_compiler(jit_function_compiler&&) = delete;
     jit_function_compiler& operator=(jit_function_compiler&&) = delete;
     ~jit_function_compiler() = default;
 
-    const asmjit::FuncNode* node() const;
+    void prologue();
+    void epilogue();
 
     void operator()(op::const_i32);
     void operator()(op::add_i32);
@@ -44,10 +59,14 @@ public:
     void operator()(op::return_values);
 
 private:
-    asmjit::FuncNode* _func_node;
-    asmjit::x86::Compiler* _cc;
-    asmjit::x86::Mem _mem;
-    std::vector<asmjit::x86::Gp> _registers;
+    asmjit::x86::Gpq ensure_in_reg(runtime_value_location*);
+    asmjit::x86::Gpq allocate_register(runtime_value_location*);
+
+    asmjit::x86::Assembler _asm;
+    function_type _ft;
+    // Does not include params in this list.
+    std::vector<valtype> _locals;
+    std::unique_ptr<runtime_value_location_stack> _stack;
 };
 
 class jit_compiler {
@@ -60,12 +79,11 @@ public:
     ~jit_compiler();
 
     std::unique_ptr<jit_function_compiler>
-    add_func(const function_type&, const std::vector<valtype>& locals);
+    add_func(function_type, std::vector<valtype> locals);
 
 private:
     asmjit::JitRuntime _rt;
     asmjit::CodeHolder _code;
-    asmjit::x86::Compiler _cc;
 };
 
 } // namespace pandawasm

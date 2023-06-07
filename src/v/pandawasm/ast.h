@@ -79,8 +79,12 @@ struct module_export {
 };
 
 struct function {
-    function_type type;
-    std::vector<valtype> locals;
+    struct metadata {
+        function_type type;
+        std::vector<valtype> locals;
+        uint32_t max_stack_size;
+    };
+    metadata meta;
     std::vector<instruction> body;
 };
 

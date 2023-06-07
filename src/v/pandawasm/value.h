@@ -25,6 +25,9 @@ enum class valtype : uint8_t {
     funcref = 0x70,
     externref = 0x6F,
 };
+bool is_32bit(valtype);
+bool is_64bit(valtype);
+
 std::ostream& operator<<(std::ostream&, valtype);
 
 /**
