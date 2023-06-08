@@ -125,19 +125,7 @@ std::optional<model::topic_namespace> service::wasm_transform_output_topic(
     }
     return std::nullopt;
 }
-void service::install_signal_handlers() {
-    // TODO: Be able to uninstall this handler if the service is stopped.
-    // ss::engine().handle_signal(SIGILL, [] {
-    //     vlog(
-    //       wasm_log.warn,
-    //       "SIGILL handler triggered, wasmtime running: {}",
-    //       wasmtime::is_running());
-    //     if (!wasmtime::is_running()) {
-    //         ss::engine_exit(std::make_exception_ptr(
-    //           std::runtime_error("Illegal instruction")));
-    //     }
-    // });
-}
+void service::install_signal_handlers() {}
 
 std::vector<transform::metadata> service::list_transforms() const {
     std::vector<transform::metadata> functions;

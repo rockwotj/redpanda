@@ -50,6 +50,9 @@ namespace wasm::wasmtime {
 
 namespace {
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
+static ss::logger wasmtime_log("wasmtime");
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 thread_local bool is_executing = false;
 
 void check_error(const wasmtime_error_t* error) {
@@ -58,6 +61,7 @@ void check_error(const wasmtime_error_t* error) {
         wasmtime_error_message(error, &msg);
         std::string str(msg.data, msg.size);
         wasm_byte_vec_delete(&msg);
+        vlog(wasmtime_log.info, "ERR: {}", str);
         throw wasm_exception(std::move(str), errc::load_failure);
     }
 }
@@ -71,6 +75,7 @@ void check_trap(const wasm_trap_t* trap) {
         wasm_frame_vec_t trace{.size = 0, .data = nullptr};
         wasm_trap_trace(trap, &trace);
         for (size_t i = 0; i < trace.size; ++i) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             auto* frame = trace.data[i];
             auto* module_name = wasmtime_frame_module_name(frame);
             auto* function_name = wasmtime_frame_func_name(frame);
@@ -91,11 +96,10 @@ void check_trap(const wasm_trap_t* trap) {
             }
         }
         wasm_frame_vec_delete(&trace);
+        vlog(wasmtime_log.info, "TRAP: {}", sb.str());
         throw wasm_exception(sb.str(), errc::user_code_failure);
     }
 }
-
-static ss::logger wasmtime_log("wasmtime");
 
 std::vector<uint64_t> to_raw_values(std::span<const wasmtime_val_t> values) {
     std::vector<uint64_t> raw;
@@ -450,7 +454,7 @@ private:
               auto mc = probe->cpu_time_measurement();
               wasmtime_val_t result = {.kind = WASMTIME_I32, .of = {.i32 = -1}};
               try {
-                  std::array<wasmtime_val_t, 4> param = {
+                  std::array<wasmtime_val_t, 3> args = {
                     wasmtime_val_t{
                       .kind = WASMTIME_I32, .of = {.i32 = params.batch_handle}},
                     {.kind = WASMTIME_I32, .of = {.i32 = params.record_handle}},
@@ -461,8 +465,8 @@ private:
                     wasmtime_func_call(
                       ctx,
                       &cb.of.func,
-                      param.data(),
-                      /*params_size=*/4,
+                      args.data(),
+                      args.size(),
                       &result,
                       /*results_size=*/1,
                       &trap_ptr)};

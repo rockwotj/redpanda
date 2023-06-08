@@ -36,6 +36,6 @@ public:
 
 private:
     ssx::thread_worker _worker;
-    wasm::service _service;
+    ss::sharded<wasm::service> _service;
     wasm::transform::metadata _meta;
 };

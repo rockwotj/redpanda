@@ -33,7 +33,7 @@ namespace wasm {
 
 namespace wasmtime {
 class runtime;
-}
+} // namespace wasmtime
 class probe;
 
 class engine {

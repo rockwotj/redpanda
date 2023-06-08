@@ -36,7 +36,7 @@ const (
 	evtInternalError = EventErrorCode(3)
 )
 
-type inputBatchHandle int64
+type inputBatchHandle int32
 type inputRecordHandle int32
 
 // OnTransformFn is a callback to transform records

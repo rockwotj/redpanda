@@ -17,29 +17,33 @@
 #include <seastar/core/reactor.hh>
 
 wasm_test_fixture::wasm_test_fixture()
-  : _service(&_worker)
+  : _service()
   , _meta(
       "test_wasm_transform",
       model::random_topic_namespace(),
       model::random_topic_namespace()) {
     _worker.start().get();
+    _service.start(&_worker).get();
     // wasmtime uses SIGILL to handle traps, by default these fail tests, so we
     // register this handler as a noop.
     // Additionally, this signal handler is registered globally once, so only
     // one test case will be able to setup seastar at a time.
     seastar::engine().handle_signal(SIGILL, [] {});
 }
-wasm_test_fixture::~wasm_test_fixture() { _worker.stop().get(); }
+wasm_test_fixture::~wasm_test_fixture() {
+    _service.stop().get();
+    _worker.stop().get();
+}
 
 void wasm_test_fixture::load_wasm(const std::string& path) {
     auto wasm_file = ss::util::read_entire_file_contiguous(path).get0();
-    _service.deploy_transform(_meta, wasm_file).get();
+    _service.local().deploy_transform(_meta, wasm_file).get();
 }
 
 ss::circular_buffer<model::record_batch>
 wasm_test_fixture::transform(const model::record_batch& batch) {
-    auto reader = _service.wrap_batch_reader(
-      _meta.input, model::make_memory_record_batch_reader(batch.copy()));
+    auto reader = _service.local().wrap_batch_reader(
+      _meta.output, model::make_memory_record_batch_reader(batch.copy()));
     return model::consume_reader_to_memory(std::move(reader), model::no_timeout)
       .get();
 }

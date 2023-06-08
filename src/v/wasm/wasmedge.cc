@@ -1,0 +1,576 @@
+/*
+ * Copyright 2023 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+
+#include "wasm/wasmedge.h"
+
+#include "bytes/iobuf_parser.h"
+#include "model/record.h"
+#include "seastarx.h"
+#include "storage/parser_utils.h"
+#include "units.h"
+#include "utils/mutex.h"
+#include "vlog.h"
+#include "wasm/errc.h"
+#include "wasm/ffi.h"
+#include "wasm/probe.h"
+#include "wasm/rp_module.h"
+#include "wasm/wasi.h"
+#include "wasm/wasm.h"
+
+#include <seastar/core/future.hh>
+#include <seastar/core/sstring.hh>
+#include <seastar/core/thread.hh>
+#include <seastar/core/thread_cputime_clock.hh>
+#include <seastar/coroutine/maybe_yield.hh>
+
+#include <wasmedge/wasmedge.h>
+
+#include <cstdint>
+#include <cstring>
+#include <exception>
+#include <future>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <wasm.h>
+#include <wasmtime.h>
+
+namespace wasm::wasmedge {
+
+namespace {
+template<typename T, auto fn>
+struct deleter {
+    void operator()(T* ptr) { fn(ptr); }
+};
+template<typename T, auto fn>
+using handle = std::unique_ptr<T, deleter<T, fn>>;
+using WasmEdgeConfig
+  = handle<WasmEdge_ConfigureContext, &WasmEdge_ConfigureDelete>;
+using WasmEdgeStore = handle<WasmEdge_StoreContext, &WasmEdge_StoreDelete>;
+using WasmEdgeVM = handle<WasmEdge_VMContext, &WasmEdge_VMDelete>;
+using WasmEdgeLoader = handle<WasmEdge_LoaderContext, &WasmEdge_LoaderDelete>;
+using WasmEdgeASTModule
+  = handle<WasmEdge_ASTModuleContext, &WasmEdge_ASTModuleDelete>;
+using WasmEdgeModule
+  = handle<WasmEdge_ModuleInstanceContext, &WasmEdge_ModuleInstanceDelete>;
+using WasmEdgeFuncType
+  = handle<WasmEdge_FunctionTypeContext, &WasmEdge_FunctionTypeDelete>;
+} // namespace
+
+struct runtime {
+    WasmEdgeConfig config_ctx{WasmEdge_ConfigureCreate()};
+};
+void delete_runtime(runtime* rt) { delete rt; }
+namespace {
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
+static ss::logger wasmedge_log("wasmedge");
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+thread_local bool is_executing = false;
+
+class memory : public ffi::memory {
+public:
+    explicit memory(WasmEdge_MemoryInstanceContext* mem)
+      : ffi::memory()
+      , _underlying(mem) {}
+
+    void* translate(size_t guest_ptr, size_t len) final {
+        void* ptr = WasmEdge_MemoryInstanceGetPointer(
+          _underlying, guest_ptr, len);
+        if (ptr == nullptr) [[unlikely]] {
+            throw wasm_exception(
+              ss::format(
+                "Out of bounds memory access in FFI: {} + {} >= {} (pages)",
+                guest_ptr,
+                len,
+                WasmEdge_MemoryInstanceGetPageSize(_underlying)),
+              errc::user_code_failure);
+        }
+        return ptr;
+    }
+
+private:
+    WasmEdge_MemoryInstanceContext* _underlying;
+};
+
+std::vector<WasmEdge_ValType>
+convert_to_wasmedge(const std::vector<ffi::val_type>& ffi_types) {
+    std::vector<WasmEdge_ValType> wasmedge_types;
+    wasmedge_types.reserve(ffi_types.size());
+    for (auto ty : ffi_types) {
+        switch (ty) {
+        case ffi::val_type::i32:
+            wasmedge_types.push_back(WasmEdge_ValType_I32);
+            break;
+        case ffi::val_type::i64:
+            wasmedge_types.push_back(WasmEdge_ValType_I64);
+            break;
+        case ffi::val_type::f32:
+            wasmedge_types.push_back(WasmEdge_ValType_F32);
+            break;
+        case ffi::val_type::f64:
+            wasmedge_types.push_back(WasmEdge_ValType_F64);
+            break;
+        }
+    }
+    return wasmedge_types;
+}
+
+template<auto value>
+struct host_function;
+template<
+  typename Module,
+  typename ReturnType,
+  typename... ArgTypes,
+  ReturnType (Module::*module_func)(ArgTypes...)>
+struct host_function<module_func> {
+    static void reg(
+      const WasmEdgeModule& wasmedge_module,
+      Module* host_module,
+      std::string_view function_name) {
+        std::vector<ffi::val_type> ffi_inputs;
+        ffi::transform_types<ArgTypes...>(ffi_inputs);
+        std::vector<ffi::val_type> ffi_outputs;
+        ffi::transform_types<ReturnType>(ffi_outputs);
+        auto inputs = convert_to_wasmedge(ffi_inputs);
+        auto outputs = convert_to_wasmedge(ffi_outputs);
+        // Takes ownership of inputs and outputs
+        auto func_type_ctx = WasmEdgeFuncType(WasmEdge_FunctionTypeCreate(
+          inputs.data(), inputs.size(), outputs.data(), outputs.size()));
+
+        if (!func_type_ctx) {
+            vlog(
+              wasmedge_log.warn,
+              "Failed to register host function: {}",
+              function_name);
+            throw wasm::wasm_exception(
+              ss::format("Unable to register {}", function_name),
+              errc::engine_creation_failure);
+        }
+
+        WasmEdge_FunctionInstanceContext* func
+          = WasmEdge_FunctionInstanceCreate(
+            func_type_ctx.get(),
+            [](
+              void* data,
+              const WasmEdge_CallingFrameContext* calling_ctx,
+              const WasmEdge_Value* guest_params,
+              WasmEdge_Value* guest_returns) {
+                auto engine = static_cast<Module*>(data);
+                auto mem = memory(
+                  WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0));
+                std::vector<uint64_t> raw_params;
+                raw_params.reserve(sizeof...(ArgTypes));
+                for (size_t i = 0; i < sizeof...(ArgTypes); ++i) {
+                    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+                    raw_params.push_back(WasmEdge_ValueGetI64(guest_params[i]));
+                }
+                auto host_params = ffi::extract_parameters<ArgTypes...>(
+                  &mem, raw_params, 0);
+                try {
+                    if constexpr (std::is_void_v<ReturnType>) {
+                        std::apply(
+                          module_func,
+                          std::tuple_cat(std::make_tuple(engine), host_params));
+                    } else if constexpr (
+                      std::is_integral_v<ReturnType>
+                      && sizeof(ReturnType) == sizeof(int64_t)) {
+                        auto result = std::apply(
+                          module_func,
+                          std::tuple_cat(std::make_tuple(engine), host_params));
+                        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+                        guest_returns[0] = WasmEdge_ValueGenI64(result);
+                    } else {
+                        auto result = std::apply(
+                          module_func,
+                          std::tuple_cat(std::make_tuple(engine), host_params));
+                        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+                        guest_returns[0] = WasmEdge_ValueGenI32(result);
+                    }
+                } catch (...) {
+                    vlog(
+                      wasmedge_log.warn,
+                      "Error executing engine function: {}",
+                      std::current_exception());
+                    // TODO: When do we fail vs terminate?
+                    return WasmEdge_Result_Terminate;
+                }
+                return WasmEdge_Result_Success;
+            },
+            static_cast<void*>(host_module),
+            /*cost=*/0);
+
+        if (!func) {
+            vlog(
+              wasmedge_log.warn,
+              "Failed to register host function: {}",
+              function_name);
+            throw wasm::wasm_exception(
+              ss::format("Unable to register {}", function_name),
+              errc::engine_creation_failure);
+        }
+        WasmEdge_ModuleInstanceAddFunction(
+          wasmedge_module.get(),
+          WasmEdge_StringWrap(function_name.data(), function_name.size()),
+          func);
+    }
+};
+
+void register_wasi_module(
+  wasi::preview1_module* mod, const WasmEdgeModule& wasmedge_module) {
+    // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define REG_HOST_FN(name)                                                      \
+    host_function<&wasi::preview1_module::name>::reg(                          \
+      wasmedge_module, mod, #name)
+    REG_HOST_FN(args_get);
+    REG_HOST_FN(args_sizes_get);
+    REG_HOST_FN(environ_get);
+    REG_HOST_FN(environ_sizes_get);
+    REG_HOST_FN(clock_res_get);
+    REG_HOST_FN(clock_time_get);
+    REG_HOST_FN(fd_advise);
+    REG_HOST_FN(fd_allocate);
+    REG_HOST_FN(fd_close);
+    REG_HOST_FN(fd_datasync);
+    REG_HOST_FN(fd_fdstat_get);
+    REG_HOST_FN(fd_fdstat_set_flags);
+    REG_HOST_FN(fd_filestat_get);
+    REG_HOST_FN(fd_filestat_set_size);
+    REG_HOST_FN(fd_filestat_set_times);
+    REG_HOST_FN(fd_pread);
+    REG_HOST_FN(fd_prestat_get);
+    REG_HOST_FN(fd_prestat_dir_name);
+    REG_HOST_FN(fd_pwrite);
+    REG_HOST_FN(fd_read);
+    REG_HOST_FN(fd_readdir);
+    REG_HOST_FN(fd_renumber);
+    REG_HOST_FN(fd_seek);
+    REG_HOST_FN(fd_sync);
+    REG_HOST_FN(fd_tell);
+    REG_HOST_FN(fd_write);
+    REG_HOST_FN(path_create_directory);
+    REG_HOST_FN(path_filestat_get);
+    REG_HOST_FN(path_filestat_set_times);
+    REG_HOST_FN(path_link);
+    REG_HOST_FN(path_open);
+    REG_HOST_FN(path_readlink);
+    REG_HOST_FN(path_remove_directory);
+    REG_HOST_FN(path_rename);
+    REG_HOST_FN(path_symlink);
+    REG_HOST_FN(path_unlink_file);
+    REG_HOST_FN(poll_oneoff);
+    REG_HOST_FN(proc_exit);
+    REG_HOST_FN(sched_yield);
+    REG_HOST_FN(random_get);
+    REG_HOST_FN(sock_accept);
+    REG_HOST_FN(sock_recv);
+    REG_HOST_FN(sock_send);
+    REG_HOST_FN(sock_shutdown);
+#undef REG_HOST_FN
+}
+
+void register_rp_module(
+  redpanda_module* mod, const WasmEdgeModule& wasmedge_module) {
+    // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define REG_HOST_FN(name)                                                      \
+    host_function<&redpanda_module::name>::reg(wasmedge_module, mod, #name)
+    REG_HOST_FN(read_batch_header);
+    REG_HOST_FN(read_record);
+    REG_HOST_FN(write_record);
+#undef REG_HOST_FN
+}
+
+class wasmedge_engine final : public engine {
+public:
+    wasmedge_engine(
+      std::string_view user_module_name,
+      std::vector<WasmEdgeModule> modules,
+      WasmEdgeStore s,
+      WasmEdgeVM vm,
+      std::unique_ptr<redpanda_module> rp_module,
+      std::unique_ptr<wasi::preview1_module> wasi_module)
+      : engine()
+      , _modules(std::move(modules))
+      , _store_ctx(std::move(s))
+      , _vm_ctx(std::move(vm))
+      , _user_module_name(user_module_name)
+      , _rp_module(std::move(rp_module))
+      , _wasi_module(std::move(wasi_module)) {}
+    wasmedge_engine(const wasmedge_engine&) = delete;
+    wasmedge_engine& operator=(const wasmedge_engine&) = delete;
+    wasmedge_engine(wasmedge_engine&&) = delete;
+    wasmedge_engine& operator=(wasmedge_engine&&) = delete;
+    ~wasmedge_engine() final = default;
+
+    std::string_view function_name() const final { return _user_module_name; }
+
+    ss::future<> start() final { return initialize_wasi(); }
+
+    ss::future<> stop() final { return ss::now(); }
+
+    ss::future<model::record_batch>
+    transform(const model::record_batch* batch, probe* probe) override {
+        vlog(
+          wasmedge_log.info,
+          "Transforming batch: {}",
+          batch->header().record_count);
+        if (batch->compressed()) {
+            model::record_batch decompressed
+              = co_await storage::internal::decompress_batch(*batch);
+            if (decompressed.record_count() == 0) {
+                co_return std::move(decompressed);
+            }
+            co_return co_await invoke_transform(&decompressed, probe);
+        } else {
+            if (batch->record_count() == 0) {
+                co_return batch->copy();
+            }
+            co_return co_await invoke_transform(batch, probe);
+        }
+    }
+
+private:
+    ss::future<> initialize_wasi() {
+        vlog(
+          wasmedge_log.info,
+          "Initializing wasm function {}",
+          _user_module_name);
+        is_executing = true;
+
+        std::array<WasmEdge_Value, 0> params = {};
+        std::array<WasmEdge_Value, 0> returns = {};
+        WasmEdge_Result result = WasmEdge_VMExecute(
+          _vm_ctx.get(),
+          WasmEdge_StringWrap(
+            wasi::preview_1_start_function_name.data(),
+            wasi::preview_1_start_function_name.size()),
+          params.data(),
+          params.size(),
+          returns.data(),
+          returns.size());
+        is_executing = false;
+        if (!WasmEdge_ResultOK(result)) {
+            // Get the right transform name here
+            throw wasm_exception(
+              ss::format(
+                "wasi _start initialization {} failed", _user_module_name),
+              errc::user_code_failure);
+        }
+        vlog(
+          wasmedge_log.info, "Wasm function {} initialized", _user_module_name);
+        co_return;
+    }
+
+    ss::future<model::record_batch>
+    invoke_transform(const model::record_batch* batch, probe* probe) {
+        co_return _rp_module->for_each_record(
+          batch, [this, probe](wasm_call_params params) {
+              auto ml = probe->latency_measurement();
+              auto mc = probe->cpu_time_measurement();
+              WasmEdge_Result result;
+              std::array args = {
+                WasmEdge_ValueGenI32(params.batch_handle()),
+                WasmEdge_ValueGenI32(params.record_handle()),
+                WasmEdge_ValueGenI32(params.record_size)};
+              std::array returns = {WasmEdge_ValueGenI32(-1)};
+              try {
+                  is_executing = true;
+                  result = WasmEdge_VMExecute(
+                    _vm_ctx.get(),
+                    WasmEdge_StringWrap(
+                      redpanda_on_record_callback_function_name.data(),
+                      redpanda_on_record_callback_function_name.size()),
+                    args.data(),
+                    args.size(),
+                    returns.data(),
+                    returns.size());
+                  is_executing = false;
+              } catch (...) {
+                  is_executing = false;
+                  probe->transform_error();
+                  throw wasm_exception(
+                    ss::format(
+                      "transform execution {} failed: {}",
+                      _user_module_name,
+                      std::current_exception()),
+                    errc::user_code_failure);
+              }
+              if (!WasmEdge_ResultOK(result)) {
+                  probe->transform_error();
+                  throw wasm_exception(
+                    ss::format(
+                      "transform execution {} failed", _user_module_name),
+                    errc::user_code_failure);
+              }
+              auto user_result = WasmEdge_ValueGetI32(returns[0]);
+              if (user_result != 0) {
+                  probe->transform_error();
+                  throw wasm_exception(
+                    ss::format(
+                      "transform execution {} resulted in error {}",
+                      _user_module_name,
+                      user_result),
+                    errc::user_code_failure);
+              }
+              probe->transform_complete();
+          });
+    }
+
+    std::vector<WasmEdgeModule> _modules;
+    WasmEdgeStore _store_ctx;
+    WasmEdgeVM _vm_ctx;
+
+    ss::sstring _user_module_name;
+    std::unique_ptr<redpanda_module> _rp_module;
+    std::unique_ptr<wasi::preview1_module> _wasi_module;
+};
+
+WasmEdgeModule create_module(std::string_view name) {
+    auto wrapped = WasmEdge_StringWrap(name.data(), name.size());
+    return WasmEdgeModule(WasmEdge_ModuleInstanceCreate(wrapped));
+}
+
+class wasmedge_engine_factory : public engine::factory {
+public:
+    wasmedge_engine_factory(
+      runtime* rt, ss::sstring user_module_source, ss::sstring user_module_name)
+      : _rt(rt)
+      , _user_module_source(std::move(user_module_source))
+      , _user_module_name(std::move(user_module_name)) {}
+
+    std::unique_ptr<engine> make_engine() final {
+        WasmEdge_Result result;
+        auto store_ctx = WasmEdgeStore(WasmEdge_StoreCreate());
+
+        auto vm_ctx = WasmEdgeVM(
+          WasmEdge_VMCreate(_rt->config_ctx.get(), store_ctx.get()));
+
+        auto wasmedge_rp_module = create_module(redpanda_module::name);
+        auto rp_module = std::make_unique<redpanda_module>();
+        register_rp_module(rp_module.get(), wasmedge_rp_module);
+
+        auto wasmedge_wasi_module = create_module(wasi::preview1_module::name);
+        auto wasi_module = std::make_unique<wasi::preview1_module>();
+        register_wasi_module(wasi_module.get(), wasmedge_wasi_module);
+
+        result = WasmEdge_VMRegisterModuleFromImport(
+          vm_ctx.get(), wasmedge_rp_module.get());
+        if (!WasmEdge_ResultOK(result)) {
+            vlog(
+              wasmedge_log.warn,
+              "Failed to load module: {}",
+              WasmEdge_ResultGetMessage(result));
+            throw wasm_exception(
+              ss::format(
+                "Failed to load module: {}", WasmEdge_ResultGetMessage(result)),
+              errc::load_failure);
+        }
+
+        result = WasmEdge_VMRegisterModuleFromImport(
+          vm_ctx.get(), wasmedge_wasi_module.get());
+        if (!WasmEdge_ResultOK(result)) {
+            vlog(
+              wasmedge_log.warn,
+              "Failed to load module: {}",
+              WasmEdge_ResultGetMessage(result));
+            throw wasm_exception(
+              ss::format(
+                "Failed to load module: {}", WasmEdge_ResultGetMessage(result)),
+              errc::load_failure);
+        }
+
+        auto loader_ctx = WasmEdgeLoader(
+          WasmEdge_LoaderCreate(_rt->config_ctx.get()));
+
+        WasmEdge_ASTModuleContext* module_ctx_ptr = nullptr;
+        result = WasmEdge_LoaderParseFromBuffer(
+          loader_ctx.get(),
+          &module_ctx_ptr,
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          reinterpret_cast<const uint8_t*>(_user_module_source.data()),
+          _user_module_source.size());
+        auto module_ctx = WasmEdgeASTModule(module_ctx_ptr);
+
+        if (!WasmEdge_ResultOK(result)) {
+            vlog(
+              wasmedge_log.warn,
+              "Failed to load module: {}",
+              WasmEdge_ResultGetMessage(result));
+            throw wasm_exception(
+              ss::format(
+                "Failed to load module: {}", WasmEdge_ResultGetMessage(result)),
+              errc::load_failure);
+        }
+
+        result = WasmEdge_VMValidate(vm_ctx.get());
+        if (!WasmEdge_ResultOK(result)) {
+            vlog(
+              wasmedge_log.warn,
+              "Failed to create engine: {}",
+              WasmEdge_ResultGetMessage(result));
+            throw wasm_exception(
+              ss::format(
+                "Failed to create engine: {}",
+                WasmEdge_ResultGetMessage(result)),
+              errc::engine_creation_failure);
+        }
+
+        result = WasmEdge_VMInstantiate(vm_ctx.get());
+        if (!WasmEdge_ResultOK(result)) {
+            vlog(
+              wasmedge_log.warn,
+              "Failed to create engine: {}",
+              WasmEdge_ResultGetMessage(result));
+            throw wasm_exception(
+              ss::format(
+                "Failed to create engine: {}",
+                WasmEdge_ResultGetMessage(result)),
+              errc::engine_creation_failure);
+        }
+
+        std::vector<WasmEdgeModule> modules;
+        modules.push_back(std::move(wasmedge_rp_module));
+        modules.push_back(std::move(wasmedge_wasi_module));
+
+        return std::make_unique<wasmedge_engine>(
+          _user_module_name,
+          std::move(modules),
+          std::move(store_ctx),
+          std::move(vm_ctx),
+          std::move(rp_module),
+          std::move(wasi_module));
+    }
+
+private:
+    runtime* _rt;
+    ss::sstring _user_module_source;
+    ss::sstring _user_module_name;
+};
+
+} // namespace
+
+std::unique_ptr<runtime, decltype(&delete_runtime)> make_runtime() {
+    return {new runtime(), &delete_runtime};
+}
+
+bool is_running() { return is_executing; }
+
+std::unique_ptr<engine::factory> compile(
+  runtime* rt,
+  std::string_view wasm_module_name,
+  std::string_view wasm_source) {
+    // TODO: see if compiling works here
+    return std::make_unique<wasmedge_engine_factory>(
+      rt, ss::sstring(wasm_source), ss::sstring(wasm_module_name));
+}
+} // namespace wasm::wasmedge
