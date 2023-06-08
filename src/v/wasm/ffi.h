@@ -45,9 +45,15 @@ public:
 
     const T* raw() const noexcept { return _ptr; }
 
-    T& operator[](uint32_t index) noexcept { return _ptr[index]; }
+    T& operator[](uint32_t index) noexcept {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        return _ptr[index];
+    }
 
-    const T& operator[](uint32_t index) const noexcept { return _ptr[index]; }
+    const T& operator[](uint32_t index) const noexcept {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        return _ptr[index];
+    }
 
     uint32_t size() const noexcept { return _size; }
 
@@ -80,6 +86,7 @@ struct val {
 };
 
 inline std::string_view array_as_string_view(array<uint8_t> arr) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return {reinterpret_cast<char*>(arr.raw()), arr.size()};
 }
 
@@ -145,7 +152,9 @@ std::tuple<Type> extract_parameter(
             return std::tuple<Type>();
         }
         return std::make_tuple(ffi::array<typename Type::element_type>(
-          reinterpret_cast<typename Type::element_type*>(host_ptr), ptr_len));
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          reinterpret_cast<typename Type::element_type*>(host_ptr),
+          ptr_len));
     } else if constexpr (
       std::is_same_v<Type, const void*> || std::is_same_v<Type, void*>) {
         ++idx;
@@ -159,6 +168,8 @@ std::tuple<Type> extract_parameter(
         if (host_ptr == nullptr) {
             return std::tuple<Type>();
         }
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return std::make_tuple(reinterpret_cast<Type>(host_ptr));
     } else if constexpr (std::is_integral_v<Type>) {
         return std::make_tuple(static_cast<Type>(raw_params[idx++]));

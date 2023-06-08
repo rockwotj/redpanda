@@ -72,7 +72,7 @@ var (
 )
 
 //export redpanda_on_record
-func redpandaOnRecord(bh inputBatchHandle, rh inputRecordHandle, batchHeaderSize, recordSize int) EventErrorCode {
+func redpandaOnRecord(bh inputBatchHandle, rh inputRecordHandle, recordSize int) EventErrorCode {
 	if userTransformFunction == nil {
 		println("Invalid configuration, there is no registered user transform function")
 		return evtConfigError

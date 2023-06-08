@@ -130,15 +130,19 @@ convert_to_wasmtime(const std::vector<ffi::val_type>& ffi_types) {
     for (size_t i = 0; i < ffi_types.size(); ++i) {
         switch (ffi_types[i]) {
         case ffi::val_type::i32:
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             wasm_types.data[i] = wasm_valtype_new(WASM_I32);
             break;
         case ffi::val_type::i64:
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             wasm_types.data[i] = wasm_valtype_new(WASM_I64);
             break;
         case ffi::val_type::f32:
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             wasm_types.data[i] = wasm_valtype_new(WASM_F32);
             break;
         case ffi::val_type::f64:
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             wasm_types.data[i] = wasm_valtype_new(WASM_F64);
             break;
         }
@@ -241,11 +245,13 @@ struct host_function<module_func> {
                           std::make_tuple(host_module), host_params));
                       if constexpr (
                         std::is_integral_v<ReturnType>
-                        && sizeof(ReturnType) == 8) {
+                        && sizeof(ReturnType) == sizeof(int64_t)) {
+                          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                           results[0] = wasmtime_val_t{
                             .kind = WASMTIME_I64,
                             .of = {.i64 = static_cast<int64_t>(host_result)}};
                       } else {
+                          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                           results[0] = wasmtime_val_t{
                             .kind = WASMTIME_I32,
                             .of = {.i32 = static_cast<int32_t>(host_result)}};
@@ -274,6 +280,7 @@ struct host_function<module_func> {
 
 void register_wasi_module(
   wasi::preview1_module* mod, wasmtime_linker_t* linker) {
+    // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
     host_function<&wasi::preview1_module::name>::reg(linker, mod, #name)
     REG_HOST_FN(args_get);
@@ -324,20 +331,12 @@ void register_wasi_module(
 }
 
 void register_rp_module(redpanda_module* mod, wasmtime_linker_t* linker) {
+    // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
     host_function<&redpanda_module::name>::reg(linker, mod, #name)
-    REG_HOST_FN(read_key);
-    REG_HOST_FN(read_value);
-    REG_HOST_FN(create_output_record);
-    REG_HOST_FN(write_key);
-    REG_HOST_FN(write_value);
-    REG_HOST_FN(num_headers);
-    REG_HOST_FN(find_header_by_key);
-    REG_HOST_FN(get_header_key_length);
-    REG_HOST_FN(get_header_key);
-    REG_HOST_FN(get_header_value_length);
-    REG_HOST_FN(get_header_value);
-    REG_HOST_FN(append_header);
+    REG_HOST_FN(read_batch_header);
+    REG_HOST_FN(read_record);
+    REG_HOST_FN(write_record);
 #undef REG_HOST_FN
 }
 
@@ -360,62 +359,24 @@ public:
     ss::future<> stop() final { return ss::now(); }
 
     ss::future<model::record_batch>
-    transform(model::record_batch&& batch, probe* probe) override {
+    transform(const model::record_batch* batch, probe* probe) override {
         vlog(
           wasmtime_log.info,
           "Transforming batch: {}",
-          batch.header().record_count);
-        model::record_batch decompressed
-          = co_await storage::internal::decompress_batch(std::move(batch));
-
-        std::vector<model::record> transformed_records;
-
-        auto header = decompressed.header();
-        auto new_header = model::record_batch_header{
-          .size_bytes = 0, // To be calculated
-          .base_offset = header.base_offset,
-          .type = header.type,
-          .crc = 0, // To be calculated
-          .attrs = model::record_batch_attributes(0),
-          .last_offset_delta = header.last_offset_delta,
-          .first_timestamp = header.first_timestamp,
-          .max_timestamp = header.max_timestamp,
-          .producer_id = header.producer_id,
-          .producer_epoch = header.producer_epoch,
-          .base_sequence = header.base_sequence,
-          .record_count = 0, // To be calculated
-          .ctx = model::record_batch_header::context(
-            header.ctx.term, ss::this_shard_id()),
-        };
-
-        // TODO: Put in a scheduling group
-        co_await model::for_each_record(
-          decompressed,
-          [this, &transformed_records, &decompressed, probe](
-            model::record& record) {
-              return invoke_transform(decompressed.header(), record, probe)
-                .then([&transformed_records](auto output) {
-                    transformed_records.insert(
-                      transformed_records.end(),
-                      std::make_move_iterator(output.begin()),
-                      std::make_move_iterator(output.end()));
-                });
-          });
-
-        auto batch_size = model::packed_record_batch_header_size;
-        for (const auto& r : transformed_records) {
-            batch_size += vint::vint_size(r.size_bytes());
-            batch_size += r.size_bytes();
+          batch->header().record_count);
+        if (batch->compressed()) {
+            model::record_batch decompressed
+              = co_await storage::internal::decompress_batch(*batch);
+            if (decompressed.record_count() == 0) {
+                co_return std::move(decompressed);
+            }
+            co_return co_await invoke_transform(&decompressed, probe);
+        } else {
+            if (batch->record_count() == 0) {
+                co_return batch->copy();
+            }
+            co_return co_await invoke_transform(batch, probe);
         }
-        new_header.size_bytes = batch_size;
-        new_header.record_count = transformed_records.size();
-        auto transformed_batch = model::record_batch(
-          new_header, std::move(transformed_records));
-        transformed_batch.header().crc = model::crc_record_batch(
-          transformed_batch);
-        transformed_batch.header().header_crc = model::internal_header_only_crc(
-          transformed_batch.header());
-        co_return std::move(transformed_batch);
     }
 
     wasmtime_engine(
@@ -469,67 +430,66 @@ private:
         co_return;
     }
 
-    ss::future<std::vector<model::record>> invoke_transform(
-      const model::record_batch_header& header,
-      model::record& record,
-      probe* probe) {
-        _rp_module->prep_call(header, record);
-        auto ml = probe->latency_measurement();
-        auto mc = probe->cpu_time_measurement();
-        wasmtime_val_t result = {.kind = WASMTIME_I32, .of = {.i32 = -1}};
-        try {
-            auto* ctx = wasmtime_store_context(_store.get());
-            wasmtime_extern_t cb;
-            bool ok = wasmtime_instance_export_get(
-              ctx,
-              &_instance,
-              redpanda_on_record_callback_function_name.data(),
-              redpanda_on_record_callback_function_name.size(),
-              &cb);
-            if (!ok || cb.kind != WASMTIME_EXTERN_FUNC) {
-                throw wasm_exception(
-                  "Missing wasi initialization function",
-                  errc::user_code_failure);
-            }
-            wasmtime_val_t param = {
-              .kind = WASMTIME_I32, .of = {.i32 = fixed_input_record_handle}};
-            is_executing = true;
-            wasm_trap_t* trap_ptr = nullptr;
-            handle<wasmtime_error_t, wasmtime_error_delete> error{
-              wasmtime_func_call(
-                ctx,
-                &cb.of.func,
-                &param,
-                /*params_size=*/1,
-                &result,
-                /*results_size=*/1,
-                &trap_ptr)};
-            handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-            is_executing = false;
-            check_error(error.get());
-            check_trap(trap.get());
-        } catch (...) {
-            _rp_module->post_call_unclean();
-            probe->transform_error();
+    ss::future<model::record_batch>
+    invoke_transform(const model::record_batch* batch, probe* probe) {
+        auto* ctx = wasmtime_store_context(_store.get());
+        wasmtime_extern_t cb;
+        bool ok = wasmtime_instance_export_get(
+          ctx,
+          &_instance,
+          redpanda_on_record_callback_function_name.data(),
+          redpanda_on_record_callback_function_name.size(),
+          &cb);
+        if (!ok || cb.kind != WASMTIME_EXTERN_FUNC) {
             throw wasm_exception(
-              ss::format(
-                "transform execution {} failed: {}",
-                _user_module_name,
-                std::current_exception()),
-              errc::user_code_failure);
+              "Missing wasi initialization function", errc::user_code_failure);
         }
-        probe->transform_complete();
-        if (result.kind != WASMTIME_I32 || result.of.i32 != 0) {
-            _rp_module->post_call_unclean();
-            probe->transform_error();
-            throw wasm_exception(
-              ss::format(
-                "transform execution {} resulted in error {}",
-                _user_module_name,
-                result.of.i32),
-              errc::user_code_failure);
-        }
-        co_return _rp_module->post_call();
+        co_return _rp_module->for_each_record(
+          batch, [this, &ctx, &cb, probe](wasm_call_params params) {
+              auto ml = probe->latency_measurement();
+              auto mc = probe->cpu_time_measurement();
+              wasmtime_val_t result = {.kind = WASMTIME_I32, .of = {.i32 = -1}};
+              try {
+                  std::array<wasmtime_val_t, 4> param = {
+                    wasmtime_val_t{
+                      .kind = WASMTIME_I32, .of = {.i32 = params.batch_handle}},
+                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_handle}},
+                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_size}}};
+                  is_executing = true;
+                  wasm_trap_t* trap_ptr = nullptr;
+                  handle<wasmtime_error_t, wasmtime_error_delete> error{
+                    wasmtime_func_call(
+                      ctx,
+                      &cb.of.func,
+                      param.data(),
+                      /*params_size=*/4,
+                      &result,
+                      /*results_size=*/1,
+                      &trap_ptr)};
+                  handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+                  is_executing = false;
+                  check_error(error.get());
+                  check_trap(trap.get());
+              } catch (...) {
+                  probe->transform_error();
+                  throw wasm_exception(
+                    ss::format(
+                      "transform execution {} failed: {}",
+                      _user_module_name,
+                      std::current_exception()),
+                    errc::user_code_failure);
+              }
+              probe->transform_complete();
+              if (result.kind != WASMTIME_I32 || result.of.i32 != 0) {
+                  probe->transform_error();
+                  throw wasm_exception(
+                    ss::format(
+                      "transform execution {} resulted in error {}",
+                      _user_module_name,
+                      result.of.i32),
+                    errc::user_code_failure);
+              }
+          });
     }
 
     ss::sstring _user_module_name;

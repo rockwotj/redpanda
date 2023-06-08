@@ -57,15 +57,13 @@ public:
             auto& d = std::get<data_t>(ret);
             output.reserve(d.size());
             for (auto& batch : d) {
-                auto transformed = co_await _engine->transform(
-                  std::move(batch), _probe);
+                auto transformed = co_await _engine->transform(&batch, _probe);
                 output.emplace_back(std::move(transformed));
             }
         } else {
             auto& d = std::get<foreign_data_t>(ret);
             for (auto& batch : *d.buffer) {
-                auto transformed = co_await _engine->transform(
-                  std::move(batch), _probe);
+                auto transformed = co_await _engine->transform(&batch, _probe);
                 output.emplace_back(std::move(transformed));
             }
         }

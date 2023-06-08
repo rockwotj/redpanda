@@ -1,208 +1,177 @@
+/*
+ * Copyright 2023 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
 #include "rp_module.h"
+
+#include "bytes/iobuf_parser.h"
+#include "model/compression.h"
+#include "model/record.h"
+#include "model/record_batch_types.h"
+#include "utils/vint.h"
+#include "vassert.h"
+
+#include <exception>
+#include <ios>
+#include <vector>
 namespace wasm {
 
-void redpanda_module::prep_call(
-  const model::record_batch_header& header, model::record& record) {
+model::record_batch redpanda_module::for_each_record(
+  const model::record_batch* input,
+  ss::noncopyable_function<void(wasm_call_params)> func) {
+    vassert(
+      input->header().attrs.compression() == model::compression::none,
+      "wasm transforms expect uncompressed batches");
+
+    iobuf_const_parser parser(input->data());
+
+    batch_handle bh = input->header().crc;
+
+    std::vector<record_position> record_positions;
+    record_positions.reserve(input->record_count());
+
+    while (parser.bytes_left() > 0) {
+        auto offset = parser.bytes_consumed();
+        auto [size, amt] = parser.read_varlong();
+        parser.skip(size);
+        record_positions.emplace_back(offset, size + amt);
+    }
+
     _call_ctx.emplace(transform_context{
-      .key = iobuf_parser(record.release_key()),
-      .value = iobuf_parser(record.release_value()),
-      .offset = model::offset(header.base_offset() + record.offset_delta()),
-      .timestamp = model::timestamp(
-        header.first_timestamp() + record.timestamp_delta()),
-      .headers = std::exchange(record.headers(), {}),
-      .record_attributes = record.attributes(),
-      .timestamp_delta = record.timestamp_delta(),
-      .offset_delta = record.offset_delta(),
+      .input = input,
     });
-}
-void redpanda_module::post_call_unclean() { _call_ctx = std::nullopt; }
 
-model::record_batch::uncompressed_records redpanda_module::post_call() {
-    model::record_batch::uncompressed_records records;
-    records.reserve(_call_ctx->output_records.size());
-    // TODO: Encapsulate this in a builder
-    for (auto& output_record : _call_ctx->output_records) {
-        int32_t k_size = output_record.key
-                           ? int32_t(output_record.key->size_bytes())
-                           : -1;
-        int32_t v_size = output_record.value
-                           ? int32_t(output_record.value->size_bytes())
-                           : -1;
-        auto size = sizeof(model::record_attributes::type) // attributes
-                    + vint::vint_size(_call_ctx->timestamp_delta)
-                    + vint::vint_size(_call_ctx->offset_delta)
-                    + vint::vint_size(k_size) + std::max(k_size, 0)
-                    + vint::vint_size(v_size) + std::max(v_size, 0)
-                    + vint::vint_size(output_record.headers.size());
-        for (auto& h : output_record.headers) {
-            size += vint::vint_size(h.key_size()) + h.key().size_bytes()
-                    + vint::vint_size(h.value_size()) + h.value().size_bytes();
+    for (const auto& record_position : record_positions) {
+        _call_ctx->current_record = record_position;
+        try {
+            func({
+              .batch_handle = bh,
+              .record_handle = int32_t(record_position.offset),
+              .record_size = int32_t(record_position.size),
+            });
+        } catch (const std::exception& ex) {
+            _call_ctx = std::nullopt;
+            throw ex;
         }
-        auto r = model::record(
-          size,
-          _call_ctx->record_attributes,
-          _call_ctx->timestamp_delta,
-          _call_ctx->offset_delta,
-          k_size,
-          std::move(output_record.key).value_or(iobuf{}),
-          v_size,
-          std::move(output_record.value).value_or(iobuf{}),
-          std::move(output_record.headers));
-        records.push_back(std::move(r));
     }
+
+    model::record_batch::compressed_records records = std::move(
+      _call_ctx->output_records);
+    model::record_batch_header header = _call_ctx->input->header();
+    header.size_bytes = int32_t(
+      model::packed_record_batch_header_size + records.size_bytes());
+    header.record_count = _call_ctx->output_record_count;
+    model::record_batch batch(
+      header, std::move(records), model::record_batch::tag_ctor_ng{});
+    batch.header().crc = model::crc_record_batch(batch);
+    batch.header().header_crc = model::internal_header_only_crc(batch.header());
     _call_ctx = std::nullopt;
-    return records;
+    return batch;
 }
 
-read_result redpanda_module::read_key(
-  input_record_handle handle, ffi::array<uint8_t> data) {
-    if (handle != fixed_input_record_handle || !_call_ctx || !data) {
-        return -1;
-    }
-    size_t remaining = _call_ctx->key.bytes_left();
-    size_t amount = std::min(size_t(data.size()), remaining);
-    _call_ctx->key.consume_to(amount, data.raw());
-    return int32_t(amount);
-}
-read_result redpanda_module::read_value(
-  input_record_handle handle, ffi::array<uint8_t> data) {
-    if (handle != fixed_input_record_handle || !_call_ctx || !data) {
-        return -1;
-    }
-    size_t remaining = _call_ctx->value.bytes_left();
-    size_t amount = std::min(size_t(data.size()), remaining);
-    _call_ctx->value.consume_to(amount, data.raw());
-    return int32_t(amount);
-}
-
-output_record_handle redpanda_module::create_output_record() {
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+int32_t redpanda_module::read_batch_header(
+  batch_handle,
+  int64_t* base_offset,
+  int32_t* record_count,
+  int32_t* partition_leader_epoch,
+  int16_t* attributes,
+  int32_t* last_offset_delta,
+  int64_t* base_timestamp,
+  int64_t* max_timestamp,
+  int64_t* producer_id,
+  int16_t* producer_epoch,
+  int32_t* base_sequence) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
     if (!_call_ctx) {
-        return std::numeric_limits<output_record_handle>::max();
-    }
-    auto idx = _call_ctx->output_records.size();
-    if (idx > max_output_records) {
-        return std::numeric_limits<output_record_handle>::max();
-    }
-    _call_ctx->output_records.emplace_back();
-    return int32_t(idx);
-}
-
-write_result redpanda_module::write_key(
-  output_record_handle handle, ffi::array<uint8_t> data) {
-    if (
-      !_call_ctx || !data || handle < 0
-      || handle >= int32_t(_call_ctx->output_records.size())) {
         return -1;
     }
-    auto& k = _call_ctx->output_records[handle].key;
-    if (!k) {
-        k.emplace();
-    }
-    // TODO: Define a limit here?
-    k->append(data.raw(), data.size());
-    return int32_t(data.size());
+    *base_offset = _call_ctx->input->base_offset();
+    *record_count = _call_ctx->input->record_count();
+    *partition_leader_epoch = int32_t(_call_ctx->input->term()());
+    *attributes = _call_ctx->input->header().attrs.value();
+    *last_offset_delta = _call_ctx->input->header().last_offset_delta;
+    *base_timestamp = _call_ctx->input->header().first_timestamp();
+    *max_timestamp = _call_ctx->input->header().max_timestamp();
+    *producer_id = _call_ctx->input->header().producer_id;
+    *producer_epoch = _call_ctx->input->header().producer_epoch;
+    *base_sequence = _call_ctx->input->header().base_sequence;
+    return 0;
 }
-
-write_result redpanda_module::write_value(
-  output_record_handle handle, ffi::array<uint8_t> data) {
-    if (
-      !_call_ctx || !data || handle < 0
-      || handle >= int32_t(_call_ctx->output_records.size())) {
+int32_t redpanda_module::read_record(record_handle h, ffi::array<uint8_t> buf) {
+    if (_call_ctx || h < 0 || h >= _call_ctx->input->record_count()) {
         return -1;
     }
-    // TODO: Define a limit here?
-    auto& v = _call_ctx->output_records[handle].value;
-    if (!v) {
-        v.emplace();
+    // TODO: Don't make this n^2, the handle should be opaque and the host
+    // should advance the current position in the input data.
+    iobuf_const_parser parser(_call_ctx->input->data());
+    for (int i = 0; i < h; ++i) {
+        auto [size, _] = parser.read_varlong();
+        parser.skip(size);
     }
-    // TODO: Define a limit here?
-    v->append(data.raw(), data.size());
-    return int32_t(data.size());
+    auto [size, amt] = parser.read_varlong();
+    if ((size + amt) < buf.size()) {
+        // Buffer too small
+        return -2;
+    }
+    size_t offset = vint::serialize(size, buf.raw());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    parser.consume_to(size, buf.raw() + offset);
+    return int32_t(buf.size());
 }
 
-int32_t redpanda_module::num_headers(input_record_handle handle) {
-    if (!_call_ctx || handle != fixed_input_record_handle) {
-        return -1;
+bool redpanda_module::is_valid_serialized_record(iobuf_const_parser parser) {
+    auto [record_size, amt] = parser.read_varlong();
+    if (size_t(record_size) != parser.bytes_left()) {
+        return false;
     }
-    return int32_t(_call_ctx->headers.size());
-}
-
-int32_t redpanda_module::find_header_by_key(
-  input_record_handle handle, ffi::array<uint8_t> key) {
-    if (!_call_ctx || !key || handle != fixed_input_record_handle) {
-        return -1;
+    parser.skip(sizeof(model::record_attributes::type));
+    auto [timestamp_delta, td] = parser.read_varlong();
+    auto [offset_delta, od] = parser.read_varlong();
+    // TODO additional validation of the timestamp and offset
+    // this is easier when we explicitly know what record we're at.
+    (void)timestamp_delta;
+    (void)offset_delta;
+    auto [key_length, kl] = parser.read_varlong();
+    if (key_length > 0) {
+        parser.skip(key_length);
     }
-    std::string_view needle(reinterpret_cast<char*>(key.raw()), key.size());
-    for (int32_t i = 0; i < int32_t(_call_ctx->headers.size()); ++i) {
-        if (_call_ctx->headers[i].key() == needle) {
-            return i;
+    auto [value_length, vl] = parser.read_varlong();
+    if (value_length > 0) {
+        parser.skip(value_length);
+    }
+    auto [header_count, hv] = parser.read_varlong();
+    for (int i = 0; i < header_count; ++i) {
+        auto [key_length, kl] = parser.read_varlong();
+        if (key_length > 0) {
+            parser.skip(key_length);
+        }
+        auto [value_length, vl] = parser.read_varlong();
+        if (value_length > 0) {
+            parser.skip(value_length);
         }
     }
-    return -2;
+    return true;
 }
-int32_t redpanda_module::get_header_key_length(
-  input_record_handle handle, int32_t index) {
-    if (
-      !_call_ctx || handle != fixed_input_record_handle || index < 0
-      || index >= int32_t(_call_ctx->headers.size())) {
+
+int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
+    if (!_call_ctx) {
         return -1;
     }
-    return int32_t(_call_ctx->headers[index].key_size());
-}
-int32_t redpanda_module::get_header_value_length(
-  input_record_handle handle, int32_t index) {
-    if (
-      !_call_ctx || handle != fixed_input_record_handle || index < 0
-      || index >= int32_t(_call_ctx->headers.size())) {
-        return -1;
-    }
-    return int32_t(_call_ctx->headers[index].value_size());
-}
-int32_t redpanda_module::get_header_key(
-  input_record_handle handle, int32_t index, ffi::array<uint8_t> key) {
-    if (
-      !_call_ctx || !key || handle != fixed_input_record_handle || index < 0
-      || index >= int32_t(_call_ctx->headers.size())) {
-        return -1;
-    }
-    const iobuf& k = _call_ctx->headers[index].key();
-    if (key.size() < k.size_bytes()) {
+    iobuf b;
+    b.append(buf.raw(), buf.size());
+    if (!is_valid_serialized_record(iobuf_const_parser(b))) {
+        // Invalid payload
         return -2;
     }
-    iobuf::iterator_consumer(k.cbegin(), k.cend())
-      .consume_to(k.size_bytes(), key.raw());
-    return int32_t(k.size_bytes());
+    _call_ctx->output_records.append_fragments(std::move(b));
+    _call_ctx->output_record_count += 1;
+    return int32_t(buf.size());
 }
-int32_t redpanda_module::get_header_value(
-  input_record_handle handle, int32_t index, ffi::array<uint8_t> value) {
-    if (
-      !_call_ctx || !value || handle != fixed_input_record_handle || index < 0
-      || index >= int32_t(_call_ctx->headers.size())) {
-        return -1;
-    }
-    const iobuf& v = _call_ctx->headers[index].value();
-    if (value.size() < v.size_bytes()) {
-        return -2;
-    }
-    iobuf::iterator_consumer(v.cbegin(), v.cend())
-      .consume_to(v.size_bytes(), value.raw());
-    return int32_t(v.size_bytes());
-}
-int32_t redpanda_module::append_header(
-  output_record_handle handle,
-  ffi::array<uint8_t> key,
-  ffi::array<uint8_t> value) {
-    if (
-      !_call_ctx || handle < 0
-      || handle >= int32_t(_call_ctx->output_records.size())) {
-        return -1;
-    }
-    iobuf k;
-    k.append(key.raw(), key.size());
-    iobuf v;
-    v.append(value.raw(), value.size());
-    _call_ctx->output_records[handle].headers.emplace_back(
-      key.size(), std::move(k), value.size(), std::move(v));
-    return int32_t(key.size() + value.size());
-}
+
 } // namespace wasm

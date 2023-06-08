@@ -20,6 +20,9 @@ namespace wasm::wasi {
 
 static ss::logger wasi_log("wasi");
 
+// We don't have control over this API, so there will be some redundant
+// wrappers. NOLINTBEGIN(bugprone-easily-swappable-parameters)
+
 uint16_t preview1_module::clock_res_get(uint32_t, uint64_t*) {
     return ERRNO_NOSYS;
 }
@@ -113,7 +116,9 @@ int16_t preview1_module::fd_write(
                 return ERRNO_INVAL;
             }
             ss << std::string_view(
-              reinterpret_cast<const char*>(data), vec.buf_len);
+              // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+              reinterpret_cast<const char*>(data),
+              vec.buf_len);
         }
         // TODO: We should be buffering these until a newline or something and
         // emitting logs line by line Also: rate limit logs
@@ -173,8 +178,9 @@ int16_t preview1_module::poll_oneoff(void*, void*, uint32_t, uint32_t*) {
 }
 int16_t preview1_module::random_get(ffi::array<uint8_t> buf) {
     // https://imgur.com/uR4WuQ0
+    constexpr uint8_t random_number = 9;
     for (size_t i = 0; i < buf.size(); ++i) {
-        buf[i] = 9;
+        buf[i] = random_number;
     }
     return ERRNO_SUCCESS;
 }
@@ -197,4 +203,5 @@ int32_t preview1_module::sched_yield() {
     // TODO: actually yield
     return ERRNO_SUCCESS;
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 } // namespace wasm::wasi
