@@ -16,7 +16,7 @@
 FIXTURE_TEST(test_setup_panic, wasm_test_fixture) {
 #ifdef NDEBUG
     BOOST_CHECK_EXCEPTION(
-      load_engine("setup_panic.wasm"),
+      load_engine("setup-panic.wasm"),
       wasm::wasm_exception,
       [](const wasm::wasm_exception& ex) {
           std::cout << ex.error_code() << ":" << ex.what() << std::endl;

@@ -16,7 +16,7 @@
 #include <exception>
 
 FIXTURE_TEST(test_transform_error, wasm_test_fixture) {
-    load_wasm("transform_error.wasm");
+    load_wasm("transform-error.wasm");
     BOOST_CHECK_EXCEPTION(
       transform(make_tiny_batch()),
       wasm::wasm_exception,

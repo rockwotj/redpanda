@@ -16,7 +16,7 @@
 #include <exception>
 
 FIXTURE_TEST(test_wasm_transforms_work, wasm_test_fixture) {
-    load_wasm("golang_identity_transform.wasm");
+    load_wasm("identity.wasm");
     auto batch = make_tiny_batch();
     auto result_batches = transform(batch);
     BOOST_CHECK_EQUAL(result_batches.size(), 1);

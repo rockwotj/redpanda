@@ -11,18 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package main
 
-import (
-	"errors"
-
-	"redpanda.com/wasm/redpanda"
-)
-
 func main() {
-	redpanda.OnTransform(myTransform)
-}
-
-func myTransform(e redpanda.TransformEvent) error {
-	return errors.New("oh noes!")
+	panic("Oh noes!")
 }

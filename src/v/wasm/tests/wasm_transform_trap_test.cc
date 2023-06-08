@@ -15,7 +15,7 @@
 
 FIXTURE_TEST(test_transform_panic, wasm_test_fixture) {
 #ifdef NDEBUG
-    load_wasm("transform_panic.wasm");
+    load_wasm("transform-panic.wasm");
     BOOST_CHECK_EXCEPTION(
       transform(make_tiny_batch()),
       wasm::wasm_exception,

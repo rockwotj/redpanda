@@ -20,7 +20,7 @@ rp_test(
     v::wasm_test_fixture
   # TODO: Hookup this to the build system properly
   INPUT_FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/testdata/golang_identity_transform.wasm
+    ${CMAKE_SOURCE_DIR}/src/go/sdk/internal/testdata/identity.wasm
   ARGS "-- -c 1"
   LABELS wasm
 )
@@ -35,7 +35,7 @@ rp_test(
     v::wasm_test_fixture
   # TODO: Hookup this to the build system properly
   INPUT_FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/testdata/transform_error.wasm
+    ${CMAKE_SOURCE_DIR}/src/go/sdk/internal/testdata/transform-error.wasm
   ARGS "-- -c 1"
   LABELS wasm
 )
@@ -50,7 +50,7 @@ rp_test(
     v::wasm_test_fixture
   # TODO: Hookup this to the build system properly
   INPUT_FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/testdata/transform_panic.wasm
+    ${CMAKE_SOURCE_DIR}/src/go/sdk/internal/testdata/transform-panic.wasm
   ARGS "-- -c 1"
   LABELS wasm
 )
@@ -65,7 +65,7 @@ rp_test(
     v::wasm_test_fixture
   # TODO: Hookup this to the build system properly
   INPUT_FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/testdata/setup_panic.wasm
+    ${CMAKE_SOURCE_DIR}/src/go/sdk/internal/testdata/setup-panic.wasm
   ARGS "-- -c 1"
   LABELS wasm
 )

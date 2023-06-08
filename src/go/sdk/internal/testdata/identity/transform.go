@@ -12,16 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package redpanda_test
+package main
 
 import (
 	"github.com/rockwotj/redpanda/src/go/sdk"
 )
 
-// This example shows the basic usage of the package:
-// This is a transform that does nothing but copies the same data to an new
-// topic.
-func Example_identityTransform() {
+func main() {
 	redpanda.OnTransform(onTransform)
 }
 

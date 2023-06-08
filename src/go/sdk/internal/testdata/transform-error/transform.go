@@ -14,6 +14,16 @@
 
 package main
 
+import (
+	"errors"
+
+	"github.com/rockwotj/redpanda/src/go/sdk"
+)
+
 func main() {
-	panic("oh noes!")
+	redpanda.OnTransform(onTransform)
+}
+
+func onTransform(e redpanda.TransformEvent) ([]redpanda.Record, error) {
+	return nil, errors.New("oh noes!")
 }

@@ -11,14 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package main
 
-import "redpanda.com/wasm/redpanda"
+import (
+	"github.com/rockwotj/redpanda/src/go/sdk"
+)
 
 func main() {
-	redpanda.OnTransform(myTransform)
+	redpanda.OnTransform(onTransform)
 }
 
-func myTransform(e redpanda.TransformEvent) error {
+func onTransform(e redpanda.TransformEvent) ([]redpanda.Record, error) {
 	panic("oh noes!")
 }
