@@ -17,6 +17,23 @@
 package redpanda
 
 //go:wasm-module redpanda
+//export read_batch_header
+//extern read_batch_header
+func readRecordHeader(
+	h inputBatchHandle,
+	baseOffset *int64,
+	recordCount *int,
+	partitionLeaderEpoch *int,
+	attributes *int16,
+	lastOffsetDelta *int,
+	baseTimestamp *int64,
+	maxTimestamp *int64,
+	producerId *int64,
+	producerEpoch *int16,
+	baseSequence *int,
+) int
+
+//go:wasm-module redpanda
 //export read_record
 //extern read_record
 func readRecord(h inputRecordHandle, buf *byte, len int) int

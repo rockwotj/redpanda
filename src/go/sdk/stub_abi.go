@@ -16,6 +16,22 @@
 
 package redpanda
 
+func readRecordHeader(
+	h inputBatchHandle,
+	baseOffset *int64,
+	recordCount *int,
+	partitionLeaderEpoch *int,
+	attributes *int16,
+	lastOffsetDelta *int,
+	baseTimestamp *int64,
+	maxTimestamp *int64,
+	producerId *int64,
+	producerEpoch *int16,
+	baseSequence *int,
+) int {
+	panic("stub")
+}
+
 func readRecord(h inputRecordHandle, buf *byte, len int) int {
 	panic("stub")
 }

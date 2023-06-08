@@ -68,7 +68,7 @@ public:
     friend std::ostream& operator<<(std::ostream&, const record_attributes&);
 
 private:
-    std::bitset<8> _attributes;
+    std::bitset<sizeof(uint8_t) * CHAR_BIT> _attributes;
 };
 
 class record_header {
@@ -349,7 +349,7 @@ private:
     }
 
     // Bits 4 and 5 are used by Kafka and thus reserved.
-    std::bitset<16> _attributes;
+    std::bitset<sizeof(uint16_t) * CHAR_BIT> _attributes;
 };
 
 /** expect all fields to be serialized, except context fields */

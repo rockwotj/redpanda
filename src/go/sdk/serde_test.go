@@ -42,18 +42,31 @@ func makeRandomRecord() Record {
 
 func TestRoundTrip(t *testing.T) {
 	r := makeRandomRecord()
-	e.record = r
 	buf := &bytes.Buffer{}
-	l, err := r.serialize(buf, baseOffset, baseTimestamp)
+	header := batchHeader{
+		handle:               0,
+		baseOffset:           42,
+		baseTimestamp:        9,
+		recordCount:          1,
+		partitionLeaderEpoch: 1,
+		attributes:           0,
+		lastOffsetDelta:      0,
+		maxTimestamp:         9,
+		producerId:           3287,
+		producerEpoch:        1,
+		baseSequence:         1,
+	}
+	l, err := r.serialize(buf, header, r)
 	if err != nil {
 		t.Fatal(err)
 	}
 	buf = bytes.NewBuffer(buf.Bytes()[:l])
-	err = deserializeRecord(buf, baseOffset, baseTimestamp)
+	output := Record{}
+	err = deserializeRecord(buf, header, &output)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r, e.record) {
-		t.Fatalf("%#v != %#v", r, e.record)
+	if !reflect.DeepEqual(r, output) {
+		t.Fatalf("%#v != %#v", r, output)
 	}
 }

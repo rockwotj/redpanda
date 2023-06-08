@@ -24,7 +24,7 @@ import (
 // The ABI that our SDK provides. Redpanda executes this function to determine the protocol contract to execute.
 //export redpanda_abi_version
 func redpandaAbiVersion() int32 {
-	return 1
+	return 2
 }
 
 type EventErrorCode int32
@@ -36,6 +36,7 @@ const (
 	evtInternalError = EventErrorCode(3)
 )
 
+type inputBatchHandle int64
 type inputRecordHandle int32
 
 // OnTransformFn is a callback to transform records
@@ -48,27 +49,60 @@ func OnTransform(fn OnTransformFn) {
 	userTransformFunction = fn
 }
 
+type batchHeader struct {
+	handle               inputBatchHandle
+	baseOffset           int64
+	recordCount          int
+	partitionLeaderEpoch int
+	attributes           int16
+	lastOffsetDelta      int
+	baseTimestamp        int64
+	maxTimestamp         int64
+	producerId           int64
+	producerEpoch        int16
+	baseSequence         int
+}
+
 // Cache a bunch of objects to not GC
 var (
+	currentBatchHeader    batchHeader    = batchHeader{handle: -1}
 	scratchRecordBuf      *bytes.Buffer  = &bytes.Buffer{}
 	incomingRecordHeaders []RecordHeader = nil
 	e                     transformEvent
 )
 
 //export redpanda_on_record
-func redpandaOnRecord(h inputRecordHandle, recordSize int, baseOffset, baseTimestamp int64) EventErrorCode {
+func redpandaOnRecord(bh inputBatchHandle, rh inputRecordHandle, batchHeaderSize, recordSize int) EventErrorCode {
 	if userTransformFunction == nil {
 		println("Invalid configuration, there is no registered user transform function")
 		return evtConfigError
 	}
+	if currentBatchHeader.handle != bh {
+		err := readRecordHeader(
+			bh,
+			&currentBatchHeader.baseOffset,
+			&currentBatchHeader.recordCount,
+			&currentBatchHeader.partitionLeaderEpoch,
+			&currentBatchHeader.attributes,
+			&currentBatchHeader.lastOffsetDelta,
+			&currentBatchHeader.baseTimestamp,
+			&currentBatchHeader.maxTimestamp,
+			&currentBatchHeader.producerId,
+			&currentBatchHeader.producerEpoch,
+			&currentBatchHeader.baseSequence,
+		)
+		if err != 0 {
+			return evtInternalError
+		}
+	}
 	scratchRecordBuf.Reset()
 	scratchRecordBuf.Grow(recordSize)
 	buf := scratchRecordBuf.Bytes()
-	amt := readRecord(h, &buf[0], recordSize)
+	amt := readRecord(rh, &buf[0], recordSize)
 	if amt < recordSize {
 		return evtInternalError
 	}
-	err := deserializeRecord(scratchRecordBuf, baseOffset, baseTimestamp)
+	err := deserializeRecord(scratchRecordBuf, currentBatchHeader, &e.record)
 	if err != nil {
 		println("deserializing record failed:", err.Error())
 		return evtInternalError
@@ -82,7 +116,7 @@ func redpandaOnRecord(h inputRecordHandle, recordSize int, baseOffset, baseTimes
 		return evtSuccess
 	}
 	for i := 0; i < len(r); i++ {
-		l, err := r[i].serialize(scratchRecordBuf, baseOffset, baseTimestamp)
+		l, err := r[i].serialize(scratchRecordBuf, currentBatchHeader, e.record)
 		if err != nil {
 			println("serializing record failed:", err.Error())
 			return evtInternalError
@@ -92,7 +126,7 @@ func redpandaOnRecord(h inputRecordHandle, recordSize int, baseOffset, baseTimes
 	return evtSuccess
 }
 
-func deserializeRecord(b *bytes.Buffer, baseOffset, baseTimestamp int64) error {
+func deserializeRecord(b *bytes.Buffer, bh batchHeader, r *Record) error {
 	rs, err := binary.ReadVarint(b)
 	if err != nil {
 		return err
@@ -157,13 +191,13 @@ func deserializeRecord(b *bytes.Buffer, baseOffset, baseTimestamp int64) error {
 			Value: v,
 		}
 	}
-	e.record.Key = k
-	e.record.Value = v
-	e.record.Attrs.attr = attr
-	e.record.Headers = incomingRecordHeaders
+	r.Key = k
+	r.Value = v
+	r.Attrs.attr = attr
+	r.Headers = incomingRecordHeaders
 	// TODO: if logAppendTime timestamp is MaxTimestamp not first + delta
-	e.record.Timestamp = time.UnixMilli(baseTimestamp + td)
-	e.record.Offset = baseOffset + od
+	r.Timestamp = time.UnixMilli(bh.baseTimestamp + td)
+	r.Offset = bh.baseOffset + od
 	return nil
 }
 
@@ -184,7 +218,7 @@ func writeBytes(b *bytes.Buffer, offset int, v []byte) int {
 	return offset
 }
 
-func (r Record) serialize(b *bytes.Buffer, baseOffset, baseTimestamp int64) (int, error) {
+func (r Record) serialize(b *bytes.Buffer, bh batchHeader, original Record) (int, error) {
 	b.Reset()
 	// Reserve space for writing the record length, which we'll write at the end
 	for i := 0; i < binary.MaxVarintLen64; i++ {
@@ -199,12 +233,15 @@ func (r Record) serialize(b *bytes.Buffer, baseOffset, baseTimestamp int64) (int
 
 	var ts int64
 	if r.Timestamp.IsZero() {
-		ts = e.record.Timestamp.UnixMilli() - baseTimestamp
+		// For an unset timesamp, just use the original timestamp
+		ts = original.Timestamp.UnixMilli() - bh.baseTimestamp
 	} else {
-		ts = r.Timestamp.UnixMilli() - baseTimestamp
+		ts = r.Timestamp.UnixMilli() - bh.baseTimestamp
 	}
 	offset = writeVarint(b, offset, ts)
-	offset = writeVarint(b, offset, e.record.Offset-baseOffset)
+	// Always use the original offset, note the func can override these values
+	// so the host still has to verify this.
+	offset = writeVarint(b, offset, original.Offset-bh.baseOffset)
 	if r.Key != nil {
 		offset = writeVarint(b, offset, int64(len(r.Key)))
 		offset = writeBytes(b, offset, r.Key)
