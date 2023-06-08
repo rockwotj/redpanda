@@ -2,6 +2,7 @@
 
 #include "bytes/iobuf.h"
 #include "model/record.h"
+#include "utils/named_type.h"
 #include "wasm/ffi.h"
 
 #include <seastar/util/noncopyable_function.hh>
@@ -12,10 +13,10 @@
 #include <string_view>
 
 namespace wasm {
-using batch_handle = int32_t;
-using record_handle = int32_t;
+using batch_handle = named_type<int32_t, struct batch_handle_tag>;
+using record_handle = named_type<int32_t, struct record_handle_tag>;
 
-constexpr size_t max_output_records = 256;
+constexpr int max_output_records = 256;
 constexpr std::string_view redpanda_on_record_callback_function_name
   = "redpanda_on_record";
 

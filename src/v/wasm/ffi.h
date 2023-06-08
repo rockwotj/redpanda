@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "reflection/type_traits.h"
 #include "utils/hdr_hist.h"
 
 #include <cstdint>
@@ -117,6 +118,8 @@ void transform_type(std::vector<val_type>& types) {
         types.push_back(val_type::i64);
     } else if constexpr (std::is_pointer_v<Type> || std::is_integral_v<Type>) {
         types.push_back(val_type::i32);
+    } else if constexpr (reflection::is_rp_named_type<Type>) {
+        transform_type<typename Type::type>(types);
     } else {
         static_assert(dependent_false<Type>::value, "Unknown type");
     }
@@ -173,6 +176,10 @@ std::tuple<Type> extract_parameter(
         return std::make_tuple(reinterpret_cast<Type>(host_ptr));
     } else if constexpr (std::is_integral_v<Type>) {
         return std::make_tuple(static_cast<Type>(raw_params[idx++]));
+    } else if constexpr (reflection::is_rp_named_type<Type>) {
+        auto [underlying] = extract_parameter<typename Type::type>(
+          mem, raw_params, idx);
+        return std::tuple<Type>(underlying);
     } else {
         static_assert(dependent_false<Type>::value, "Unknown type");
     }

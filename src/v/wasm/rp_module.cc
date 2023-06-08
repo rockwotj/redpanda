@@ -30,7 +30,7 @@ model::record_batch redpanda_module::for_each_record(
 
     iobuf_const_parser parser(input->data());
 
-    batch_handle bh = input->header().crc;
+    auto bh = batch_handle(input->header().crc);
 
     std::vector<record_position> record_positions;
     record_positions.reserve(input->record_count());
@@ -51,7 +51,7 @@ model::record_batch redpanda_module::for_each_record(
         try {
             func({
               .batch_handle = bh,
-              .record_handle = int32_t(record_position.offset),
+              .record_handle = record_handle(int32_t(record_position.offset)),
               .record_size = int32_t(record_position.size),
             });
         } catch (const std::exception& ex) {
@@ -76,7 +76,7 @@ model::record_batch redpanda_module::for_each_record(
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 int32_t redpanda_module::read_batch_header(
-  batch_handle,
+  batch_handle bh,
   int64_t* base_offset,
   int32_t* record_count,
   int32_t* partition_leader_epoch,
@@ -88,7 +88,7 @@ int32_t redpanda_module::read_batch_header(
   int16_t* producer_epoch,
   int32_t* base_sequence) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
-    if (!_call_ctx) {
+    if (!_call_ctx || bh != _call_ctx->input->header().crc) {
         return -1;
     }
     *base_offset = _call_ctx->input->base_offset();
@@ -104,7 +104,7 @@ int32_t redpanda_module::read_batch_header(
     return 0;
 }
 int32_t redpanda_module::read_record(record_handle h, ffi::array<uint8_t> buf) {
-    if (_call_ctx || h < 0 || h >= _call_ctx->input->record_count()) {
+    if (_call_ctx || h == int32_t(_call_ctx->current_record.offset)) {
         return -1;
     }
     // TODO: Don't make this n^2, the handle should be opaque and the host
@@ -163,11 +163,14 @@ int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
     if (!_call_ctx) {
         return -1;
     }
+    if (_call_ctx->output_record_count >= max_output_records) {
+        return -2;
+    }
     iobuf b;
     b.append(buf.raw(), buf.size());
     if (!is_valid_serialized_record(iobuf_const_parser(b))) {
         // Invalid payload
-        return -2;
+        return -3;
     }
     _call_ctx->output_records.append_fragments(std::move(b));
     _call_ctx->output_record_count += 1;
