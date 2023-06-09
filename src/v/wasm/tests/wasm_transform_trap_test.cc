@@ -14,7 +14,6 @@
 #include <seastar/testing/thread_test_case.hh>
 
 FIXTURE_TEST(test_transform_panic, wasm_test_fixture) {
-#ifdef NDEBUG
     load_wasm("transform-panic.wasm");
     BOOST_CHECK_EXCEPTION(
       transform(make_tiny_batch()),
@@ -22,5 +21,4 @@ FIXTURE_TEST(test_transform_panic, wasm_test_fixture) {
       [](const wasm::wasm_exception& ex) {
           return ex.error_code() == wasm::errc::user_code_failure;
       });
-#endif
 }
