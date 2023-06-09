@@ -5,6 +5,7 @@
 #include "pandawasm/ast.h"
 #include "pandawasm/encoding.h"
 #include "pandawasm/instruction.h"
+#include "pandawasm/stack_validator.h"
 #include "seastarx.h"
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
@@ -17,6 +18,7 @@
 
 #include <cstdint>
 #include <iterator>
+#include <utility>
 #include <vector>
 
 namespace pandawasm {
@@ -216,40 +218,42 @@ module_export parse_export(iobuf_const_parser* parser) {
 
 constexpr size_t MAX_FUNCTION_LOCALS = 256;
 
-std::vector<instruction> parse_expression(iobuf_const_parser* parser) {
-    // TODO: Validate that operators are valid to perform
+std::vector<instruction>
+parse_expression(iobuf_const_parser* parser, function_type ft) {
     std::vector<instruction> instruction_vector;
+    stack_validator validator(std::move(ft));
     // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
     for (auto opcode = parser->consume_le_type<uint8_t>(); opcode != 0x0B;
          opcode = parser->consume_le_type<uint8_t>()) {
+        instruction i;
         switch (opcode) {
-        case 0x01: // noop
-            // instruction_vector.push_back(op(instructions::noop));
-            break;
         case 0x0F: // return
-            instruction_vector.emplace_back(op::return_values());
+            i = op::return_values();
             break;
         case 0x20: { // get_local_i32
             auto idx = leb128::decode<uint32_t>(parser);
-            instruction_vector.emplace_back(op::get_local_i32(idx));
+            i = op::get_local_i32(int32_t(idx));
             break;
         }
         case 0x21: { // set_local_i32
             auto idx = leb128::decode<uint32_t>(parser);
-            instruction_vector.emplace_back(op::set_local_i32(idx));
+            i = op::set_local_i32(int32_t(idx));
             break;
         }
         case 0x41: { // const_i32
             auto v = leb128::decode<uint32_t>(parser);
-            instruction_vector.emplace_back(op::const_i32(value{.i32 = v}));
+            i = op::const_i32(value{.i32 = v});
             break;
         }
         case 0x6A: // add_i32
-            instruction_vector.emplace_back(op::add_i32());
+            i = op::add_i32();
             break;
         default:
             throw parse_exception(ss::format("unsupported opcode: {}", opcode));
         }
+        // Validate the instruction is good.
+        std::visit(validator, i);
+        instruction_vector.push_back(i);
     }
     // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
     return instruction_vector;
@@ -275,7 +279,7 @@ code parse_code(iobuf_const_parser* parser) {
         auto valtype = parse_valtype(parser);
         std::fill_n(std::back_inserter(locals), num_locals, valtype);
     }
-    auto body = parse_expression(parser);
+    auto body = parse_expression(parser, ft);
     auto actual = parser->bytes_consumed() - start_position;
 
     if (actual != expected_size) {
