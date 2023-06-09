@@ -18,6 +18,7 @@
 
 #include <asmjit/asmjit.h>
 #include <asmjit/core/compiler.h>
+#include <asmjit/core/errorhandler.h>
 #include <asmjit/x86.h>
 #include <asmjit/x86/x86assembler.h>
 #include <asmjit/x86/x86operand.h>
@@ -63,6 +64,8 @@ private:
     asmjit::x86::Gpq allocate_register(runtime_value_location*);
 
     asmjit::x86::Assembler _asm;
+    asmjit::FuncFrame _frame;
+
     function_type _ft;
     // Does not include params in this list.
     std::vector<valtype> _locals;
