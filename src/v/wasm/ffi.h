@@ -200,4 +200,23 @@ std::tuple<Type, Rest...> extract_parameters(
     return std::tuple_cat(
       std::move(head_type), extract_parameters<Rest...>(mem, params, idx));
 }
+
+template<typename... Rest>
+size_t parameter_count()
+requires EmptyPack<Rest...>
+{
+    return 0;
+}
+template<typename Type, typename... Rest>
+size_t parameter_count() {
+    size_t r = 0;
+    if constexpr (std::is_same_v<ffi::memory*, Type>) {
+        r = 0;
+    } else if constexpr (ffi::is_array<Type>::value) {
+        r = 2;
+    } else {
+        r = 1;
+    }
+    return r + parameter_count<Rest...>();
+}
 } // namespace wasm::ffi

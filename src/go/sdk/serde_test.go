@@ -1,11 +1,12 @@
 package redpanda
 
 import (
-	"bytes"
 	"math/rand"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/rockwotj/redpanda/src/go/sdk/internal/rwbuf"
 )
 
 var (
@@ -42,27 +43,10 @@ func makeRandomRecord() Record {
 
 func TestRoundTrip(t *testing.T) {
 	r := makeRandomRecord()
-	buf := &bytes.Buffer{}
-	header := batchHeader{
-		handle:               0,
-		baseOffset:           42,
-		baseTimestamp:        9,
-		recordCount:          1,
-		partitionLeaderEpoch: 1,
-		attributes:           0,
-		lastOffsetDelta:      0,
-		maxTimestamp:         9,
-		producerId:           3287,
-		producerEpoch:        1,
-		baseSequence:         1,
-	}
-	l, err := r.serialize(buf, header, r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	buf = bytes.NewBuffer(buf.Bytes()[:l])
+	b := rwbuf.New(0)
+	r.serialize(b)
 	output := Record{}
-	err = deserializeRecord(buf, header, &output)
+	err := output.deserialize(b)
 	if err != nil {
 		t.Fatal(err)
 	}

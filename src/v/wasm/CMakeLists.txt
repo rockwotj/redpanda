@@ -6,16 +6,16 @@ v_cc_library(
     "wasm.cc"
     "probe.cc"
     "wasi.cc"
-    "wasmtime.cc"
-    #"wasmedge.cc"
+    #"wasmtime.cc"
+    "wasmedge.cc"
     "ffi.cc"
     "rp_module.cc"
   DEPS
-  #wasmedge
+    wasmedge
     v::storage
     v::http
     v::model
-    wasmtime
+    #wasmtime
     Seastar::seastar
 )
 

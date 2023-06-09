@@ -21,8 +21,10 @@ constexpr std::string_view redpanda_on_record_callback_function_name
   = "redpanda_on_record";
 
 struct record_position {
-    size_t offset;
+    size_t start_index;
     size_t size;
+
+    int32_t timestamp_delta;
 };
 
 // The data needed during a single transformation of a record_batch
@@ -41,6 +43,7 @@ struct wasm_call_params {
     batch_handle batch_handle;
     record_handle record_handle;
     int32_t record_size;
+    int32_t current_record_offset;
 };
 
 class redpanda_module {
@@ -81,7 +84,13 @@ public:
     // End ABI exports
 
 private:
-    bool is_valid_serialized_record(iobuf_const_parser parser);
+    struct expected_record_metadata {
+        int32_t offset;
+        int32_t timestamp;
+    };
+
+    bool is_valid_serialized_record(
+      iobuf_const_parser parser, expected_record_metadata);
 
     std::optional<transform_context> _call_ctx;
 };

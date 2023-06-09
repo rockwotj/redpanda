@@ -30,6 +30,7 @@
 #include <seastar/core/thread_cputime_clock.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
+#include <boost/type_traits/function_traits.hpp>
 #include <wasmedge/wasmedge.h>
 
 #include <cstdint>
@@ -40,6 +41,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <wasm.h>
@@ -170,8 +172,9 @@ struct host_function<module_func> {
                 auto mem = memory(
                   WasmEdge_CallingFrameGetMemoryInstance(calling_ctx, 0));
                 std::vector<uint64_t> raw_params;
-                raw_params.reserve(sizeof...(ArgTypes));
-                for (size_t i = 0; i < sizeof...(ArgTypes); ++i) {
+                size_t number_of_params = ffi::parameter_count<ArgTypes...>();
+                raw_params.reserve(number_of_params);
+                for (size_t i = 0; i < number_of_params; ++i) {
                     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                     raw_params.push_back(WasmEdge_ValueGetI64(guest_params[i]));
                 }
@@ -381,7 +384,8 @@ private:
               std::array args = {
                 WasmEdge_ValueGenI32(params.batch_handle()),
                 WasmEdge_ValueGenI32(params.record_handle()),
-                WasmEdge_ValueGenI32(params.record_size)};
+                WasmEdge_ValueGenI32(params.record_size),
+                WasmEdge_ValueGenI32(params.current_record_offset)};
               std::array returns = {WasmEdge_ValueGenI32(-1)};
               try {
                   is_executing = true;
@@ -398,6 +402,8 @@ private:
               } catch (...) {
                   is_executing = false;
                   probe->transform_error();
+                  wasmedge_log.warn(
+                    "transform failed! {}", std::current_exception());
                   throw wasm_exception(
                     ss::format(
                       "transform execution {} failed: {}",
@@ -407,6 +413,8 @@ private:
               }
               if (!WasmEdge_ResultOK(result)) {
                   probe->transform_error();
+                  wasmedge_log.warn(
+                    "transform failed! {}", WasmEdge_ResultGetMessage(result));
                   throw wasm_exception(
                     ss::format(
                       "transform execution {} failed", _user_module_name),
@@ -500,6 +508,20 @@ public:
           reinterpret_cast<const uint8_t*>(_user_module_source.data()),
           _user_module_source.size());
         auto module_ctx = WasmEdgeASTModule(module_ctx_ptr);
+
+        if (!WasmEdge_ResultOK(result)) {
+            vlog(
+              wasmedge_log.warn,
+              "Failed to load module: {}",
+              WasmEdge_ResultGetMessage(result));
+            throw wasm_exception(
+              ss::format(
+                "Failed to load module: {}", WasmEdge_ResultGetMessage(result)),
+              errc::load_failure);
+        }
+
+        result = WasmEdge_VMLoadWasmFromASTModule(
+          vm_ctx.get(), module_ctx.get());
 
         if (!WasmEdge_ResultOK(result)) {
             vlog(

@@ -13,7 +13,7 @@
 #include "ssx/thread_worker.h"
 #include "wasm/errc.h"
 #include "wasm/probe.h"
-#include "wasm/wasmtime.h"
+#include "wasm/wasmedge.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/smp.hh>
@@ -87,9 +87,10 @@ constexpr ss::shard_id runtime_shard = 0;
 service::service(ssx::thread_worker* worker)
   : _gate()
   , _worker(worker)
+  , _runtime(nullptr, [](auto*) {})
   , _transforms() {
     if (ss::this_shard_id() == runtime_shard) {
-        _runtime = wasmtime::make_runtime();
+        _runtime = wasmedge::make_runtime();
     }
 }
 
@@ -151,7 +152,7 @@ service::deploy_transform(transform::metadata meta, ss::sstring source) {
     vlog(wasm_log.info, "Creating wasm engine: {}", meta.function_name);
     auto engine_factory = co_await _worker->submit(
       [this, meta, source = std::move(source)] {
-          return wasmtime::compile(_runtime.get(), meta.function_name, source);
+          return wasmedge::compile(_runtime.get(), meta.function_name, source);
       });
     vlog(wasm_log.info, "Created wasm engine: {}", meta.function_name);
     // TODO: Handle engines failing to start.

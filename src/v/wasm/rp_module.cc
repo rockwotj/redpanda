@@ -18,8 +18,13 @@
 
 #include <exception>
 #include <ios>
+#include <stdexcept>
 #include <vector>
 namespace wasm {
+
+namespace {
+static ss::logger log("rp_wasm_module_log");
+}
 
 model::record_batch redpanda_module::for_each_record(
   const model::record_batch* input,
@@ -36,10 +41,15 @@ model::record_batch redpanda_module::for_each_record(
     record_positions.reserve(input->record_count());
 
     while (parser.bytes_left() > 0) {
-        auto offset = parser.bytes_consumed();
+        auto start_index = parser.bytes_consumed();
         auto [size, amt] = parser.read_varlong();
-        parser.skip(size);
-        record_positions.emplace_back(offset, size + amt);
+        parser.skip(sizeof(model::record_attributes::type));
+        auto [timestamp_delta, td] = parser.read_varlong();
+        parser.skip(size - sizeof(model::record_attributes::type) - td);
+        record_positions.push_back(
+          {.start_index = start_index,
+           .size = size_t(size + amt),
+           .timestamp_delta = int32_t(timestamp_delta)});
     }
 
     _call_ctx.emplace(transform_context{
@@ -51,12 +61,14 @@ model::record_batch redpanda_module::for_each_record(
         try {
             func({
               .batch_handle = bh,
-              .record_handle = record_handle(int32_t(record_position.offset)),
+              .record_handle = record_handle(
+                int32_t(record_position.start_index)),
               .record_size = int32_t(record_position.size),
+              .current_record_offset = int32_t(_call_ctx->output_record_count),
             });
-        } catch (const std::exception& ex) {
+        } catch (...) {
             _call_ctx = std::nullopt;
-            throw ex;
+            std::rethrow_exception(std::current_exception());
         }
     }
 
@@ -104,49 +116,38 @@ int32_t redpanda_module::read_batch_header(
     return 0;
 }
 int32_t redpanda_module::read_record(record_handle h, ffi::array<uint8_t> buf) {
-    if (_call_ctx || h == int32_t(_call_ctx->current_record.offset)) {
+    if (!_call_ctx) {
         return -1;
     }
-    // TODO: Don't make this n^2, the handle should be opaque and the host
-    // should advance the current position in the input data.
-    iobuf_const_parser parser(_call_ctx->input->data());
-    for (int i = 0; i < h; ++i) {
-        auto [size, _] = parser.read_varlong();
-        parser.skip(size);
-    }
-    auto [size, amt] = parser.read_varlong();
-    if ((size + amt) < buf.size()) {
-        // Buffer too small
+    if (h != int32_t(_call_ctx->current_record.start_index)) {
         return -2;
     }
-    size_t offset = vint::serialize(size, buf.raw());
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    parser.consume_to(size, buf.raw() + offset);
+    if (_call_ctx->current_record.size != buf.size()) {
+        // Buffer wrong size
+        return -3;
+    }
+    iobuf_const_parser parser(_call_ctx->input->data());
+    parser.skip(_call_ctx->current_record.start_index);
+    parser.consume_to(buf.size(), buf.raw());
     return int32_t(buf.size());
 }
 
-bool redpanda_module::is_valid_serialized_record(iobuf_const_parser parser) {
-    auto [record_size, amt] = parser.read_varlong();
-    if (size_t(record_size) != parser.bytes_left()) {
-        return false;
-    }
-    parser.skip(sizeof(model::record_attributes::type));
-    auto [timestamp_delta, td] = parser.read_varlong();
-    auto [offset_delta, od] = parser.read_varlong();
-    // TODO additional validation of the timestamp and offset
-    // this is easier when we explicitly know what record we're at.
-    (void)timestamp_delta;
-    (void)offset_delta;
-    auto [key_length, kl] = parser.read_varlong();
-    if (key_length > 0) {
-        parser.skip(key_length);
-    }
-    auto [value_length, vl] = parser.read_varlong();
-    if (value_length > 0) {
-        parser.skip(value_length);
-    }
-    auto [header_count, hv] = parser.read_varlong();
-    for (int i = 0; i < header_count; ++i) {
+bool redpanda_module::is_valid_serialized_record(
+  iobuf_const_parser parser, expected_record_metadata expected) {
+    try {
+        auto [record_size, amt] = parser.read_varlong();
+        if (size_t(record_size) != parser.bytes_left()) {
+            return false;
+        }
+        parser.skip(sizeof(model::record_attributes::type));
+        auto [timestamp_delta, td] = parser.read_varlong();
+        auto [offset_delta, od] = parser.read_varlong();
+        if (expected.timestamp != timestamp_delta) {
+            return false;
+        }
+        if (expected.offset != offset_delta) {
+            return false;
+        }
         auto [key_length, kl] = parser.read_varlong();
         if (key_length > 0) {
             parser.skip(key_length);
@@ -155,8 +156,21 @@ bool redpanda_module::is_valid_serialized_record(iobuf_const_parser parser) {
         if (value_length > 0) {
             parser.skip(value_length);
         }
+        auto [header_count, hv] = parser.read_varlong();
+        for (int i = 0; i < header_count; ++i) {
+            auto [key_length, kl] = parser.read_varlong();
+            if (key_length > 0) {
+                parser.skip(key_length);
+            }
+            auto [value_length, vl] = parser.read_varlong();
+            if (value_length > 0) {
+                parser.skip(value_length);
+            }
+        }
+    } catch (const std::out_of_range& ex) {
+        return false;
     }
-    return true;
+    return parser.bytes_left() == 0;
 }
 
 int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
@@ -168,7 +182,13 @@ int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
     }
     iobuf b;
     b.append(buf.raw(), buf.size());
-    if (!is_valid_serialized_record(iobuf_const_parser(b))) {
+    expected_record_metadata expected{
+      // The delta offset should just be the current record count
+      .offset = _call_ctx->output_record_count,
+      // We expect the timestamp to not change
+      .timestamp = _call_ctx->current_record.timestamp_delta,
+    };
+    if (!is_valid_serialized_record(iobuf_const_parser(b), expected)) {
         // Invalid payload
         return -3;
     }
