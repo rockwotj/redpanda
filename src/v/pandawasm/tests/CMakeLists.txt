@@ -17,3 +17,13 @@ rp_test(
   LIBRARIES Boost::unit_test_framework v::pandawasm
   LABELS pandawasm
 )
+
+rp_test(
+    UNIT_TEST
+    BINARY_NAME stack_validator_test
+    SOURCES stack_validator_test.cc
+    DEFINITIONS BOOST_TEST_DYN_LINK
+    LIBRARIES Boost::unit_test_framework v::pandawasm
+    LABELS pandawasm
+    ARGS "-- -c 1"
+)

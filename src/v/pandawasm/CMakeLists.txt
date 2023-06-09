@@ -4,6 +4,8 @@ v_cc_library(
     instruction.cc
     parser.cc
     value.cc
+    compiler.cc
+    stack_validator.cc
   HDRS
     encoding.h
   DEPS

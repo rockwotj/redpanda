@@ -279,7 +279,8 @@ code parse_code(iobuf_const_parser* parser) {
         auto valtype = parse_valtype(parser);
         std::fill_n(std::back_inserter(locals), num_locals, valtype);
     }
-    auto body = parse_expression(parser, ft);
+    // TODO: Pass this through
+    auto body = parse_expression(parser, function_type{});
     auto actual = parser->bytes_consumed() - start_position;
 
     if (actual != expected_size) {

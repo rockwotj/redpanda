@@ -61,7 +61,7 @@ std::ostream& operator<<(std::ostream& os, validation_type vt) {
         return os << "f32";
     case uint8_t(valtype::f64):
         return os << "f64";
-    case validation_type::kAnyTypeValue: // Assume worst case for anytype
+    case validation_type::kAnyTypeValue:
         return os << "{any}";
     case uint8_t(valtype::v128):
         return os << "v128";
@@ -85,20 +85,27 @@ size_t stack_validator::maximum_stack_memory() const {
     return _max_memory_usage;
 }
 
-void stack_validator::operator()(op::const_i32) { push(valtype::i32); }
-void stack_validator::operator()(op::add_i32) {
+void stack_validator::operator()(const op::const_i32&) { push(valtype::i32); }
+void stack_validator::operator()(const op::add_i32&) {
     pop(valtype::i32);
     pop(valtype::i32);
     push(valtype::i32);
 }
-void stack_validator::operator()(op::get_local_i32) { push(valtype::i32); }
-void stack_validator::operator()(op::set_local_i32) { pop(valtype::i32); }
-void stack_validator::operator()(op::return_values) {
+void stack_validator::operator()(const op::get_local_i32&) {
+    push(valtype::i32);
+}
+void stack_validator::operator()(const op::set_local_i32&) {
+    pop(valtype::i32);
+}
+void stack_validator::operator()(const op::return_values&) {
     for (valtype vt : _ft.result_types) {
         pop(vt);
     }
     assert_empty();
 }
+
+void stack_validator::finalize() { assert_empty(); }
+bool stack_validator::empty() const { return _underlying.empty(); }
 
 void stack_validator::assert_empty() const {
     if (!_underlying.empty()) [[unlikely]] {

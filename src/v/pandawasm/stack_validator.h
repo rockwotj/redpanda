@@ -17,8 +17,15 @@
 #include <exception>
 namespace pandawasm {
 
+// Thrown if the wasm function is ill-formed.
 class validation_exception : public std::exception {};
 
+// A representation of the possible types instructions can take consume and
+// produce. Some instructions are polymorphic, hence the need for additional
+// information on top of `valtype`.
+//
+// Spec ref:
+// https://webassembly.github.io/spec/core/valid/instructions.html#polymorphism
 class validation_type {
 public:
     explicit validation_type(valtype);
@@ -45,11 +52,27 @@ private:
     uint8_t _type{0};
 };
 
+/**
+ * The stack validator verifies that the stack operated on by a function is
+ * well-formed.
+ *
+ * This ensures there will never be a case (at runtime) where the stack
+ * could be popped when it's empty.
+ *
+ * Additionally computes the maximum memory usage for this function in terms of
+ * the runtime stack. This can be used by a runtime to determine if
+ *
+ * Spec ref: https://webassembly.github.io/spec/core/valid/index.html
+ *
+ */
 class stack_validator {
 public:
     explicit stack_validator(function_type);
 
+    // The maximum number of elements that are ever on the stack at
+    // once.
     size_t maximum_stack_elements() const;
+    // The maximum bytes that is used by the stack for this function at runtime.
     size_t maximum_stack_memory() const;
 
     void operator()(const op::const_i32&);
@@ -58,12 +81,19 @@ public:
     void operator()(const op::set_local_i32&);
     void operator()(const op::return_values&);
 
+    void finalize();
+
 private:
+    // Assert the correct type is popped
     void pop(validation_type);
     void pop(valtype);
+    // Push the value on the stack
     void push(validation_type);
     void push(valtype);
+    // Assert the stack is empty
     void assert_empty() const;
+    // Check if the stack is empty
+    bool empty() const;
 
     function_type _ft;
 
