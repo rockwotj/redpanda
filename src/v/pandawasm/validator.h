@@ -65,15 +65,15 @@ private:
  * Spec ref: https://webassembly.github.io/spec/core/valid/index.html
  *
  */
-class module_validator {
+class function_validator {
 public:
-    explicit module_validator(function_signature);
+    explicit function_validator(function_signature);
 
     // The maximum number of elements that are ever on the stack at
     // once.
     size_t maximum_stack_elements() const;
     // The maximum bytes that is used by the stack for this function at runtime.
-    size_t maximum_stack_memory() const;
+    size_t maximum_stack_size_bytes() const;
 
     void operator()(const op::const_i32&);
     void operator()(const op::add_i32&);

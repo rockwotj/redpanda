@@ -38,6 +38,7 @@ public:
 private:
     std::string _msg;
 };
+
 struct runtime_value_location;
 class runtime_value_location_stack;
 class jit_function_compiler {

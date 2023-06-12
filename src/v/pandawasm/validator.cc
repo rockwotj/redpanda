@@ -75,45 +75,47 @@ std::ostream& operator<<(std::ostream& os, validation_type vt) {
         vassert(false, "unknown validation type: {}", vt._type);
     }
 }
-module_validator::module_validator(function_signature ft)
+function_validator::function_validator(function_signature ft)
   : _ft(std::move(ft)) {}
 
-size_t module_validator::maximum_stack_elements() const {
+size_t function_validator::maximum_stack_elements() const {
     return _max_stack_size;
 }
-size_t module_validator::maximum_stack_memory() const {
+size_t function_validator::maximum_stack_size_bytes() const {
     return _max_memory_usage;
 }
 
-void module_validator::operator()(const op::const_i32&) { push(valtype::i32); }
-void module_validator::operator()(const op::add_i32&) {
+void function_validator::operator()(const op::const_i32&) {
+    push(valtype::i32);
+}
+void function_validator::operator()(const op::add_i32&) {
     pop(valtype::i32);
     pop(valtype::i32);
     push(valtype::i32);
 }
-void module_validator::operator()(const op::get_local_i32&) {
+void function_validator::operator()(const op::get_local_i32&) {
     push(valtype::i32);
 }
-void module_validator::operator()(const op::set_local_i32&) {
+void function_validator::operator()(const op::set_local_i32&) {
     pop(valtype::i32);
 }
-void module_validator::operator()(const op::return_values&) {
+void function_validator::operator()(const op::return_values&) {
     for (valtype vt : _ft.result_types) {
         pop(vt);
     }
     assert_empty();
 }
 
-void module_validator::finalize() { assert_empty(); }
-bool module_validator::empty() const { return _underlying.empty(); }
+void function_validator::finalize() { assert_empty(); }
+bool function_validator::empty() const { return _underlying.empty(); }
 
-void module_validator::assert_empty() const {
+void function_validator::assert_empty() const {
     if (!_underlying.empty()) [[unlikely]] {
         throw validation_exception();
     }
 }
-void module_validator::pop(valtype vt) { pop(validation_type(vt)); }
-void module_validator::pop(validation_type expected) {
+void function_validator::pop(valtype vt) { pop(validation_type(vt)); }
+void function_validator::pop(validation_type expected) {
     if (_underlying.empty()) {
         throw validation_exception();
     }
@@ -130,9 +132,9 @@ void module_validator::pop(validation_type expected) {
         throw validation_exception();
     }
 }
-void module_validator::push(valtype vt) { push(validation_type(vt)); }
+void function_validator::push(valtype vt) { push(validation_type(vt)); }
 
-void module_validator::push(validation_type vt) {
+void function_validator::push(validation_type vt) {
     _underlying.push_back(vt);
     _current_memory_usage += vt.size_bytes();
     _max_stack_size = std::max(_max_stack_size, _underlying.size());

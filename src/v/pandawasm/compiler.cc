@@ -250,7 +250,7 @@ void jit_function_compiler::prologue() {
 }
 
 void jit_function_compiler::epilogue() {
-    // TODO: Make sure we're passing stuff back correctly
+    // TODO: Make sure we're returning stuff correctly
     _asm.emitEpilog(_frame);
 }
 

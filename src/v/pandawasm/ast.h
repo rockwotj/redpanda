@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "bytes/bytes.h"
 #include "instruction.h"
 #include "seastarx.h"
 #include "utils/fragmented_vector.h"
@@ -85,7 +86,7 @@ struct function {
     struct metadata {
         function_signature signature;
         std::vector<valtype> locals;
-        uint32_t max_stack_size;
+        uint32_t max_stack_size_bytes;
     };
     metadata meta;
     std::vector<instruction> body;

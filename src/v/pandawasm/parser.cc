@@ -322,6 +322,7 @@ module_import module_builder::parse_one_import(iobuf_const_parser* parser) {
     default:
         throw parse_exception(ss::format("unknown import type: {}", type));
     }
+    // TODO: Validate the import
     return {
       .module_name = std::move(module_name),
       .name = std::move(name),
@@ -464,9 +465,8 @@ ss::future<> module_builder::parse_exports_section(iobuf_const_parser* parser) {
 }
 
 std::vector<instruction>
-parse_expression(iobuf_const_parser* parser, const function_signature& sig) {
+parse_expression(iobuf_const_parser* parser, function_validator* validator) {
     std::vector<instruction> instruction_vector;
-    module_validator validator(sig);
     // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
     for (auto opcode = parser->consume_le_type<uint8_t>(); opcode != 0x0B;
          opcode = parser->consume_le_type<uint8_t>()) {
@@ -497,7 +497,7 @@ parse_expression(iobuf_const_parser* parser, const function_signature& sig) {
             throw parse_exception(ss::format("unsupported opcode: {}", opcode));
         }
         // Validate the instruction is good.
-        std::visit(validator, i);
+        std::visit(*validator, i);
         instruction_vector.push_back(i);
     }
     // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
@@ -519,9 +519,11 @@ void module_builder::parse_one_code(
         auto valtype = parse_valtype(parser);
         std::fill_n(std::back_inserter(func->meta.locals), num_locals, valtype);
     }
-    func->body = parse_expression(parser, func->meta.signature);
-    auto actual = parser->bytes_consumed() - start_position;
+    function_validator validator(func->meta.signature);
+    func->body = parse_expression(parser, &validator);
+    func->meta.max_stack_size_bytes = validator.maximum_stack_size_bytes();
 
+    auto actual = parser->bytes_consumed() - start_position;
     if (actual != expected_size) {
         throw parse_exception(ss::format(
           "unexpected size of function, actual: {} expected: {}",

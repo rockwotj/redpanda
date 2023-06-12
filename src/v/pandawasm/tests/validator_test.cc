@@ -22,8 +22,8 @@
 #include <optional>
 #include <type_traits>
 
+using pandawasm::function_validator;
 using pandawasm::instruction;
-using pandawasm::module_validator;
 using pandawasm::valtype;
 using namespace pandawasm::op;
 
