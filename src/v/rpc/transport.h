@@ -70,6 +70,13 @@ struct timing_info {
     time_point enqueued_at = unset;
 
     /**
+     * Moment in time the semaphore units needed for request buffer are
+     * reserved. The request is not dispatched until the required units are
+     * acquired.
+     */
+    time_point memory_reserved_at = unset;
+
+    /**
      * The moment in time we dispatched the request: that is, it was the next
      * request to be sent and we called .write on the output stream: note that
      * this does not perform the write (since that's an async method), but it
@@ -156,7 +163,7 @@ private:
     void dispatch_send();
 
     ss::future<result<std::unique_ptr<streaming_context>>>
-    make_response_handler(netbuf&, rpc::client_opts&, sequence_t);
+    make_response_handler(netbuf&, rpc::client_opts&);
 
     ssx::semaphore _memory;
 
@@ -289,7 +296,11 @@ ss::future<result<rpc::client_context<T>>> parse_result(
         return ss::make_ready_future<ret_t>(map_server_error(st));
     }
 
-    return parse_type<T, default_message_codec>(in, sctx->get_header())
+    // use-after-move check doesn't take into account c++17 evaluation order
+    // correctly, so when used before and after `.then` it is a false positive.
+    // https://reviews.llvm.org/D145581
+    auto header = sctx->get_header();
+    return parse_type<T, default_message_codec>(in, header)
       .then_wrapped([sctx = std::move(sctx)](ss::future<T> data_fut) {
           if (data_fut.failed()) {
               const auto ex = data_fut.get_exception();

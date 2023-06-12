@@ -1175,6 +1175,10 @@ public:
         // redpanda offset.
         batch.header().base_offset = kafka::offset_cast(
           rp_to_kafka(batch.base_offset()));
+        // since base offset isn't accounted into Kafka crc we need to only
+        // update header_crc
+        batch.header().header_crc = model::internal_header_only_crc(
+          batch.header());
 
         size_t sz = _parent.produce(std::move(batch));
 
@@ -1464,6 +1468,14 @@ ss::future<bool> hydration_loop_state::materialize() {
 
 std::exception_ptr hydration_loop_state::current_error() {
     return _current_error;
+}
+
+std::pair<size_t, bool> remote_segment::min_cache_cost() const {
+    if (is_legacy_mode_engaged()) {
+        return std::make_pair(_size, false);
+    } else {
+        return std::make_pair(_chunk_size, true);
+    }
 }
 
 } // namespace cloud_storage

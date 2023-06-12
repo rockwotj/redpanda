@@ -24,6 +24,7 @@ import re
 import uuid
 import zipfile
 import pathlib
+import shlex
 from enum import Enum, IntEnum
 from typing import Mapping, Optional, Tuple, Union, Any
 
@@ -56,7 +57,7 @@ from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as 
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
-from rptest.util import wait_until_result
+from rptest.util import inject_remote_script, wait_until_result
 
 Partition = collections.namedtuple('Partition',
                                    ['topic', 'index', 'leader', 'replicas'])
@@ -692,6 +693,7 @@ class RedpandaServiceBase(Service):
     TRIM_LOGS_KEY = "trim_logs"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
     NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
+    RPK_CONFIG_FILE = "/root/.config/rpk/rpk.yaml"
     CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
     TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
     TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
@@ -735,11 +737,6 @@ class RedpandaServiceBase(Service):
         'kafka_connections_max': 2048,
         'kafka_connections_max_per_ip': 1024,
         'kafka_connections_max_overrides': ["1.2.3.4:5"],
-
-        # TODO: we need this to not wait too long before moves are scheduled
-        # after decommission. Get rid of this after event-driven balancer execution
-        # is implemented.
-        "partition_autobalancing_tick_interval_ms": 5000,
     }
 
     logs = {
@@ -1821,7 +1818,16 @@ class RedpandaService(RedpandaServiceBase):
                             omit_seeds_on_idx_one=omit_seeds_on_idx_one,
                             override_cfg_params=node_overrides)
 
-        self._for_nodes(to_start, start_one, parallel=parallel)
+        try:
+            self._for_nodes(to_start, start_one, parallel=parallel)
+        except TimeoutError as e:
+            if expect_fail:
+                raise e
+            if "failed to start within" in str(e):
+                self.logger.debug(
+                    f"Checking for crashes after start-up error: {e}")
+                self.raise_on_crash()
+            raise e
 
         if expect_fail:
             # If we got here without an exception, it means we failed as expected
@@ -2170,6 +2176,10 @@ class RedpandaService(RedpandaServiceBase):
             [f"{k}={v}" for (k, v) in self._environment.items()])
         rpk = RpkRemoteTool(self, node)
 
+        _, args = self._resource_settings.to_cli(
+            dedicated_node=self._dedicated_nodes)
+        additional_args += " " + args
+
         def start_rp():
             rpk.redpanda_start(RedpandaService.STDOUT_STDERR_CAPTURE,
                                additional_args, env_vars)
@@ -2376,7 +2386,7 @@ class RedpandaService(RedpandaServiceBase):
 
             crash_log = None
             for line in node.account.ssh_capture(
-                    f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                    f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert -e Sanitizer {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                     timeout_sec=30):
                 if 'SEGV' in line and ('x-amz-id' in line
                                        or 'x-amz-request' in line):
@@ -2840,6 +2850,8 @@ class RedpandaService(RedpandaServiceBase):
                         f"{RedpandaService.PERSISTENT_ROOT}/data/*")
         if node.account.exists(RedpandaService.NODE_CONFIG_FILE):
             node.account.remove(f"{RedpandaService.NODE_CONFIG_FILE}")
+        if node.account.exists(RedpandaService.RPK_CONFIG_FILE):
+            node.account.remove(f"{RedpandaService.RPK_CONFIG_FILE}")
         if node.account.exists(RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE):
             node.account.remove(
                 f"{RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE}")
@@ -3000,10 +3012,6 @@ class RedpandaService(RedpandaServiceBase):
             # this configuration property was introduced in 22.2.1, ensure
             # it doesn't appear in older configurations
             conf.pop('cloud_storage_credentials_source', None)
-        if cur_ver != RedpandaInstaller.HEAD and cur_ver < (22, 2, 1):
-            # this configuration property was introduced in 22.2.1, ensure
-            # it doesn't appear in older configurations
-            conf.pop('partition_autobalancing_tick_interval_ms', None)
 
         if self._security.enable_sasl:
             self.logger.debug("Enabling SASL in cluster configuration")
@@ -3142,60 +3150,36 @@ class RedpandaService(RedpandaServiceBase):
         Retrieve a summary of storage on a node.
 
         :param sizes: if true, stat each segment file and record its size in the
-                      `size` attribute of Segment.  This is expensive, only use it
-                      for small-ish numbers of segments.
+                      `size` attribute of Segment.
         """
-        def listdir(path, only_dirs=False):
-            try:
-                ents = node.account.sftp_client.listdir(path)
-            except FileNotFoundError:
-                # Perhaps the directory has been deleted since we saw it.
-                # This is normal if doing a listing concurrently with topic deletion.
-                return []
 
-            if not only_dirs:
-                return ents
-            paths = map(lambda fn: (fn, os.path.join(path, fn)), ents)
-
-            def safe_isdir(path):
-                try:
-                    return node.account.isdir(path)
-                except FileNotFoundError:
-                    # Things that no longer exist are also no longer directories
-                    return False
-
-            return [p[0] for p in paths if safe_isdir(p[1])]
-
-        def get_sizes(partition_path, segment_names, partition):
-            for s in segment_names:
-                try:
-                    stat = node.account.sftp_client.lstat(
-                        os.path.join(partition_path, s))
-                    partition.set_segment_size(s, stat.st_size)
-                except FileNotFoundError:
-                    # It is legal for a file to be deleted between a listdir
-                    # and a stat: update the partition object to reflect this,
-                    # rather than leaving a None size that could trip up sum()
-                    partition.delete_segment(s)
-
+        self.logger.debug(
+            f"Starting storage checks for {node.name} sizes={sizes}")
         store = NodeStorage(node.name, RedpandaService.DATA_DIR)
-        for ns in listdir(store.data_dir, True):
-            if ns == '.coprocessor_offset_checkpoints':
-                continue
-            if ns == 'cloud_storage_cache':
-                # Default cache dir is sub-path of data dir
-                continue
-
-            ns = store.add_namespace(ns, os.path.join(store.data_dir, ns))
-            for topic in listdir(ns.path):
-                topic = ns.add_topic(topic, os.path.join(ns.path, topic))
-                for num in listdir(topic.path):
-                    partition_path = os.path.join(topic.path, num)
-                    partition = topic.add_partition(num, node, partition_path)
-                    segment_names = listdir(partition.path)
-                    partition.add_files(segment_names)
-                    if sizes:
-                        get_sizes(partition_path, segment_names, partition)
+        script_path = inject_remote_script(node, "compute_storage.py")
+        cmd = [
+            "python3", script_path, f"--data-dir={RedpandaService.DATA_DIR}"
+        ]
+        if sizes:
+            cmd.append("--sizes")
+        output = node.account.ssh_output(shlex.join(cmd), timeout_sec=10)
+        namespaces = json.loads(output)
+        for ns, topics in namespaces.items():
+            ns_path = os.path.join(store.data_dir, ns)
+            ns = store.add_namespace(ns, ns_path)
+            for topic, partitions in topics.items():
+                topic_path = os.path.join(ns_path, topic)
+                topic = ns.add_topic(topic, topic_path)
+                for part, segments in partitions.items():
+                    partition_path = os.path.join(topic_path, part)
+                    partition = topic.add_partition(part, node, partition_path)
+                    partition.add_files(list(segments.keys()))
+                    if not sizes:
+                        continue
+                    for segment, data in segments.items():
+                        partition.set_segment_size(segment, data["size"])
+        self.logger.debug(
+            f"Finished storage checks for {node.name} sizes={sizes}")
         return store
 
     def storage(self, all_nodes: bool = False, sizes: bool = False):
@@ -3206,9 +3190,17 @@ class RedpandaService(RedpandaServiceBase):
         :returns: instances of ClusterStorage
         """
         store = ClusterStorage()
-        for node in (self.nodes if all_nodes else self._started):
+        self.logger.debug(
+            f"Starting storage checks all_nodes={all_nodes} sizes={sizes}")
+        nodes = self.nodes if all_nodes else self._started
+
+        def compute_node_storage(node):
             s = self.node_storage(node, sizes=sizes)
             store.add_node(s)
+
+        self._for_nodes(nodes, compute_node_storage, parallel=True)
+        self.logger.debug(
+            f"Finished storage checks all_nodes={all_nodes} sizes={sizes}")
         return store
 
     def copy_data(self, dest, node):
@@ -3605,7 +3597,7 @@ class RedpandaService(RedpandaServiceBase):
         bucket = self.si_settings.cloud_storage_bucket
         environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
         output = node.account.ssh_output(
-            f"{environment} rp-storage-tool --backend {backend} scan --source {bucket}",
+            f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
             combine_stderr=False,
             allow_fail=True,
             timeout_sec=30)
@@ -3615,6 +3607,8 @@ class RedpandaService(RedpandaServiceBase):
         except:
             self.logger.error(f"Error running bucket scrub: {output}")
             raise
+        else:
+            self.logger.info(json.dumps(report, indent=2))
 
         # Example of a report:
         # {"malformed_manifests":[],
@@ -3637,10 +3631,10 @@ class RedpandaService(RedpandaServiceBase):
         permitted_anomalies = {"segments_outside_manifest"}
 
         # Whether any anomalies were found
-        any_anomalies = any(len(v) for v in report.values())
+        any_anomalies = any(len(v) for v in report['anomalies'].values())
 
         # List of fatal anomalies found
-        fatal_anomalies = set(k for k, v in report.items()
+        fatal_anomalies = set(k for k, v in report['anomalies'].items()
                               if len(v) and k not in permitted_anomalies)
 
         if not any_anomalies:
@@ -3678,8 +3672,7 @@ class RedpandaService(RedpandaServiceBase):
         max_length = None
         for node in self.started_nodes():
             try:
-                status = self._admin.get_controller_status(
-                    node=node)['committed_index']
+                status = self._admin.get_controller_status(node=node)
                 node_length = status['committed_index'] - max(
                     0, status['start_offset'] - 1)
             except Exception as e:

@@ -16,8 +16,8 @@
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/details/io_placeholder.h"
 #include "bytes/details/out_of_range.h"
-#include "bytes/oncore.h"
 #include "likely.h"
+#include "oncore.h"
 #include "seastarx.h"
 #include "utils/intrusive_list_helpers.h"
 
@@ -118,7 +118,7 @@ public:
     /// don't violate the reservation size here
     placeholder reserve(size_t reservation);
 
-    /// only ensures that a segment of at least reservation is avaible
+    /// only ensures that a segment of at least reservation is available
     /// as an empty details::io_fragment
     void reserve_memory(size_t reservation);
 

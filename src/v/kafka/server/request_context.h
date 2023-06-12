@@ -24,6 +24,7 @@
 #include "kafka/server/server.h"
 #include "kafka/server/usage_manager.h"
 #include "kafka/types.h"
+#include "pandaproxy/schema_registry/fwd.h"
 #include "seastarx.h"
 #include "security/fwd.h"
 #include "vlog.h"
@@ -135,6 +136,11 @@ public:
         return _conn->server().tx_gateway_frontend();
     }
 
+    const std::unique_ptr<pandaproxy::schema_registry::api>&
+    schema_registry() const {
+        return _conn->server().schema_registry();
+    }
+
     std::chrono::milliseconds throttle_delay_ms() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
           _throttle_delay);
@@ -236,9 +242,7 @@ public:
         return _conn->server().controller_api();
     }
 
-    const replica_selector& replica_selector() const {
-        return _conn->server().get_replica_selector();
-    }
+    ss::sharded<server>& server() { return _conn->server().container(); }
 
 private:
     template<typename ResponseType>

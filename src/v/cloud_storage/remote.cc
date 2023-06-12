@@ -570,11 +570,22 @@ ss::future<download_result> remote::download_segment(
             auto length = boost::lexical_cast<uint64_t>(
               resp.value()->get_headers().at(
                 boost::beast::http::field::content_length));
-            uint64_t content_length = co_await cons_str(
-              length, resp.value()->as_input_stream());
-            _probe.successful_download();
-            _probe.register_download_size(content_length);
-            co_return download_result::success;
+            try {
+                uint64_t content_length = co_await cons_str(
+                  length, resp.value()->as_input_stream());
+                _probe.successful_download();
+                _probe.register_download_size(content_length);
+                co_return download_result::success;
+            } catch (...) {
+                const auto ex = std::current_exception();
+                vlog(
+                  ctxlog.debug,
+                  "unexpected error when consuming stream {}",
+                  ex);
+                resp
+                  = cloud_storage_clients::util::handle_client_transport_error(
+                    ex, cst_log);
+            }
         }
 
         lease.client->shutdown();
@@ -1242,8 +1253,7 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
                       return cloud_roles::aws_region_name{};
                   } else {
                       static_assert(
-                        cloud_storage_clients::always_false_v<cfg_type>,
-                        "Unknown client type");
+                        always_false_v<cfg_type>, "Unknown client type");
                       return cloud_roles::aws_region_name{};
                   }
               },
@@ -1293,9 +1303,7 @@ cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
               return cloud_roles::abs_credentials{
                 cfg.storage_account_name, cfg.shared_key.value()};
           } else {
-              static_assert(
-                cloud_storage_clients::always_false_v<cfg_type>,
-                "Unknown client type");
+              static_assert(always_false_v<cfg_type>, "Unknown client type");
               return cloud_roles::aws_credentials{};
           }
       },
@@ -1350,6 +1358,17 @@ cloud_storage_clients::object_tag_formatter remote::make_segment_index_tags(
     return tags;
 }
 
+cloud_storage_clients::object_tag_formatter remote::make_lifecycle_marker_tags(
+  const model::ns& ns,
+  const model::topic& topic,
+  const model::initial_revision_id rev) {
+    auto tags = default_lifecycle_marker_tags;
+    tags.add("rp-ns", ns());
+    tags.add("rp-topic", topic());
+    tags.add("rp-rev", rev());
+    return tags;
+}
+
 cloud_storage_clients::object_tag_formatter remote::make_tx_manifest_tags(
   const model::ntp& ntp, model::initial_revision_id rev) {
     // Note: tx-manifest is related to segment (contains data which are used
@@ -1368,6 +1387,9 @@ const cloud_storage_clients::object_tag_formatter
   = {{"rp-type", "partition-manifest"}};
 const cloud_storage_clients::object_tag_formatter remote::default_index_tags = {
   {"rp-type", "segment-index"}};
+const cloud_storage_clients::object_tag_formatter
+  remote::default_lifecycle_marker_tags
+  = {{"rp-type", "lifecycle-marker"}};
 
 ss::future<api_activity_notification>
 remote::subscribe(remote::event_filter& filter) {

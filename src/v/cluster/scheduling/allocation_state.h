@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "bytes/oncore.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "model/metadata.h"
+#include "oncore.h"
 
 #include <seastar/core/weak_ptr.hh>
 
@@ -57,6 +57,10 @@ public:
     add_allocation(const model::broker_shard&, partition_allocation_domain);
     void
     remove_allocation(const model::broker_shard&, partition_allocation_domain);
+    void
+    add_final_count(const model::broker_shard&, partition_allocation_domain);
+    void
+    remove_final_count(const model::broker_shard&, partition_allocation_domain);
 
     void rollback(
       const ss::chunked_fifo<partition_assignment>& pa,

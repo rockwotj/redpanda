@@ -19,6 +19,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <utility>
+
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 
@@ -63,16 +65,14 @@ bool check_compatible(
     store.insert(
       pandaproxy::schema_registry::canonical_schema{
         pps::subject{"sub"},
-        pps::canonical_schema_definition{writer, pps::schema_type::protobuf},
-        {}},
+        pps::canonical_schema_definition{writer, pps::schema_type::protobuf}},
       pps::schema_version{1});
     return store.store
       .is_compatible(
         pps::schema_version{1},
         pps::canonical_schema{
           pps::subject{"sub"},
-          pps::canonical_schema_definition{reader, pps::schema_type::protobuf},
-          {}})
+          pps::canonical_schema_definition{reader, pps::schema_type::protobuf}})
       .get();
 }
 
@@ -83,6 +83,19 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_simple) {
     store.insert(schema1, pps::schema_version{1});
     auto valid_simple
       = pps::make_protobuf_schema_definition(store.store, schema1).get();
+    BOOST_REQUIRE_EQUAL(valid_simple.name({0}).value(), "Simple");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_nested) {
+    simple_sharded_store store;
+
+    auto schema1 = pps::canonical_schema{pps::subject{"nested"}, nested};
+    store.insert(schema1, pps::schema_version{1});
+    auto valid_nested
+      = pps::make_protobuf_schema_definition(store.store, schema1).get();
+    BOOST_REQUIRE_EQUAL(valid_nested.name({0}).value(), "A0");
+    BOOST_REQUIRE_EQUAL(valid_nested.name({1, 0, 2}).value(), "A1.B0.C2");
+    BOOST_REQUIRE_EQUAL(valid_nested.name({1, 0, 4}).value(), "A1.B0.C4");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_failure) {
@@ -103,7 +116,8 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_not_referenced) {
     simple_sharded_store store;
 
     auto schema1 = pps::canonical_schema{pps::subject{"simple"}, simple};
-    auto schema2 = pps::canonical_schema{pps::subject{"imported"}, imported};
+    auto schema2 = pps::canonical_schema{
+      pps::subject{"imported"}, imported_no_ref};
 
     store.insert(schema1, pps::schema_version{1});
 
@@ -122,13 +136,9 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_referenced) {
 
     auto schema1 = pps::canonical_schema{pps::subject{"simple.proto"}, simple};
     auto schema2 = pps::canonical_schema{
-      pps::subject{"imported.proto"},
-      imported,
-      {{"simple", pps::subject{"simple.proto"}, pps::schema_version{1}}}};
+      pps::subject{"imported.proto"}, imported};
     auto schema3 = pps::canonical_schema{
-      pps::subject{"imported-again.proto"},
-      imported_again,
-      {{"imported", pps::subject{"imported.proto"}, pps::schema_version{1}}}};
+      pps::subject{"imported-again.proto"}, imported_again};
 
     store.insert(schema1, pps::schema_version{1});
     store.insert(schema2, pps::schema_version{1});
@@ -147,14 +157,9 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_recursive_reference) {
 
     auto schema1 = pps::canonical_schema{pps::subject{"simple.proto"}, simple};
     auto schema2 = pps::canonical_schema{
-      pps::subject{"imported.proto"},
-      imported,
-      {{"simple", pps::subject{"simple.proto"}, pps::schema_version{1}}}};
+      pps::subject{"imported.proto"}, imported};
     auto schema3 = pps::canonical_schema{
-      pps::subject{"imported-twice.proto"},
-      imported_twice,
-      {{"simple", pps::subject{"simple.proto"}, pps::schema_version{1}},
-       {"imported", pps::subject{"imported.proto"}, pps::schema_version{1}}}};
+      pps::subject{"imported-twice.proto"}, imported_twice};
 
     store.insert(schema1, pps::schema_version{1});
     store.insert(schema2, pps::schema_version{1});

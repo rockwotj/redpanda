@@ -384,7 +384,7 @@ ss::future<> controller_backend::start() {
                     .handle_exception([](const std::exception_ptr& err) {
                         vlog(
                           clusterlog.error,
-                          "Exception while cleaning oprhan files {}",
+                          "Exception while cleaning orphan files {}",
                           err);
                     });
               });
@@ -1447,6 +1447,8 @@ controller_backend::create_partition_from_remote_shard(
               previous_shard,
               ss::this_shard_id(),
               _storage);
+            co_await detail::move_persistent_stm_state(
+              ntp, previous_shard, ss::this_shard_id(), _storage);
         }
 
         auto ec = co_await create_partition(

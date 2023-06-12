@@ -18,6 +18,7 @@
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
 #include "config/property.h"
+#include "config/throughput_control_group.h"
 #include "config/tls_config.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -273,6 +274,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> cloud_storage_metadata_sync_timeout_ms;
     property<std::chrono::milliseconds> cloud_storage_housekeeping_interval_ms;
     property<std::chrono::milliseconds> cloud_storage_idle_timeout_ms;
+    property<std::chrono::milliseconds>
+      cloud_storage_cluster_metadata_upload_interval_ms;
     property<double> cloud_storage_idle_threshold_rps;
     property<bool> cloud_storage_enable_segment_merging;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
@@ -346,6 +349,8 @@ struct configuration final : public config_store {
       partition_autobalancing_tick_interval_ms;
     property<size_t> partition_autobalancing_movement_batch_size_bytes;
     property<size_t> partition_autobalancing_concurrent_moves;
+    property<double> partition_autobalancing_tick_moves_drop_threshold;
+    property<std::optional<size_t>> partition_autobalancing_min_size_threshold;
 
     property<bool> enable_leader_balancer;
     enum_property<model::leader_balancer_mode> leader_balancer_mode;
@@ -363,6 +368,7 @@ struct configuration final : public config_store {
     bounded_property<size_t> storage_space_alert_free_threshold_bytes;
     bounded_property<size_t> storage_min_free_bytes;
     property<bool> storage_strict_data_init;
+    property<bool> enable_storage_space_manager;
 
     // memory related settings
     property<bool> memory_abort_on_alloc_failure;
@@ -407,6 +413,7 @@ struct configuration final : public config_store {
     property<double> kafka_quota_balancer_min_shard_throughput_ratio;
     bounded_property<int64_t> kafka_quota_balancer_min_shard_throughput_bps;
     property<std::vector<ss::sstring>> kafka_throughput_controlled_api_keys;
+    property<std::vector<throughput_control_group>> kafka_throughput_control;
 
     bounded_property<int64_t> node_isolation_heartbeat_timeout;
 
@@ -414,6 +421,12 @@ struct configuration final : public config_store {
     // security controls
     property<bool> legacy_permit_unsafe_log_operation;
     property<std::chrono::seconds> legacy_unsafe_log_warning_interval_sec;
+
+    // schema id validation
+    config::property<size_t> kafka_schema_id_validation_cache_capacity;
+
+    bounded_property<double, numeric_bounds> kafka_memory_share_for_fetch;
+    property<size_t> kafka_memory_batch_size_estimate_for_fetch;
 
     configuration();
 

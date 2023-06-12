@@ -10,11 +10,12 @@
  */
 
 #pragma once
-#include "bytes/oncore.h"
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
+#include "oncore.h"
+#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "reflection/type_traits.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/to_string.h"
@@ -615,6 +616,11 @@ consteval std::string_view property_type_name() {
                            type,
                            model::cloud_storage_chunk_eviction_strategy>) {
         return "string";
+    } else if constexpr (std::is_same_v<
+                           type,
+                           pandaproxy::schema_registry::
+                             subject_name_strategy>) {
+        return "string";
     } else {
         static_assert(dependent_false<T>::value, "Type name not defined");
     }
@@ -693,13 +699,13 @@ public:
     using property<std::vector<T>>::property;
 
     bool set_value(YAML::Node n) override {
-        auto value = decode_yaml(std::move(n));
+        auto value = decode_yaml(n);
         return property<std::vector<T>>::update_value(std::move(value));
     }
 
     std::optional<validation_error>
     validate([[maybe_unused]] YAML::Node n) const override {
-        std::vector<T> value = decode_yaml(std::move(n));
+        std::vector<T> value = decode_yaml(n);
         return property<std::vector<T>>::validate(value);
     }
 
@@ -733,14 +739,13 @@ public:
     using property<std::unordered_map<typename T::key_type, T>>::property;
 
     bool set_value(YAML::Node n) override {
-        auto value = decode_yaml(std::move(n));
+        auto value = decode_yaml(n);
         return property<std::unordered_map<typename T::key_type, T>>::
           update_value(std::move(value));
     }
 
     std::optional<validation_error> validate(YAML::Node n) const override {
-        std::unordered_map<typename T::key_type, T> value = decode_yaml(
-          std::move(n));
+        std::unordered_map<typename T::key_type, T> value = decode_yaml(n);
         return property<std::unordered_map<typename T::key_type, T>>::validate(
           value);
     }

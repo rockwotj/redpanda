@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include "bytes/iobuf_istreambuf.h"
 #include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
@@ -503,7 +503,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
   const std::vector<in_memory_segment>& segments,
   bool truncate_segments = false,
   model::offset_delta delta = model::offset_delta(0),
-  segment_name_format sname_format = segment_name_format::v2) {
+  segment_name_format sname_format = segment_name_format::v3) {
     std::vector<cloud_storage_fixture::expectation> results;
 
     for (const auto& s : segments) {
@@ -531,7 +531,8 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
           .delta_offset = segment_delta,
           .ntp_revision = m.get_revision_id(),
           .delta_offset_end = model::offset_delta(delta)
-                              + model::offset_delta(s.num_config_records)};
+                              + model::offset_delta(s.num_config_records),
+          .sname_format = sname_format};
 
         m.add(s.sname, meta);
         delta = delta
@@ -563,7 +564,8 @@ auto setup_s3_imposter(
   cloud_storage_fixture& fixture,
   int num_segments,
   int num_batches_per_segment,
-  manifest_inconsistency inject = manifest_inconsistency::none) {
+  manifest_inconsistency inject = manifest_inconsistency::none,
+  segment_name_format sname_format = segment_name_format::v3) {
     vassert(
       inject == manifest_inconsistency::none
         || inject == manifest_inconsistency::truncated_segments,
@@ -572,7 +574,11 @@ auto setup_s3_imposter(
     auto segments = make_segments(num_segments, num_batches_per_segment);
     cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
     auto expectations = make_imposter_expectations(
-      manifest, segments, inject == manifest_inconsistency::truncated_segments);
+      manifest,
+      segments,
+      inject == manifest_inconsistency::truncated_segments,
+      model::offset_delta(0),
+      sname_format);
     fixture.set_expectations_and_listen(expectations);
     return segments;
 }

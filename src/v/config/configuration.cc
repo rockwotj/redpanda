@@ -1374,6 +1374,12 @@ configuration::configuration()
       "housekeeping jobs are started.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , cloud_storage_cluster_metadata_upload_interval_ms(
+      *this,
+      "cloud_storage_cluster_metadata_upload_interval_ms",
+      "Time interval to wait between cluster metadata uploads.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      60s)
   , cloud_storage_idle_threshold_rps(
       *this,
       "cloud_storage_idle_threshold_rps",
@@ -1741,6 +1747,24 @@ configuration::configuration()
       "Number of partitions that can be reassigned at once",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       50)
+  , partition_autobalancing_tick_moves_drop_threshold(
+      *this,
+      "partition_autobalancing_tick_moves_drop_threshold",
+      "If the number of scheduled tick moves drops by this ratio, a new tick "
+      "is scheduled immediately. Valid values are (0, 1]. For example, with a "
+      "value of 0.2 and 100 scheduled moves in a tick, a new tick is scheduled "
+      "when the inprogress moves are < 80.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.2,
+      &validate_0_to_1_ratio)
+  , partition_autobalancing_min_size_threshold(
+      *this,
+      "partition_autobalancing_min_size_threshold",
+      "Minimum size of partition that is going to be prioritized when "
+      "rebalancing cluster due to disk size threshold being breached. By "
+      "default this value is calculated automaticaly",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , enable_leader_balancer(
       *this,
       "enable_leader_balancer",
@@ -1840,6 +1864,13 @@ configuration::configuration()
       "the data directory. Redpanda will refuse to start if it is not found.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , enable_storage_space_manager(
+      *this,
+      "enable_storage_space_manager",
+      "Enable the storage space manager that coordinates and control space "
+      "usage between log data and the cloud storage cache.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
   , memory_abort_on_alloc_failure(
       *this,
       "memory_abort_on_alloc_failure",
@@ -2020,9 +2051,27 @@ configuration::configuration()
       *this,
       "kafka_throughput_controlled_api_keys",
       "List of Kafka API keys that are subject to cluster-wide "
-      "and node-wide thoughput limit control",
+      "and node-wide throughput limit control",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"produce", "fetch"})
+  , kafka_throughput_control(
+      *this,
+      "kafka_throughput_control",
+      "List of throughput control groups that define exclusions from node-wide "
+      "throughput limits. Each group consists of: (\"name\" (optional) - any "
+      "unique group name, \"client_id\" - regex to match client_id). "
+      "A connection is assigned the first matching group, then the connection "
+      "is excluded from throughput control.",
+      {
+        .needs_restart = needs_restart::no,
+        .example
+        = R"([{'name': 'first_group','client_id': 'client1'}, {'client_id': 'consumer-\d+'}, {'name': 'catch all'}])",
+        .visibility = visibility::user,
+      },
+      {},
+      [](auto& v) {
+          return validate_throughput_control_groups(v.cbegin(), v.cend());
+      })
   , node_isolation_heartbeat_timeout(
       *this,
       "node_isolation_heartbeat_timeout",
@@ -2050,7 +2099,30 @@ configuration::configuration()
       "Interval, in seconds, of how often a message informing the operator "
       "that unsafe strings are permitted",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      300s) {}
+      300s)
+  , kafka_schema_id_validation_cache_capacity(
+      *this,
+      "kafka_schema_id_validation_cache_capacity",
+      "Per-shard capacity of the cache for validating schema IDs.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      128)
+  , kafka_memory_share_for_fetch(
+      *this,
+      "kafka_memory_share_for_fetch",
+      "The share of kafka subsystem memory that can be used for fetch read "
+      "buffers, as a fraction of kafka subsystem memory amount",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      0.5,
+      {.min = 0.0, .max = 1.0})
+  , kafka_memory_batch_size_estimate_for_fetch(
+      *this,
+      "kafka_memory_batch_size_estimate_for_fetch",
+      "The size of the batch used to estimate memory consumption for Fetch "
+      "requests, in bytes. Smaller sizes allow more concurrent fetch requests "
+      "per shard, larger sizes prevent running out of memory because of too "
+      "many concurrent fetch requests.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      1_MiB) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

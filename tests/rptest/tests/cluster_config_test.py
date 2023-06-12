@@ -9,6 +9,7 @@
 import json
 import logging
 import pprint
+import random
 import re
 import tempfile
 import time
@@ -377,7 +378,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([norestart_new_setting]))
         new_version = patch_result['config_version']
-        wait_for_version_sync(self.admin, self.redpanda, new_version)
+        wait_for_version_status_sync(self.admin, self.redpanda, new_version)
 
         assert self.admin.get_cluster_config()[
             norestart_new_setting[0]] == norestart_new_setting[1]
@@ -588,7 +589,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             elif p['type'] == "array" and p['items']['type'] == 'string':
                 valid_value = ["custard", "cream"]
             else:
-                raise NotImplementedError(p['type'])
+                raise NotImplementedError(f"{p['type']} in {name}")
 
             if name == 'sasl_mechanisms':
                 # The default value is ['SCRAM'], but the array cannot contain
@@ -618,6 +619,10 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 # Enabling this property requires a file be manually added
                 # to RP's data dir for it to start
                 continue
+
+            if name == 'record_key_subject_name_strategy' or name == 'record_value_subject_name_strategy':
+                valid_value = random.choice(
+                    [e for e in p['enum_values'] if e != initial_value])
 
             updates[name] = valid_value
 

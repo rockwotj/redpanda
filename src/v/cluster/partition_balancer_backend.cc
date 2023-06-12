@@ -17,11 +17,14 @@
 #include "cluster/partition_balancer_planner.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/topics_frontend.h"
+#include "config/configuration.h"
+#include "config/property.h"
 #include "random/generators.h"
 
 #include <seastar/core/coroutine.hh>
 
 #include <chrono>
+#include <optional>
 
 using namespace std::chrono_literals;
 using planner_status = cluster::partition_balancer_planner::status;
@@ -45,7 +48,11 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<std::chrono::milliseconds>&& tick_interval,
   config::binding<size_t>&& movement_batch_size_bytes,
   config::binding<size_t>&& max_concurrent_actions,
-  config::binding<size_t>&& segment_fallocation_step)
+  config::binding<double>&& moves_drop_threshold,
+  config::binding<size_t>&& segment_fallocation_step,
+  config::binding<std::optional<size_t>> min_partition_size_threshold,
+  config::binding<std::chrono::milliseconds> node_status_interval,
+  config::binding<size_t> raft_learner_recovery_rate)
   : _raft0(std::move(raft0))
   , _controller_stm(controller_stm.local())
   , _state(state.local())
@@ -60,21 +67,80 @@ partition_balancer_backend::partition_balancer_backend(
   , _tick_interval(std::move(tick_interval))
   , _movement_batch_size_bytes(std::move(movement_batch_size_bytes))
   , _max_concurrent_actions(std::move(max_concurrent_actions))
+  , _concurrent_moves_drop_threshold(std::move(moves_drop_threshold))
   , _segment_fallocation_step(std::move(segment_fallocation_step))
+  , _min_partition_size_threshold(std::move(min_partition_size_threshold))
+  , _node_status_interval(std::move(node_status_interval))
+  , _raft_learner_recovery_rate(std::move(raft_learner_recovery_rate))
   , _timer([this] { tick(); }) {}
 
 void partition_balancer_backend::start() {
-    _timer.arm(_tick_interval());
+    _topic_table_updates = _state.topics().register_lw_notification(
+      [this]() { on_topic_table_update(); });
+    _member_updates = _state.members().register_members_updated_notification(
+      [this](model::node_id n, model::membership_state state) {
+          on_members_update(n, state);
+      });
+    maybe_rearm_timer();
     vlog(clusterlog.info, "partition balancer started");
+}
+
+void partition_balancer_backend::maybe_rearm_timer(bool now) {
+    if (_gate.is_closed()) {
+        return;
+    }
+    auto schedule_at = now ? clock_t::now() : clock_t::now() + _tick_interval();
+    auto duration_ms = [](clock_t::time_point time_point) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                 time_point - clock_t::now())
+          .count();
+    };
+    if (_timer.armed()) {
+        schedule_at = std::min(schedule_at, _timer.get_timeout());
+        _timer.rearm(schedule_at);
+        vlog(
+          clusterlog.debug,
+          "Tick rescheduled to run in: {}ms",
+          duration_ms(schedule_at));
+    } else if (_lock.waiters() == 0) {
+        _timer.arm(schedule_at);
+        vlog(
+          clusterlog.debug,
+          "Tick scheduled to run in: {}ms",
+          duration_ms(schedule_at));
+    }
+}
+
+void partition_balancer_backend::on_members_update(
+  model::node_id, model::membership_state state) {
+    if (!is_leader()) {
+        return;
+    }
+    if (
+      state == model::membership_state::active
+      || state == model::membership_state::draining) {
+        maybe_rearm_timer(/*now = */ true);
+    }
+}
+
+void partition_balancer_backend::on_topic_table_update() {
+    if (!is_leader()) {
+        return;
+    }
+    auto current_in_progress_updates
+      = _state.topics().updates_in_progress().size();
+    auto schedule_now = double(current_in_progress_updates)
+                        < (1 - _concurrent_moves_drop_threshold())
+                            * double(_last_tick_in_progress_updates);
+    if (schedule_now) {
+        maybe_rearm_timer(/*now=*/true);
+    }
 }
 
 void partition_balancer_backend::tick() {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
-                          return do_tick().finally([this] {
-                              if (!_gate.is_closed()) {
-                                  _timer.arm(_tick_interval());
-                              }
-                          });
+                          return do_tick().finally(
+                            [this] { maybe_rearm_timer(); });
                       }).handle_exception([](const std::exception_ptr& e) {
         vlog(clusterlog.warn, "tick error: {}", e);
     });
@@ -82,7 +148,10 @@ void partition_balancer_backend::tick() {
 
 ss::future<> partition_balancer_backend::stop() {
     vlog(clusterlog.info, "stopping...");
+    _state.topics().unregister_lw_notification(_topic_table_updates);
+    _state.members().unregister_members_updated_notification(_member_updates);
     _timer.cancel();
+    _lock.broken();
     return _gate.close();
 }
 
@@ -91,6 +160,8 @@ ss::future<> partition_balancer_backend::do_tick() {
         vlog(clusterlog.debug, "not leader, skipping tick");
         co_return;
     }
+
+    auto units = co_await _lock.get_units();
 
     vlog(clusterlog.debug, "tick");
 
@@ -122,19 +193,12 @@ ss::future<> partition_balancer_backend::do_tick() {
         co_return;
     }
 
-    auto follower_metrics = _raft0->get_follower_metrics();
-    for (auto& follower : follower_metrics) {
-        // patch last heartbeat time so that we don't get false positives for
-        // unavailable node detection for nodes that didn't respond to a
-        // heartbeat since we became leader (last_heartbeat would be -infinity
-        // for them).
-        follower.last_heartbeat = std::max(
-          follower.last_heartbeat, _raft0->became_leader_at());
-    }
-
     double soft_max_disk_usage_ratio = _max_disk_usage_percent() / 100.0;
     double hard_max_disk_usage_ratio
       = (100 - _storage_space_alert_free_threshold_percent()) / 100.0;
+    // claim node unresponsive it doesn't responded to at least 7
+    // status requests by default 700ms
+    auto const node_responsiveness_timeout = _node_status_interval() * 7;
     auto plan_data
       = partition_balancer_planner(
           planner_config{
@@ -144,13 +208,15 @@ ss::future<> partition_balancer_backend::do_tick() {
             .movement_disk_size_batch = _movement_batch_size_bytes(),
             .max_concurrent_actions = _max_concurrent_actions(),
             .node_availability_timeout_sec = _availability_timeout(),
-            .segment_fallocation_step = _segment_fallocation_step()},
+            .segment_fallocation_step = _segment_fallocation_step(),
+            .min_partition_size_threshold = get_min_partition_size_threshold(),
+            .node_responsiveness_timeout = node_responsiveness_timeout},
           _state,
           _partition_allocator)
-          .plan_actions(health_report.value(), follower_metrics);
+          .plan_actions(health_report.value());
 
     _last_leader_term = _raft0->term();
-    _last_tick_time = ss::lowres_clock::now();
+    _last_tick_time = clock_t::now();
     _last_violations = std::move(plan_data.violations);
     if (
       _state.topics().has_updates_in_progress()
@@ -181,6 +247,8 @@ ss::future<> partition_balancer_backend::do_tick() {
           plan_data.cancellations.size(),
           plan_data.failed_actions_count);
     }
+
+    auto moves_before = _state.topics().updates_in_progress().size();
 
     co_await ss::max_concurrent_for_each(
       plan_data.cancellations, 32, [this, current_term](model::ntp& ntp) {
@@ -219,6 +287,10 @@ ss::future<> partition_balancer_backend::do_tick() {
               }
           });
       });
+
+    _last_tick_in_progress_updates = moves_before
+                                     + plan_data.cancellations.size()
+                                     + plan_data.reassignments.size();
 }
 
 partition_balancer_overview_reply partition_balancer_backend::overview() const {
@@ -247,7 +319,7 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
     ret.status = _last_status;
     ret.violations = _last_violations;
 
-    auto now = ss::lowres_clock::now();
+    auto now = clock_t::now();
     auto time_since_last_tick = now - _last_tick_time;
     ret.last_tick_time = model::to_timestamp(
       model::timestamp_clock::now()
@@ -256,6 +328,26 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
 
     ret.error = errc::success;
     return ret;
+}
+
+size_t partition_balancer_backend::get_min_partition_size_threshold() const {
+    // if there is an override coming from cluster config use it
+    if (_min_partition_size_threshold()) {
+        return _min_partition_size_threshold().value();
+    }
+
+    // TODO: replace partition_autobalancing_concurrent_moves after we have it
+    // as a field in balancer backend
+    const auto min_rate
+      = _raft_learner_recovery_rate()
+        / config::shard_local_cfg().partition_autobalancing_concurrent_moves();
+
+    /**
+     * We use a heuristic to calculate the minimum size of of partition, we
+     * want that the partition with the threshold size to have enough data that
+     * it will move for at least ten seconds.
+     */
+    return min_rate * 10;
 }
 
 } // namespace cluster

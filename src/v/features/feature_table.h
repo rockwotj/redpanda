@@ -19,6 +19,7 @@
 
 #include <array>
 #include <string_view>
+#include <unordered_set>
 
 // cluster classes that we will make friends of the feature_table
 namespace cluster {
@@ -58,6 +59,8 @@ enum class feature : std::uint64_t {
     cloud_storage_manifest_format_v2 = 1ULL << 24U,
     transaction_partitioning = 1ULL << 25U,
     force_partition_reconfiguration = 1ULL << 26U,
+    schema_id_validation = 1ULL << 27U,
+    raft_append_entries_serde = 1ULL << 28U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -73,7 +76,7 @@ enum class feature : std::uint64_t {
 //
 // retired does *not* mean the functionality is gone: it just means it
 // is no longer guarded by a feature flag.
-inline const std::set<std::string_view> retired_features = {
+inline const std::unordered_set<std::string_view> retired_features = {
   "central_config",
   "consumer_offsets",
   "maintenance_mode",
@@ -262,6 +265,18 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{10},
     "force_partition_reconfiguration",
     feature::force_partition_reconfiguration,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{10},
+    "schema_id_validation",
+    feature::schema_id_validation,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{10},
+    "raft_append_entries_serde",
+    feature::raft_append_entries_serde,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };

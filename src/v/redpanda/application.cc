@@ -1183,6 +1183,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
 
     construct_service(cp_partition_manager, std::ref(storage)).get();
 
+    construct_service(node_status_table, node_id).get();
     // controller
     syschecks::systemd_message("Creating cluster::controller").get();
 
@@ -1196,7 +1197,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       local_monitor,
       std::ref(raft_group_manager),
       std::ref(feature_table),
-      std::ref(cloud_storage_api));
+      std::ref(cloud_storage_api),
+      std::ref(node_status_table));
     controller->wire_up().get0();
 
     if (archival_storage_enabled()) {
@@ -1244,8 +1246,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(self_test_backend),
       std::ref(_connection_cache))
       .get();
-
-    construct_service(node_status_table, node_id).get();
 
     construct_single_service_sharded(
       node_status_backend,
@@ -1355,6 +1355,13 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
             })
           .get();
     }
+
+    construct_single_service(
+      space_manager,
+      config::shard_local_cfg().enable_storage_space_manager.bind(),
+      &storage,
+      &shadow_index_cache,
+      &partition_manager);
 
     // group membership
     syschecks::systemd_message("Creating kafka group manager").get();
@@ -1631,7 +1638,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(tx_registry_frontend),
         std::ref(wasm_service),
         qdc_config,
-        std::ref(*thread_worker))
+        std::ref(*thread_worker),
+        std::ref(_schema_registry))
       .get();
     construct_service(
       _compaction_controller,
@@ -2250,6 +2258,8 @@ void application::start_runtime_services(
     for (const auto& m : _migrators) {
         m->start(controller->get_abort_source().local());
     }
+
+    space_manager->start().get();
 }
 
 /**

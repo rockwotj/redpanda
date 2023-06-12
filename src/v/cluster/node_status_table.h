@@ -43,10 +43,12 @@ public:
     }
 
     void update_peers(std::vector<node_status> updates) {
-        for (auto& node_status : updates) {
-            _peers_status[node_status.node_id] = std::move(node_status);
+        for (const auto& node_status : updates) {
+            _peers_status[node_status.node_id] = node_status;
         }
     }
+
+    void remove_peer(model::node_id id) { _peers_status.erase(id); }
 
     bool is_isolated() const {
         if (_peers_status.empty()) {

@@ -507,6 +507,7 @@ private:
     void successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
 
+    size_t estimate_recovering_followers() const;
     bool needs_recovery(const follower_index_metadata&, model::offset);
     void dispatch_recovery(follower_index_metadata&);
     void maybe_update_leader_commit_idx();
@@ -673,6 +674,12 @@ private:
     void maybe_upgrade_configuration_to_v4(group_configuration&);
 
     void update_confirmed_term();
+
+    bool use_all_serde_append_entries() const {
+        return _features.is_active(
+          features::feature::raft_append_entries_serde);
+    }
+
     // args
     vnode _self;
     raft::group_id _group;

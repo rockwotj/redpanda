@@ -49,12 +49,13 @@ constexpr std::string_view avro_schema_value_sv{
   "schema": "{\"type\":\"string\"}",
   "deleted": true
 })"};
-const pps::schema_value avro_schema_value{
+const pps::canonical_schema_value avro_schema_value{
   .schema{
     pps::subject{"my-kafka-value"},
     pps::canonical_schema_definition{
-      R"({"type":"string"})", pps::schema_type::avro},
-    {{{"name"}, pps::subject{"subject"}, pps::schema_version{1}}}},
+      R"({"type":"string"})",
+      pps::schema_type::avro,
+      {{{"name"}, pps::subject{"subject"}, pps::schema_version{1}}}}},
   .version{pps::schema_version{1}},
   .id{pps::schema_id{1}},
   .deleted = pps::is_deleted::yes};
@@ -126,7 +127,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
 
     {
         auto val = ppj::rjson_parse(
-          avro_schema_value_sv.data(), pps::schema_value_handler<>{});
+          avro_schema_value_sv.data(), pps::canonical_schema_value_handler<>{});
         BOOST_CHECK_EQUAL(avro_schema_value, val);
 
         auto str = ppj::rjson_serialize(avro_schema_value);

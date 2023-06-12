@@ -52,7 +52,8 @@ ss::sstring list_objects_resp(
     // Filter by prefix and group by the substring between the prefix and first
     // delimiter.
     for (const auto& [_, expectation] : objects) {
-        auto& key = expectation.url;
+        // Remove any '/' prefix before returning.
+        auto key = expectation.url.substr(1);
         vlog(fixt_log.trace, "Comparing {} to prefix {}", key, prefix);
         if (key.size() < prefix.size()) {
             continue;
@@ -61,11 +62,13 @@ ss::sstring list_objects_resp(
             continue;
         }
         vlog(fixt_log.trace, "{} matches prefix {}", key, prefix);
-        content_key_to_size.emplace(
-          key,
-          expectation.body.has_value() ? expectation.body.value().size() : 0);
         if (delimiter.empty()) {
-            // No delimiter, no need to find prefixes.
+            // No delimiter, we just need to return the content and not
+            // prefixes.
+            content_key_to_size.emplace(
+              key,
+              expectation.body.has_value() ? expectation.body.value().size()
+                                           : 0);
             continue;
         }
         auto delimiter_pos = key.find(delimiter, prefix.size());

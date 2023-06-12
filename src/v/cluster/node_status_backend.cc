@@ -14,8 +14,17 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
+#include "cluster/node_status_table.h"
 #include "config/node_config.h"
+#include "rpc/types.h"
 #include "ssx/future-util.h"
+
+#include <seastar/core/condition-variable.hh>
+#include <seastar/util/defer.hh>
+
+#include <bits/types/clock_t.h>
+
+#include <exception>
 
 namespace cluster {
 
@@ -43,25 +52,58 @@ node_status_backend::node_status_backend(
 
     _members_table_notification_handle
       = _members_table.local().register_members_updated_notification(
-        [this](auto ids) {
-            handle_members_updated_notification(std::move(ids));
+        [this](model::node_id n, model::membership_state state) {
+            _pending_member_notifications.emplace_back(n, state);
+            if (!_draining) {
+                _draining = true;
+                ssx::spawn_with_gate(
+                  _gate, [this] { return drain_notifications_queue(); });
+            }
         });
 
     _timer.set_callback([this] { tick(); });
 }
 
-void node_status_backend::handle_members_updated_notification(
-  std::vector<model::node_id> node_ids) {
-    for (const auto& node_id : node_ids) {
-        if (node_id == _self || _discovered_peers.contains(node_id)) {
-            continue;
-        }
+ss::future<> node_status_backend::drain_notifications_queue() {
+    auto deferred = ss::defer([this] { _draining = false; });
+    while (!_pending_member_notifications.empty()) {
+        auto& notification = _pending_member_notifications.front();
+        co_await handle_members_updated_notification(
+          notification.id, notification.state);
+        _pending_member_notifications.pop_front();
+    }
+    co_return;
+}
 
+ss::future<> node_status_backend::handle_members_updated_notification(
+  model::node_id node_id, model::membership_state state) {
+    if (state == model::membership_state::active) {
+        if (node_id != _self && !_discovered_peers.contains(node_id)) {
+            vlog(
+              clusterlog.info,
+              "Node {} has been discovered via members table",
+              node_id);
+            _discovered_peers.insert(node_id);
+            // update node status table with initial state
+            co_await _node_status_table.invoke_on_all(
+              [node_id](node_status_table& table) {
+                  table.update_peers({node_status{
+                    .node_id = node_id,
+                    .last_seen = rpc::clock_type::now(),
+                  }});
+              });
+        }
+    } else if (
+      state == model::membership_state::removed
+      && _discovered_peers.contains(node_id)) {
         vlog(
           clusterlog.info,
-          "Node {} has been discovered via members table",
+          "Node {} has been removed via members table",
           node_id);
-        _discovered_peers.insert(node_id);
+        _discovered_peers.erase(node_id);
+
+        co_await _node_status_table.invoke_on_all(
+          [node_id](node_status_table& table) { table.remove_peer(node_id); });
     }
 }
 

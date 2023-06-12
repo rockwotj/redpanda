@@ -139,11 +139,16 @@ public:
     ss::sharded<storage::api> storage;
     ss::sharded<storage::node_api> storage_node;
     ss::sharded<cluster::node::local_monitor> local_monitor;
+    std::unique_ptr<storage::disk_space_manager> space_manager;
 
     std::unique_ptr<cluster::controller> controller;
     std::unique_ptr<coproc::api> coprocessing;
 
     std::unique_ptr<ssx::thread_worker> thread_worker;
+
+    const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
+        return _schema_registry;
+    }
 
 private:
     using deferred_actions

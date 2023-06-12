@@ -11,6 +11,7 @@
 
 #include "pandaproxy/schema_registry/protobuf.h"
 
+#include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
@@ -272,7 +273,7 @@ build_file(pb::DescriptorPool& dp, const pb::FileDescriptorProto& fdp) {
 /// on stack unwind.
 ss::future<const pb::FileDescriptor*> build_file_with_refs(
   pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
-    for (const auto& ref : schema.refs()) {
+    for (const auto& ref : schema.def().refs()) {
         if (dp.FindFileByName(ref.name)) {
             continue;
         }
@@ -281,10 +282,7 @@ ss::future<const pb::FileDescriptor*> build_file_with_refs(
         co_await build_file_with_refs(
           dp,
           store,
-          canonical_schema{
-            subject{ref.name},
-            std::move(dep.schema).def(),
-            std::move(dep.schema).refs()});
+          canonical_schema{subject{ref.name}, std::move(dep.schema).def()});
     }
 
     parser p;
@@ -312,6 +310,22 @@ protobuf_schema_definition::raw() const {
     return canonical_schema_definition::raw_string{_impl->fd->DebugString()};
 }
 
+::result<ss::sstring, kafka::error_code>
+protobuf_schema_definition::name(std::vector<int> const& fields) const {
+    if (fields.empty()) {
+        return kafka::error_code::invalid_record;
+    }
+    auto f = fields.begin();
+    auto d = _impl->fd->message_type(*f++);
+    while (fields.end() != f && d) {
+        d = d->nested_type(*f++);
+    }
+    if (!d) {
+        return kafka::error_code::invalid_record;
+    }
+    return d->full_name();
+}
+
 bool operator==(
   const protobuf_schema_definition& lhs,
   const protobuf_schema_definition& rhs) {
@@ -328,8 +342,9 @@ operator<<(std::ostream& os, const protobuf_schema_definition& def) {
 ss::future<protobuf_schema_definition>
 make_protobuf_schema_definition(sharded_store& store, canonical_schema schema) {
     auto impl = ss::make_shared<protobuf_schema_definition::impl>();
+    auto refs = schema.def().refs();
     impl->fd = co_await import_schema(impl->_dp, store, std::move(schema));
-    co_return protobuf_schema_definition{std::move(impl)};
+    co_return protobuf_schema_definition{std::move(impl), std::move(refs)};
 }
 
 ss::future<canonical_schema_definition>
@@ -345,12 +360,11 @@ make_canonical_protobuf_schema(sharded_store& store, unparsed_schema schema) {
     canonical_schema temp{
       std::move(schema).sub(),
       {canonical_schema_definition::raw_string{schema.def().raw()()},
-       schema.def().type()},
-      std::move(schema).refs()};
+       schema.def().type(),
+       schema.def().refs()}};
 
     auto validated = co_await validate_protobuf_schema(store, temp);
-    co_return canonical_schema{
-      std::move(temp).sub(), std::move(validated), std::move(temp).refs()};
+    co_return canonical_schema{std::move(temp).sub(), std::move(validated)};
     // NOLINTEND(bugprone-use-after-move)
 }
 
