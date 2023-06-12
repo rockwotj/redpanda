@@ -179,6 +179,9 @@ func installDeps(ctx context.Context, p transformProject) error {
 			g, err := exec.LookPath("go")
 			out.MaybeDie(err, "go is not available on $PATH, please download and install it: https://go.dev/doc/install")
 			c := exec.CommandContext(ctx, g, "mod", "tidy")
+			c.Stderr = os.Stderr
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
 			c.Dir = p.Path
 			out.MaybeDieErr(c.Run())
 			fmt.Println("go modules are tidy 🧹")

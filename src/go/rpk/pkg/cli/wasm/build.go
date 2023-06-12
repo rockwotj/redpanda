@@ -2,6 +2,7 @@ package wasm
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -32,6 +33,9 @@ func newBuildCommand(fs afero.Fs) *cobra.Command {
 					"-gc=conservative",
 					"-o", fmt.Sprintf("%s.wasm", cfg.Name),
 					".")
+				c.Stderr = os.Stderr
+				c.Stdin = os.Stdin
+				c.Stdout = os.Stdout
 				out.MaybeDieErr(c.Run())
 			default:
 				out.Die("unknown language: %q", cfg.Language)
