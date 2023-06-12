@@ -15,6 +15,7 @@ public:
 private:
     std::string _msg;
 };
+
 class module_too_large_exception : public parse_exception {
 public:
     explicit module_too_large_exception(std::string msg)

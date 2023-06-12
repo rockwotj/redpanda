@@ -65,9 +65,9 @@ private:
  * Spec ref: https://webassembly.github.io/spec/core/valid/index.html
  *
  */
-class stack_validator {
+class module_validator {
 public:
-    explicit stack_validator(function_type);
+    explicit module_validator(function_signature);
 
     // The maximum number of elements that are ever on the stack at
     // once.
@@ -95,7 +95,7 @@ private:
     // Check if the stack is empty
     bool empty() const;
 
-    function_type _ft;
+    function_signature _ft;
 
     fragmented_vector<validation_type> _underlying;
     size_t _current_memory_usage{0};

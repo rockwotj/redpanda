@@ -151,7 +151,7 @@ jit_compiler::jit_compiler() {
 jit_compiler::~jit_compiler() = default;
 
 std::unique_ptr<jit_function_compiler>
-jit_compiler::add_func(function_type ft, std::vector<valtype> locals) {
+jit_compiler::add_func(function_signature ft, std::vector<valtype> locals) {
     return std::make_unique<jit_function_compiler>(
       &_code, std::move(ft), std::move(locals));
 }
@@ -159,7 +159,7 @@ jit_compiler::add_func(function_type ft, std::vector<valtype> locals) {
 // A useful cheatsheet:
 // https://cs.brown.edu/courses/cs033/docs/guides/x64_cheatsheet.pdf
 jit_function_compiler::jit_function_compiler(
-  CodeHolder* ch, function_type ft, std::vector<valtype> locals)
+  CodeHolder* ch, function_signature ft, std::vector<valtype> locals)
   : _asm(ch)
   , _ft(std::move(ft))
   , _locals(std::move(locals))

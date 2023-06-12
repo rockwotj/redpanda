@@ -7,12 +7,13 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#define BOOST_TEST_MODULE stack_validator
+#include <initializer_list>
+#define BOOST_TEST_MODULE validator
 
 #include "outcome.h"
 #include "pandawasm/ast.h"
 #include "pandawasm/instruction.h"
-#include "pandawasm/stack_validator.h"
+#include "pandawasm/validator.h"
 #include "pandawasm/value.h"
 
 #include <boost/test/tools/old/interface.hpp>
@@ -22,7 +23,7 @@
 #include <type_traits>
 
 using pandawasm::instruction;
-using pandawasm::stack_validator;
+using pandawasm::module_validator;
 using pandawasm::valtype;
 using namespace pandawasm::op;
 
@@ -64,13 +65,14 @@ std::vector<valtype> as_wasmtypes() {
 }
 
 template<typename R, typename... A>
-void check_instructions(const std::vector<pandawasm::instruction>& ops) {
-    pandawasm::function_type ft{.parameter_types = as_wasmtypes<A...>()};
+void check_instructions(
+  const std::initializer_list<pandawasm::instruction>& ops) {
+    pandawasm::function_signature ft{.parameter_types = as_wasmtypes<A...>()};
     if constexpr (!std::is_void_v<R>) {
         auto vt = as_wasmtype<R>();
         ft.result_types.push_back(vt);
     }
-    auto sv = stack_validator(ft);
+    auto sv = module_validator(ft);
     for (const auto& op : ops) {
         std::visit(sv, op);
     }
@@ -78,52 +80,52 @@ void check_instructions(const std::vector<pandawasm::instruction>& ops) {
 }
 
 template<typename T>
-void assert_valid(const std::vector<pandawasm::instruction>& ops) {
+void assert_valid(const std::initializer_list<pandawasm::instruction>& ops) {
     BOOST_CHECK_NO_THROW(check_instructions<T>(ops));
 }
 template<typename T>
-void assert_invalid(const std::vector<pandawasm::instruction>& ops) {
+void assert_invalid(const std::initializer_list<pandawasm::instruction>& ops) {
     BOOST_CHECK_THROW(
       check_instructions<T>(ops), pandawasm::validation_exception);
 }
 
 BOOST_AUTO_TEST_CASE(validate_noop_func) {
-    assert_valid<void>(std::vector<instruction>({
+    assert_valid<void>({
       return_values(),
-    }));
+    });
 }
 BOOST_AUTO_TEST_CASE(validate_good_return_sequence) {
-    assert_valid<int>(std::vector<instruction>({
+    assert_valid<int>({
       const_i32(),
       return_values(),
-    }));
+    });
 }
 BOOST_AUTO_TEST_CASE(validate_good_add_sequence) {
-    assert_valid<int>(std::vector<instruction>({
+    assert_valid<int>({
       const_i32(),
       const_i32(),
       add_i32(),
       return_values(),
-    }));
+    });
 }
 BOOST_AUTO_TEST_CASE(validate_missing_return_values) {
-    assert_invalid<int>(std::vector<instruction>({
+    assert_invalid<int>({
       const_i32(),
-    }));
+    });
 }
 BOOST_AUTO_TEST_CASE(validate_missing_int_add_sequence) {
-    assert_invalid<int>(std::vector<instruction>({
+    assert_invalid<int>({
       const_i32(),
       add_i32(),
       return_values(),
-    }));
+    });
 }
 BOOST_AUTO_TEST_CASE(validate_extra_int_add_sequence) {
-    assert_invalid<int>(std::vector<instruction>({
+    assert_invalid<int>({
       const_i32(),
       const_i32(),
       const_i32(),
       add_i32(),
       return_values(),
-    }));
+    });
 }

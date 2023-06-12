@@ -43,7 +43,7 @@ class runtime_value_location_stack;
 class jit_function_compiler {
 public:
     jit_function_compiler(
-      asmjit::CodeHolder*, function_type ft, std::vector<valtype> locals);
+      asmjit::CodeHolder*, function_signature ft, std::vector<valtype> locals);
     jit_function_compiler(const jit_function_compiler&) = delete;
     jit_function_compiler& operator=(const jit_function_compiler&) = delete;
     jit_function_compiler(jit_function_compiler&&) = delete;
@@ -66,7 +66,7 @@ private:
     asmjit::x86::Assembler _asm;
     asmjit::FuncFrame _frame;
 
-    function_type _ft;
+    function_signature _ft;
     // Does not include params in this list.
     std::vector<valtype> _locals;
     std::unique_ptr<runtime_value_location_stack> _stack;
@@ -82,7 +82,7 @@ public:
     ~jit_compiler();
 
     std::unique_ptr<jit_function_compiler>
-    add_func(function_type, std::vector<valtype> locals);
+    add_func(function_signature, std::vector<valtype> locals);
 
 private:
     asmjit::JitRuntime _rt;

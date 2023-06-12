@@ -20,8 +20,8 @@ rp_test(
 
 rp_test(
     UNIT_TEST
-    BINARY_NAME stack_validator_test
-    SOURCES stack_validator_test.cc
+    BINARY_NAME validator_test
+    SOURCES validator_test.cc
     DEFINITIONS BOOST_TEST_DYN_LINK
     LIBRARIES Boost::unit_test_framework v::pandawasm
     LABELS pandawasm

@@ -24,7 +24,7 @@
 
 namespace pandawasm {
 
-struct function_type {
+struct function_signature {
     std::vector<valtype> parameter_types;
     std::vector<valtype> result_types;
 };
@@ -37,7 +37,10 @@ struct limits {
 using name = named_type<ss::sstring, struct name_tag>;
 using typeidx = named_type<uint32_t, struct typeidx_tag>;
 using funcidx = named_type<uint32_t, struct funcidx_tag>;
-using localidx = named_type<uint32_t, struct funcidx_tag>;
+using localidx = named_type<uint32_t, struct localidx_tag>;
+using tableidx = named_type<uint32_t, struct tableidx_tag>;
+using memidx = named_type<uint32_t, struct memidx_tag>;
+using globalidx = named_type<uint32_t, struct globalidx_tag>;
 struct tabletype {
     limits limits;
     valtype reftype; // funcref | externref
@@ -54,7 +57,7 @@ struct globaltype {
 
 struct module_import {
     using desc = std::variant<typeidx, tabletype, memtype, globaltype>;
-    ss::sstring module;
+    ss::sstring module_name;
     ss::sstring name;
     desc description;
 };
@@ -73,14 +76,14 @@ struct global {
 };
 
 struct module_export {
-    using desc = std::variant<typeidx, tabletype, memtype, globaltype>;
+    using desc = std::variant<funcidx, tableidx, memidx, globalidx>;
     ss::sstring name;
     desc description;
 };
 
 struct function {
     struct metadata {
-        function_type type;
+        function_signature signature;
         std::vector<valtype> locals;
         uint32_t max_stack_size;
     };
