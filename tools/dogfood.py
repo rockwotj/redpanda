@@ -28,7 +28,7 @@ def upload_deb(args):
 def release_rpk(args):
     output = subprocess.check_output(["gh", "release", "list", "--repo", "rockwotj/redpanda", "--limit", "1"], text=True)
     latest_release = int(output.split("\t")[0].split("-")[1])
-    for (goos, goarch) in [("linux", "amd64"), ("darwin", "arm64")]:
+    for (goos, goarch) in [("linux", "amd64"), ("darwin", "arm64"), ("linux", "arm64")]:
         subprocess.check_call(["task", "rpk:build", f"GOOS={goos}", f"GOARCH={goarch}"])
     build_dir = pathlib.Path(__file__).parent.parent / "vbuild/go"
     os.chdir(build_dir)
