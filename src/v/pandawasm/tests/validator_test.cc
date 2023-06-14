@@ -16,16 +16,13 @@
 #include "pandawasm/validator.h"
 #include "pandawasm/value.h"
 
-#include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <optional>
 #include <type_traits>
 
-using pandawasm::function_validator;
-using pandawasm::instruction;
-using pandawasm::valtype;
-using namespace pandawasm::op;
+namespace pandawasm {
+namespace {
 
 template<typename>
 struct dependent_false : std::false_type {};
@@ -72,21 +69,26 @@ void check_instructions(
         auto vt = as_wasmtype<R>();
         ft.result_types.push_back(vt);
     }
-    auto sv = module_validator(ft);
+    auto sv = function_validator(ft, {});
     for (const auto& op : ops) {
         std::visit(sv, op);
     }
     sv.finalize();
 }
+} // namespace
+} // namespace pandawasm
 
-template<typename T>
+using namespace pandawasm::op;
+
+template<typename R, typename... A>
 void assert_valid(const std::initializer_list<pandawasm::instruction>& ops) {
-    BOOST_CHECK_NO_THROW(check_instructions<T>(ops));
+    auto fn = [ops] { pandawasm::check_instructions<R, A...>(ops); };
+    BOOST_CHECK_NO_THROW(fn());
 }
-template<typename T>
+template<typename R, typename... A>
 void assert_invalid(const std::initializer_list<pandawasm::instruction>& ops) {
-    BOOST_CHECK_THROW(
-      check_instructions<T>(ops), pandawasm::validation_exception);
+    auto fn = [ops] { pandawasm::check_instructions<R, A...>(ops); };
+    BOOST_CHECK_THROW(fn(), pandawasm::validation_exception);
 }
 
 BOOST_AUTO_TEST_CASE(validate_noop_func) {
@@ -100,6 +102,19 @@ BOOST_AUTO_TEST_CASE(validate_good_return_sequence) {
       return_values(),
     });
 }
+BOOST_AUTO_TEST_CASE(validate_implicit_return) {
+    assert_valid<int>({
+      const_i32(),
+    });
+}
+BOOST_AUTO_TEST_CASE(validate_add_func) {
+    assert_valid<int, int, int>({
+      get_local_i32(0),
+      get_local_i32(1),
+      add_i32(),
+      return_values(),
+    });
+}
 BOOST_AUTO_TEST_CASE(validate_good_add_sequence) {
     assert_valid<int>({
       const_i32(),
@@ -108,8 +123,9 @@ BOOST_AUTO_TEST_CASE(validate_good_add_sequence) {
       return_values(),
     });
 }
-BOOST_AUTO_TEST_CASE(validate_missing_return_values) {
+BOOST_AUTO_TEST_CASE(validate_extra_stack_at_end) {
     assert_invalid<int>({
+      const_i32(),
       const_i32(),
     });
 }
@@ -127,5 +143,28 @@ BOOST_AUTO_TEST_CASE(validate_extra_int_add_sequence) {
       const_i32(),
       add_i32(),
       return_values(),
+    });
+}
+BOOST_AUTO_TEST_CASE(validate_get_invalid_local) {
+    assert_invalid<int>({
+      get_local_i32(0),
+      const_i32(),
+      add_i32(),
+      return_values(),
+    });
+}
+BOOST_AUTO_TEST_CASE(validate_set_invalid_local) {
+    assert_invalid<void, int>({
+      const_i32(),
+      const_i32(),
+      add_i32(),
+      set_local_i32(1),
+      return_values(),
+    });
+}
+BOOST_AUTO_TEST_CASE(validate_set_local_type) {
+    assert_invalid<void, long>({
+      const_i32(),
+      set_local_i32(0),
     });
 }

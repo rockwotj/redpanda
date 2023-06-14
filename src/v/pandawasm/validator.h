@@ -67,7 +67,7 @@ private:
  */
 class function_validator {
 public:
-    explicit function_validator(function_signature);
+    function_validator(function_signature, const std::vector<valtype>& locals);
 
     // The maximum number of elements that are ever on the stack at
     // once.
@@ -90,12 +90,17 @@ private:
     // Push the value on the stack
     void push(validation_type);
     void push(valtype);
+    // Assert a local is a specific valtype
+    void assert_local(size_t, valtype) const;
     // Assert the stack is empty
     void assert_empty() const;
     // Check if the stack is empty
     bool empty() const;
 
-    function_signature _ft;
+    std::vector<valtype> _locals;
+    std::vector<valtype> _returns;
+
+    bool _unreachable = false;
 
     fragmented_vector<validation_type> _underlying;
     size_t _current_memory_usage{0};

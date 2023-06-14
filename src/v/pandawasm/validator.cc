@@ -3,7 +3,9 @@
 #include "pandawasm/value.h"
 #include "vassert.h"
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 namespace pandawasm {
 
@@ -75,8 +77,12 @@ std::ostream& operator<<(std::ostream& os, validation_type vt) {
         vassert(false, "unknown validation type: {}", vt._type);
     }
 }
-function_validator::function_validator(function_signature ft)
-  : _ft(std::move(ft)) {}
+function_validator::function_validator(
+  function_signature ft, const std::vector<valtype>& locals)
+  : _locals(std::move(ft.parameter_types))
+  , _returns(std::move(ft.result_types)) {
+    std::copy(locals.begin(), locals.end(), std::back_inserter(_locals));
+}
 
 size_t function_validator::maximum_stack_elements() const {
     return _max_stack_size;
@@ -93,22 +99,36 @@ void function_validator::operator()(const op::add_i32&) {
     pop(valtype::i32);
     push(valtype::i32);
 }
-void function_validator::operator()(const op::get_local_i32&) {
+void function_validator::operator()(const op::get_local_i32& op) {
+    assert_local(op.idx, valtype::i32);
     push(valtype::i32);
 }
-void function_validator::operator()(const op::set_local_i32&) {
+void function_validator::operator()(const op::set_local_i32& op) {
     pop(valtype::i32);
+    assert_local(op.idx, valtype::i32);
 }
 void function_validator::operator()(const op::return_values&) {
-    for (valtype vt : _ft.result_types) {
+    for (valtype vt : _returns) {
+        pop(vt);
+    }
+    assert_empty();
+    // Mark the current block as unreachable.
+    _unreachable = true;
+}
+
+void function_validator::finalize() {
+    for (valtype vt : _returns) {
         pop(vt);
     }
     assert_empty();
 }
-
-void function_validator::finalize() { assert_empty(); }
 bool function_validator::empty() const { return _underlying.empty(); }
 
+void function_validator::assert_local(size_t idx, valtype vt) const {
+    if (idx >= _locals.size() || _locals[idx] != vt) [[unlikely]] {
+        throw validation_exception();
+    }
+}
 void function_validator::assert_empty() const {
     if (!_underlying.empty()) [[unlikely]] {
         throw validation_exception();
@@ -116,11 +136,15 @@ void function_validator::assert_empty() const {
 }
 void function_validator::pop(valtype vt) { pop(validation_type(vt)); }
 void function_validator::pop(validation_type expected) {
+    validation_type actual = validation_type::any();
     if (_underlying.empty()) {
-        throw validation_exception();
+        if (!_unreachable) {
+            throw validation_exception();
+        }
+    } else {
+        actual = _underlying.back();
+        _underlying.pop_back();
     }
-    validation_type actual = _underlying.back();
-    _underlying.pop_back();
     _current_memory_usage -= actual.size_bytes();
     bool ok = actual == expected;
     if (actual.is_any() || expected.is_any()) {

@@ -477,12 +477,12 @@ parse_expression(iobuf_const_parser* parser, function_validator* validator) {
             break;
         case 0x20: { // get_local_i32
             auto idx = leb128::decode<uint32_t>(parser);
-            i = op::get_local_i32(int32_t(idx));
+            i = op::get_local_i32(idx);
             break;
         }
         case 0x21: { // set_local_i32
             auto idx = leb128::decode<uint32_t>(parser);
-            i = op::set_local_i32(int32_t(idx));
+            i = op::set_local_i32(idx);
             break;
         }
         case 0x41: { // const_i32
@@ -519,7 +519,7 @@ void module_builder::parse_one_code(
         auto valtype = parse_valtype(parser);
         std::fill_n(std::back_inserter(func->meta.locals), num_locals, valtype);
     }
-    function_validator validator(func->meta.signature);
+    function_validator validator(func->meta.signature, func->meta.locals);
     func->body = parse_expression(parser, &validator);
     func->meta.max_stack_size_bytes = validator.maximum_stack_size_bytes();
 
