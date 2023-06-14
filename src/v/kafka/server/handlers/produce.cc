@@ -326,13 +326,17 @@ static partition_produce_stages produce_topic_partition(
     ss::future<> wasm_transform_result = ss::now();
     vlog(klog.info, "[WASM] Transforming topic to {}", wasm_transform_output);
     if (wasm_transform_output.has_value()) {
-        wasm_transform_result = produce_wasm_function(
-          octx,
-          model::ntp(
-            wasm_transform_output->ns,
-            wasm_transform_output->tp,
-            part.partition_index),
-          batch.copy());
+        wasm_transform_result
+          = produce_wasm_function(
+              octx,
+              model::ntp(
+                wasm_transform_output->ns,
+                wasm_transform_output->tp,
+                part.partition_index),
+              batch.copy())
+              .handle_exception([](const auto& ex) {
+                  vlog(klog.warn, "Failed to apply wasm transform: {}", ex);
+              });
     }
 
     const auto& hdr = batch.header();
