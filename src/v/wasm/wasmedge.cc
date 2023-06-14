@@ -27,10 +27,12 @@
 #include "wasm/wasm.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/queue.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/core/thread_cputime_clock.hh>
 #include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <boost/type_traits/function_traits.hpp>
 #include <wasmedge/wasmedge.h>
@@ -330,9 +332,16 @@ public:
 
     std::string_view function_name() const final { return _user_module_name; }
 
-    ss::future<> start() final { return initialize_wasi(); }
+    ss::future<> start() final {
+        return enqueue<void>([this] { initialize_wasi(); });
+    }
 
-    ss::future<> stop() final { return ss::now(); }
+    ss::future<> stop() final {
+        _is_running = false;
+        // Enqueue a task to flush the queue
+        co_await enqueue<void>([] {});
+        co_await _thread.join();
+    }
 
     ss::future<model::record_batch>
     transform(const model::record_batch* batch, probe* probe) override {
@@ -346,17 +355,21 @@ public:
             if (decompressed.record_count() == 0) {
                 co_return std::move(decompressed);
             }
-            co_return co_await invoke_transform(&decompressed, probe);
+            co_return co_await enqueue<model::record_batch>(
+              [this, &decompressed, probe] {
+                  return invoke_transform(&decompressed, probe);
+              });
         } else {
             if (batch->record_count() == 0) {
                 co_return batch->copy();
             }
-            co_return co_await invoke_transform(batch, probe);
+            co_return co_await enqueue<model::record_batch>(
+              [this, batch, probe] { return invoke_transform(batch, probe); });
         }
     }
 
 private:
-    ss::future<> initialize_wasi() {
+    void initialize_wasi() {
         vlog(
           wasmedge_log.info,
           "Initializing wasm function {}",
@@ -384,73 +397,96 @@ private:
         }
         vlog(
           wasmedge_log.info, "Wasm function {} initialized", _user_module_name);
-        co_return;
     }
 
-    ss::future<model::record_batch>
+    model::record_batch
     invoke_transform(const model::record_batch* batch, probe* probe) {
-        // TODO: We should not be spawning threads frequently, this should be
-        // another process running and use a queue to submit requests
-        return ss::async([this, batch, probe] {
-            return _rp_module->for_each_record(
-              batch, [this, probe](wasm_call_params params) {
-                  auto ml = probe->latency_measurement();
-                  auto mc = probe->cpu_time_measurement();
-                  WasmEdge_Result result;
-                  std::array args = {
-                    WasmEdge_ValueGenI32(params.batch_handle()),
-                    WasmEdge_ValueGenI32(params.record_handle()),
-                    WasmEdge_ValueGenI32(params.record_size),
-                    WasmEdge_ValueGenI32(params.current_record_offset)};
-                  std::array returns = {WasmEdge_ValueGenI32(-1)};
-                  try {
-                      is_executing = true;
-                      result = WasmEdge_VMExecute(
-                        _vm_ctx.get(),
-                        WasmEdge_StringWrap(
-                          redpanda_on_record_callback_function_name.data(),
-                          redpanda_on_record_callback_function_name.size()),
-                        args.data(),
-                        args.size(),
-                        returns.data(),
-                        returns.size());
-                      is_executing = false;
-                  } catch (...) {
-                      is_executing = false;
-                      probe->transform_error();
-                      wasmedge_log.warn(
-                        "transform failed! {}", std::current_exception());
-                      throw wasm_exception(
-                        ss::format(
-                          "transform execution {} failed: {}",
-                          _user_module_name,
-                          std::current_exception()),
-                        errc::user_code_failure);
-                  }
-                  if (!WasmEdge_ResultOK(result)) {
-                      probe->transform_error();
-                      wasmedge_log.warn(
-                        "transform failed! {}",
-                        WasmEdge_ResultGetMessage(result));
-                      throw wasm_exception(
-                        ss::format(
-                          "transform execution {} failed", _user_module_name),
-                        errc::user_code_failure);
-                  }
-                  auto user_result = WasmEdge_ValueGetI32(returns[0]);
-                  if (user_result != 0) {
-                      probe->transform_error();
-                      throw wasm_exception(
-                        ss::format(
-                          "transform execution {} resulted in error {}",
-                          _user_module_name,
-                          user_result),
-                        errc::user_code_failure);
-                  }
-                  probe->transform_complete();
-              });
-        });
+        return _rp_module->for_each_record(
+          batch, [this, probe](wasm_call_params params) {
+              auto ml = probe->latency_measurement();
+              auto mc = probe->cpu_time_measurement();
+              WasmEdge_Result result;
+              std::array args = {
+                WasmEdge_ValueGenI32(params.batch_handle()),
+                WasmEdge_ValueGenI32(params.record_handle()),
+                WasmEdge_ValueGenI32(params.record_size),
+                WasmEdge_ValueGenI32(params.current_record_offset)};
+              std::array returns = {WasmEdge_ValueGenI32(-1)};
+              try {
+                  is_executing = true;
+                  result = WasmEdge_VMExecute(
+                    _vm_ctx.get(),
+                    WasmEdge_StringWrap(
+                      redpanda_on_record_callback_function_name.data(),
+                      redpanda_on_record_callback_function_name.size()),
+                    args.data(),
+                    args.size(),
+                    returns.data(),
+                    returns.size());
+                  is_executing = false;
+              } catch (...) {
+                  is_executing = false;
+                  probe->transform_error();
+                  wasmedge_log.warn(
+                    "transform failed! {}", std::current_exception());
+                  throw wasm_exception(
+                    ss::format(
+                      "transform execution {} failed: {}",
+                      _user_module_name,
+                      std::current_exception()),
+                    errc::user_code_failure);
+              }
+              if (!WasmEdge_ResultOK(result)) {
+                  probe->transform_error();
+                  wasmedge_log.warn(
+                    "transform failed! {}", WasmEdge_ResultGetMessage(result));
+                  throw wasm_exception(
+                    ss::format(
+                      "transform execution {} failed", _user_module_name),
+                    errc::user_code_failure);
+              }
+              auto user_result = WasmEdge_ValueGetI32(returns[0]);
+              if (user_result != 0) {
+                  probe->transform_error();
+                  throw wasm_exception(
+                    ss::format(
+                      "transform execution {} resulted in error {}",
+                      _user_module_name,
+                      user_result),
+                    errc::user_code_failure);
+              }
+              probe->transform_complete();
+          });
     }
+
+    template<typename T>
+    ss::future<T> enqueue(ss::noncopyable_function<T()> fn) {
+        ss::promise<T> p;
+        auto fut = p.get_future();
+        co_await _queue.push_eventually(
+          [p = std::move(p), fn = std::move(fn)]() mutable {
+              try {
+                  if constexpr (std::is_void_v<T>) {
+                      fn();
+                      p.set_value();
+                  } else {
+                      p.set_value(fn());
+                  }
+              } catch (...) {
+                  p.set_to_current_exception();
+              }
+          });
+        co_return co_await std::move(fut);
+    }
+
+    ss::queue<ss::noncopyable_function<void()>> _queue{1};
+    bool _is_running = true;
+    ss::thread _thread{[this] {
+        while (_is_running) {
+            auto task = _queue.pop_eventually().get();
+            task();
+        }
+    }};
 
     std::vector<WasmEdgeModule> _modules;
     WasmEdgeStore _store_ctx;
