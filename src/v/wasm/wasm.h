@@ -17,6 +17,8 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "outcome.h"
+#include "pandaproxy/schema_registry/fwd.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "seastarx.h"
 #include "ssx/thread_worker.h"
 
@@ -60,7 +62,8 @@ public:
         factory& operator=(const factory&) = delete;
         factory(factory&&) = delete;
         factory& operator=(factory&&) = delete;
-        virtual std::unique_ptr<engine> make_engine() = 0;
+        virtual std::unique_ptr<engine>
+        make_engine(pandaproxy::schema_registry::sharded_store*) = 0;
         virtual ~factory() = default;
     };
 };
@@ -78,7 +81,7 @@ struct transform {
 
 class service : public ss::peering_sharded_service<service> {
 public:
-    explicit service(ssx::thread_worker*);
+    service(ssx::thread_worker*, pandaproxy::schema_registry::api*);
 
     ~service();
     service(const service&) = delete;
@@ -97,14 +100,6 @@ public:
 
     std::vector<transform::metadata> list_transforms() const;
 
-    /**
-     * This is a wasmtime hack!
-     *
-     * We need to ignore some signals as wasmtime intentionally triggers some
-     * signals to make these happen.
-     */
-    void install_signal_handlers();
-
     ss::future<> deploy_transform(transform::metadata, ss::sstring source);
 
     ss::future<> undeploy_transform(const transform::metadata&);
@@ -120,6 +115,7 @@ private:
       model::topic_namespace_hash,
       model::topic_namespace_eq>
       _transforms;
+    pandaproxy::schema_registry::api* _schema_registry;
 };
 
 } // namespace wasm

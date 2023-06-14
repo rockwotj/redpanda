@@ -16,29 +16,30 @@
 
 package redpanda
 
-//go:wasm-module redpanda
-//export read_batch_header
-//extern read_batch_header
+import (
+	"unsafe"
+)
+
+// These are the host functions that go allows for wasm functions that are imported.
+// See: https://github.com/golang/go/issues/59149
+
+//go:wasmimport redpanda read_batch_header
 func readRecordHeader(
 	h inputBatchHandle,
-	baseOffset *int64,
-	recordCount *int,
-	partitionLeaderEpoch *int,
-	attributes *int16,
-	lastOffsetDelta *int,
-	baseTimestamp *int64,
-	maxTimestamp *int64,
-	producerId *int64,
-	producerEpoch *int16,
-	baseSequence *int,
-) int
+	baseOffset unsafe.Pointer,
+	recordCount unsafe.Pointer,
+	partitionLeaderEpoch unsafe.Pointer,
+	attributes unsafe.Pointer,
+	lastOffsetDelta unsafe.Pointer,
+	baseTimestamp unsafe.Pointer,
+	maxTimestamp unsafe.Pointer,
+	producerId unsafe.Pointer,
+	producerEpoch unsafe.Pointer,
+	baseSequence unsafe.Pointer,
+) int32
 
-//go:wasm-module redpanda
-//export read_record
-//extern read_record
-func readRecord(h inputRecordHandle, buf *byte, len int) int
+//go:wasmimport redpanda read_record
+func readRecord(h inputRecordHandle, buf unsafe.Pointer, len int32) int32
 
-//go:wasm-module redpanda
-//export write_record
-//extern write_record
-func writeRecord(buf *byte, len int) int
+//go:wasmimport redpanda write_record
+func writeRecord(buf unsafe.Pointer, len int32) int32

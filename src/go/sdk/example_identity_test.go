@@ -22,9 +22,9 @@ import (
 // This is a transform that does nothing but copies the same data to an new
 // topic.
 func Example_identityTransform() {
-	redpanda.OnTransform(onTransform)
+	redpanda.OnRecordWritten(identityTransform)
 }
 
-func onTransform(e redpanda.TransformEvent) ([]redpanda.Record, error) {
+func identityTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 	return []redpanda.Record{e.Record()}, nil
 }

@@ -2,9 +2,22 @@ package redpanda
 
 import (
 	"time"
+	"unsafe"
 
 	"github.com/rockwotj/redpanda/src/go/sdk/internal/rwbuf"
 )
+
+type eventErrorCode int32
+
+const (
+	evtSuccess       = eventErrorCode(0)
+	evtConfigError   = eventErrorCode(1)
+	evtUserError     = eventErrorCode(2)
+	evtInternalError = eventErrorCode(3)
+)
+
+type inputBatchHandle int32
+type inputRecordHandle int32
 
 type batchHeader struct {
 	handle               inputBatchHandle
@@ -25,16 +38,17 @@ var (
 	currentHeader batchHeader  = batchHeader{handle: -1}
 	inbuf         *rwbuf.RWBuf = rwbuf.New(2048)
 	outbuf        *rwbuf.RWBuf = rwbuf.New(2048)
-	e             transformEvent
+	e             writeEvent
 )
 
+// The ABI that our SDK provides. Redpanda executes this function to determine the protocol contract to execute.
 //export redpanda_abi_version
 func redpandaAbiVersion() int32 {
 	return 2
 }
 
 //export redpanda_on_record
-func redpandaOnRecord(bh inputBatchHandle, rh inputRecordHandle, recordSize int, currentRelativeOutputOffset int) EventErrorCode {
+func redpandaOnRecord(bh inputBatchHandle, rh inputRecordHandle, recordSize int, currentRelativeOutputOffset int) eventErrorCode {
 	if userTransformFunction == nil {
 		println("Invalid configuration, there is no registered user transform function")
 		return evtConfigError
@@ -43,16 +57,16 @@ func redpandaOnRecord(bh inputBatchHandle, rh inputRecordHandle, recordSize int,
 		currentHeader.handle = bh
 		errno := readRecordHeader(
 			bh,
-			&currentHeader.baseOffset,
-			&currentHeader.recordCount,
-			&currentHeader.partitionLeaderEpoch,
-			&currentHeader.attributes,
-			&currentHeader.lastOffsetDelta,
-			&currentHeader.baseTimestamp,
-			&currentHeader.maxTimestamp,
-			&currentHeader.producerId,
-			&currentHeader.producerEpoch,
-			&currentHeader.baseSequence,
+			unsafe.Pointer(&currentHeader.baseOffset),
+			unsafe.Pointer(&currentHeader.recordCount),
+			unsafe.Pointer(&currentHeader.partitionLeaderEpoch),
+			unsafe.Pointer(&currentHeader.attributes),
+			unsafe.Pointer(&currentHeader.lastOffsetDelta),
+			unsafe.Pointer(&currentHeader.baseTimestamp),
+			unsafe.Pointer(&currentHeader.maxTimestamp),
+			unsafe.Pointer(&currentHeader.producerId),
+			unsafe.Pointer(&currentHeader.producerEpoch),
+			unsafe.Pointer(&currentHeader.baseSequence),
 		)
 		if errno != 0 {
 			println("Failed to read batch header")
@@ -61,7 +75,7 @@ func redpandaOnRecord(bh inputBatchHandle, rh inputRecordHandle, recordSize int,
 	}
 	inbuf.Reset()
 	inbuf.EnsureSize(recordSize)
-	amt := readRecord(rh, inbuf.WriterBufPtr(), recordSize)
+	amt := int(readRecord(rh, unsafe.Pointer(inbuf.WriterBufPtr()), int32(recordSize)))
 	inbuf.AdvanceWriter(amt)
 	if amt != recordSize {
 		println("reading record failed with errno:", amt)
@@ -100,7 +114,7 @@ func redpandaOnRecord(bh inputBatchHandle, rh inputRecordHandle, recordSize int,
 		outbuf.Reset()
 		r.serialize(outbuf)
 		b := outbuf.ReadAll()
-		amt := writeRecord(&b[0], len(b))
+		amt := int(writeRecord(unsafe.Pointer(&b[0]), int32(len(b))))
 		if amt != len(b) {
 			println("writing record failed with errno:", amt)
 			return evtInternalError

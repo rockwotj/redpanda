@@ -12,6 +12,8 @@
 
 #include "bytes/iobuf_parser.h"
 #include "model/record.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
+#include "reflection/type_traits.h"
 #include "seastarx.h"
 #include "storage/parser_utils.h"
 #include "units.h"
@@ -128,6 +130,23 @@ convert_to_wasmedge(const std::vector<ffi::val_type>& ffi_types) {
     return wasmedge_types;
 }
 
+template<typename T>
+WasmEdge_Value convert_to_wasmedge(T value) {
+    if constexpr (ss::is_future<T>::value) {
+        return convert_to_wasmedge(value.get());
+    } else if constexpr (reflection::is_rp_named_type<T>) {
+        return convert_to_wasmedge(value());
+    } else if constexpr (
+      std::is_integral_v<T> && sizeof(T) == sizeof(int64_t)) {
+        return WasmEdge_ValueGenI64(value);
+    } else if constexpr (std::is_integral_v<T>) {
+        return WasmEdge_ValueGenI32(value);
+    } else {
+        static_assert(
+          ffi::dependent_false<T>::value, "Unsupported wasm result type");
+    }
+}
+
 template<auto value>
 struct host_function;
 template<
@@ -185,21 +204,13 @@ struct host_function<module_func> {
                         std::apply(
                           module_func,
                           std::tuple_cat(std::make_tuple(engine), host_params));
-                    } else if constexpr (
-                      std::is_integral_v<ReturnType>
-                      && sizeof(ReturnType) == sizeof(int64_t)) {
-                        auto result = std::apply(
-                          module_func,
-                          std::tuple_cat(std::make_tuple(engine), host_params));
-                        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                        guest_returns[0] = WasmEdge_ValueGenI64(result);
                     } else {
                         auto result = std::apply(
                           module_func,
                           std::tuple_cat(std::make_tuple(engine), host_params));
-                        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                        guest_returns[0] = WasmEdge_ValueGenI32(result);
+                        *guest_returns = convert_to_wasmedge(std::move(result));
                     }
+
                 } catch (...) {
                     vlog(
                       wasmedge_log.warn,
@@ -290,6 +301,8 @@ void register_rp_module(
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_record);
     REG_HOST_FN(write_record);
+    REG_HOST_FN(get_schema_definition);
+    REG_HOST_FN(get_schema_definition_len);
 #undef REG_HOST_FN
 }
 
@@ -376,62 +389,67 @@ private:
 
     ss::future<model::record_batch>
     invoke_transform(const model::record_batch* batch, probe* probe) {
-        co_return _rp_module->for_each_record(
-          batch, [this, probe](wasm_call_params params) {
-              auto ml = probe->latency_measurement();
-              auto mc = probe->cpu_time_measurement();
-              WasmEdge_Result result;
-              std::array args = {
-                WasmEdge_ValueGenI32(params.batch_handle()),
-                WasmEdge_ValueGenI32(params.record_handle()),
-                WasmEdge_ValueGenI32(params.record_size),
-                WasmEdge_ValueGenI32(params.current_record_offset)};
-              std::array returns = {WasmEdge_ValueGenI32(-1)};
-              try {
-                  is_executing = true;
-                  result = WasmEdge_VMExecute(
-                    _vm_ctx.get(),
-                    WasmEdge_StringWrap(
-                      redpanda_on_record_callback_function_name.data(),
-                      redpanda_on_record_callback_function_name.size()),
-                    args.data(),
-                    args.size(),
-                    returns.data(),
-                    returns.size());
-                  is_executing = false;
-              } catch (...) {
-                  is_executing = false;
-                  probe->transform_error();
-                  wasmedge_log.warn(
-                    "transform failed! {}", std::current_exception());
-                  throw wasm_exception(
-                    ss::format(
-                      "transform execution {} failed: {}",
-                      _user_module_name,
-                      std::current_exception()),
-                    errc::user_code_failure);
-              }
-              if (!WasmEdge_ResultOK(result)) {
-                  probe->transform_error();
-                  wasmedge_log.warn(
-                    "transform failed! {}", WasmEdge_ResultGetMessage(result));
-                  throw wasm_exception(
-                    ss::format(
-                      "transform execution {} failed", _user_module_name),
-                    errc::user_code_failure);
-              }
-              auto user_result = WasmEdge_ValueGetI32(returns[0]);
-              if (user_result != 0) {
-                  probe->transform_error();
-                  throw wasm_exception(
-                    ss::format(
-                      "transform execution {} resulted in error {}",
-                      _user_module_name,
-                      user_result),
-                    errc::user_code_failure);
-              }
-              probe->transform_complete();
-          });
+        // TODO: We should not be spawning threads frequently, this should be
+        // another process running and use a queue to submit requests
+        return ss::async([this, batch, probe] {
+            return _rp_module->for_each_record(
+              batch, [this, probe](wasm_call_params params) {
+                  auto ml = probe->latency_measurement();
+                  auto mc = probe->cpu_time_measurement();
+                  WasmEdge_Result result;
+                  std::array args = {
+                    WasmEdge_ValueGenI32(params.batch_handle()),
+                    WasmEdge_ValueGenI32(params.record_handle()),
+                    WasmEdge_ValueGenI32(params.record_size),
+                    WasmEdge_ValueGenI32(params.current_record_offset)};
+                  std::array returns = {WasmEdge_ValueGenI32(-1)};
+                  try {
+                      is_executing = true;
+                      result = WasmEdge_VMExecute(
+                        _vm_ctx.get(),
+                        WasmEdge_StringWrap(
+                          redpanda_on_record_callback_function_name.data(),
+                          redpanda_on_record_callback_function_name.size()),
+                        args.data(),
+                        args.size(),
+                        returns.data(),
+                        returns.size());
+                      is_executing = false;
+                  } catch (...) {
+                      is_executing = false;
+                      probe->transform_error();
+                      wasmedge_log.warn(
+                        "transform failed! {}", std::current_exception());
+                      throw wasm_exception(
+                        ss::format(
+                          "transform execution {} failed: {}",
+                          _user_module_name,
+                          std::current_exception()),
+                        errc::user_code_failure);
+                  }
+                  if (!WasmEdge_ResultOK(result)) {
+                      probe->transform_error();
+                      wasmedge_log.warn(
+                        "transform failed! {}",
+                        WasmEdge_ResultGetMessage(result));
+                      throw wasm_exception(
+                        ss::format(
+                          "transform execution {} failed", _user_module_name),
+                        errc::user_code_failure);
+                  }
+                  auto user_result = WasmEdge_ValueGetI32(returns[0]);
+                  if (user_result != 0) {
+                      probe->transform_error();
+                      throw wasm_exception(
+                        ss::format(
+                          "transform execution {} resulted in error {}",
+                          _user_module_name,
+                          user_result),
+                        errc::user_code_failure);
+                  }
+                  probe->transform_complete();
+              });
+        });
     }
 
     std::vector<WasmEdgeModule> _modules;
@@ -456,7 +474,8 @@ public:
       , _user_module_source(std::move(user_module_source))
       , _user_module_name(std::move(user_module_name)) {}
 
-    std::unique_ptr<engine> make_engine() final {
+    std::unique_ptr<engine> make_engine(
+      pandaproxy::schema_registry::sharded_store* schema_registry_store) final {
         WasmEdge_Result result;
         auto store_ctx = WasmEdgeStore(WasmEdge_StoreCreate());
 
@@ -464,7 +483,8 @@ public:
           WasmEdge_VMCreate(_rt->config_ctx.get(), store_ctx.get()));
 
         auto wasmedge_rp_module = create_module(redpanda_module::name);
-        auto rp_module = std::make_unique<redpanda_module>();
+        auto rp_module = std::make_unique<redpanda_module>(
+          schema_registry_store);
         register_rp_module(rp_module.get(), wasmedge_rp_module);
 
         auto wasmedge_wasi_module = create_module(wasi::preview1_module::name);

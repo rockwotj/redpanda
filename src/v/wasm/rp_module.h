@@ -2,6 +2,8 @@
 
 #include "bytes/iobuf.h"
 #include "model/record.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "utils/named_type.h"
 #include "wasm/ffi.h"
 
@@ -46,9 +48,16 @@ struct wasm_call_params {
     int32_t current_record_offset;
 };
 
+/**
+ * The WASM module for redpanda specific host calls.
+ *
+ * This provides an ABI to WASM guests, as well as the mechanism for
+ * guest<->host interactions (such as how we call into a wasm host and when).
+ */
 class redpanda_module {
 public:
-    redpanda_module() = default;
+    explicit redpanda_module(
+      /*nullable=*/pandaproxy::schema_registry::sharded_store* store);
     redpanda_module(const redpanda_module&) = delete;
     redpanda_module& operator=(const redpanda_module&) = delete;
     redpanda_module(redpanda_module&&) = default;
@@ -57,7 +66,6 @@ public:
 
     static constexpr std::string_view name = "redpanda";
 
-    // TODO: futurize this function
     model::record_batch for_each_record(
       const model::record_batch*,
       ss::noncopyable_function<void(wasm_call_params)>);
@@ -81,6 +89,12 @@ public:
 
     int32_t write_record(ffi::array<uint8_t>);
 
+    ss::future<int32_t> get_schema_definition_len(
+      pandaproxy::schema_registry::schema_id, uint32_t*);
+
+    ss::future<int32_t> get_schema_definition(
+      pandaproxy::schema_registry::schema_id, ffi::array<uint8_t>);
+
     // End ABI exports
 
 private:
@@ -93,5 +107,6 @@ private:
       iobuf_const_parser parser, expected_record_metadata);
 
     std::optional<transform_context> _call_ctx;
+    pandaproxy::schema_registry::sharded_store* _schema_registry_store;
 };
 } // namespace wasm

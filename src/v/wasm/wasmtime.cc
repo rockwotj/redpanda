@@ -29,6 +29,7 @@
 #include <seastar/core/thread_cputime_clock.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
+#include <wasmedge/enum_types.h>
 #include <wasmtime/config.h>
 #include <wasmtime/error.h>
 #include <wasmtime/store.h>
@@ -153,6 +154,24 @@ convert_to_wasmtime(const std::vector<ffi::val_type>& ffi_types) {
     }
     return wasm_types;
 }
+template<typename T>
+wasmtime_val_t convert_to_wasmtime(T value) {
+    if constexpr (ss::is_future<T>::value) {
+        return convert_to_wasmtime(value.get());
+    } else if constexpr (reflection::is_rp_named_type<T>) {
+        return convert_to_wasmtime(value());
+    } else if constexpr (
+      std::is_integral_v<T> && sizeof(T) == sizeof(int64_t)) {
+        return wasmtime_val_t{
+          .kind = WASMTIME_I64, .of = {.i64 = static_cast<int64_t>(value)}};
+    } else if constexpr (std::is_integral_v<T>) {
+        return wasmtime_val_t{
+          .kind = WASMTIME_I32, .of = {.i32 = static_cast<int32_t>(value)}};
+    } else {
+        static_assert(
+          ffi::dependent_false<T>::value, "Unsupported wasm result type");
+    }
+}
 
 class memory : public ffi::memory {
 public:
@@ -247,19 +266,8 @@ struct host_function<module_func> {
                         module_func,
                         std::tuple_cat(
                           std::make_tuple(host_module), host_params));
-                      if constexpr (
-                        std::is_integral_v<ReturnType>
-                        && sizeof(ReturnType) == sizeof(int64_t)) {
-                          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                          results[0] = wasmtime_val_t{
-                            .kind = WASMTIME_I64,
-                            .of = {.i64 = static_cast<int64_t>(host_result)}};
-                      } else {
-                          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                          results[0] = wasmtime_val_t{
-                            .kind = WASMTIME_I32,
-                            .of = {.i32 = static_cast<int32_t>(host_result)}};
-                      }
+                      *results = convert_to_wasmtime<ReturnType>(
+                        std::move(host_result));
                   }
               } catch (const std::exception& e) {
                   vlog(
@@ -341,6 +349,8 @@ void register_rp_module(redpanda_module* mod, wasmtime_linker_t* linker) {
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_record);
     REG_HOST_FN(write_record);
+    REG_HOST_FN(get_schema_definition);
+    REG_HOST_FN(get_schema_definition_len);
 #undef REG_HOST_FN
 }
 
@@ -436,64 +446,73 @@ private:
 
     ss::future<model::record_batch>
     invoke_transform(const model::record_batch* batch, probe* probe) {
-        auto* ctx = wasmtime_store_context(_store.get());
-        wasmtime_extern_t cb;
-        bool ok = wasmtime_instance_export_get(
-          ctx,
-          &_instance,
-          redpanda_on_record_callback_function_name.data(),
-          redpanda_on_record_callback_function_name.size(),
-          &cb);
-        if (!ok || cb.kind != WASMTIME_EXTERN_FUNC) {
-            throw wasm_exception(
-              "Missing wasi initialization function", errc::user_code_failure);
-        }
-        co_return _rp_module->for_each_record(
-          batch, [this, &ctx, &cb, probe](wasm_call_params params) {
-              auto ml = probe->latency_measurement();
-              auto mc = probe->cpu_time_measurement();
-              wasmtime_val_t result = {.kind = WASMTIME_I32, .of = {.i32 = -1}};
-              try {
-                  std::array<wasmtime_val_t, 3> args = {
-                    wasmtime_val_t{
-                      .kind = WASMTIME_I32, .of = {.i32 = params.batch_handle}},
-                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_handle}},
-                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_size}}};
-                  is_executing = true;
-                  wasm_trap_t* trap_ptr = nullptr;
-                  handle<wasmtime_error_t, wasmtime_error_delete> error{
-                    wasmtime_func_call(
-                      ctx,
-                      &cb.of.func,
-                      args.data(),
-                      args.size(),
-                      &result,
-                      /*results_size=*/1,
-                      &trap_ptr)};
-                  handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-                  is_executing = false;
-                  check_error(error.get());
-                  check_trap(trap.get());
-              } catch (...) {
-                  probe->transform_error();
-                  throw wasm_exception(
-                    ss::format(
-                      "transform execution {} failed: {}",
-                      _user_module_name,
-                      std::current_exception()),
-                    errc::user_code_failure);
-              }
-              probe->transform_complete();
-              if (result.kind != WASMTIME_I32 || result.of.i32 != 0) {
-                  probe->transform_error();
-                  throw wasm_exception(
-                    ss::format(
-                      "transform execution {} resulted in error {}",
-                      _user_module_name,
-                      result.of.i32),
-                    errc::user_code_failure);
-              }
-          });
+        // TODO: There is a high overhead to starting a thread, this should be
+        // like a background worker instead.
+        return ss::async([this, batch, probe] {
+            auto* ctx = wasmtime_store_context(_store.get());
+            wasmtime_extern_t cb;
+            bool ok = wasmtime_instance_export_get(
+              ctx,
+              &_instance,
+              redpanda_on_record_callback_function_name.data(),
+              redpanda_on_record_callback_function_name.size(),
+              &cb);
+            if (!ok || cb.kind != WASMTIME_EXTERN_FUNC) {
+                throw wasm_exception(
+                  "Missing wasi initialization function",
+                  errc::user_code_failure);
+            }
+            return _rp_module->for_each_record(
+              batch, [this, &ctx, &cb, probe](wasm_call_params params) {
+                  auto ml = probe->latency_measurement();
+                  auto mc = probe->cpu_time_measurement();
+                  wasmtime_val_t result = {
+                    .kind = WASMTIME_I32, .of = {.i32 = -1}};
+                  try {
+                      std::array<wasmtime_val_t, 3> args = {
+                        wasmtime_val_t{
+                          .kind = WASMTIME_I32,
+                          .of = {.i32 = params.batch_handle}},
+                        {.kind = WASMTIME_I32,
+                         .of = {.i32 = params.record_handle}},
+                        {.kind = WASMTIME_I32,
+                         .of = {.i32 = params.record_size}}};
+                      is_executing = true;
+                      wasm_trap_t* trap_ptr = nullptr;
+                      handle<wasmtime_error_t, wasmtime_error_delete> error{
+                        wasmtime_func_call(
+                          ctx,
+                          &cb.of.func,
+                          args.data(),
+                          args.size(),
+                          &result,
+                          /*results_size=*/1,
+                          &trap_ptr)};
+                      handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+                      is_executing = false;
+                      check_error(error.get());
+                      check_trap(trap.get());
+                  } catch (...) {
+                      probe->transform_error();
+                      throw wasm_exception(
+                        ss::format(
+                          "transform execution {} failed: {}",
+                          _user_module_name,
+                          std::current_exception()),
+                        errc::user_code_failure);
+                  }
+                  probe->transform_complete();
+                  if (result.kind != WASMTIME_I32 || result.of.i32 != 0) {
+                      probe->transform_error();
+                      throw wasm_exception(
+                        ss::format(
+                          "transform execution {} resulted in error {}",
+                          _user_module_name,
+                          result.of.i32),
+                        errc::user_code_failure);
+                  }
+              });
+        });
     }
 
     ss::sstring _user_module_name;

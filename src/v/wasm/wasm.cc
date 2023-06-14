@@ -10,6 +10,8 @@
 #include "wasm.h"
 
 #include "model/metadata.h"
+#include "pandaproxy/schema_registry/api.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "ssx/thread_worker.h"
 #include "wasm/errc.h"
 #include "wasm/probe.h"
@@ -29,6 +31,7 @@ namespace wasm {
 
 namespace {
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
 static ss::logger wasm_log("wasm");
 
 class wasm_transform_applying_reader : public model::record_batch_reader::impl {
@@ -84,11 +87,13 @@ private:
 constexpr ss::shard_id runtime_shard = 0;
 } // namespace
 
-service::service(ssx::thread_worker* worker)
+service::service(
+  ssx::thread_worker* worker, pandaproxy::schema_registry::api* schema_registry)
   : _gate()
   , _worker(worker)
   , _runtime(nullptr, [](auto*) {})
-  , _transforms() {
+  , _transforms()
+  , _schema_registry(schema_registry) {
     if (ss::this_shard_id() == runtime_shard) {
         _runtime = wasmedge::make_runtime();
     }
@@ -126,7 +131,6 @@ std::optional<model::topic_namespace> service::wasm_transform_output_topic(
     }
     return std::nullopt;
 }
-void service::install_signal_handlers() {}
 
 std::vector<transform::metadata> service::list_transforms() const {
     std::vector<transform::metadata> functions;
@@ -156,33 +160,35 @@ service::deploy_transform(transform::metadata meta, ss::sstring source) {
       });
     vlog(wasm_log.info, "Created wasm engine: {}", meta.function_name);
     // TODO: Handle engines failing to start.
-    co_await container().invoke_on_all([&engine_factory, &meta](service& s) {
-        auto e = engine_factory->make_engine();
-        return e->start().then([&meta, &s, e = std::move(e)]() mutable {
-            auto& m = s._transforms;
-            auto it = m.find(meta.input);
-            if (it == m.end()) {
-                auto p = std::make_unique<probe>();
-                p->setup_metrics(meta.function_name);
-                m.insert_or_assign(
-                  meta.input,
-                  {.meta = meta,
-                   .engine = std::move(e),
-                   .probe = std::move(p)});
-                return ss::now();
-            }
-            auto old = std::move(it->second);
-            m.insert_or_assign(
-              meta.input,
-              {
-                .meta = meta,
-                .engine = std::move(e),
-                .probe = std::move(old.probe),
-              });
-            // TODO: How to handle stop failures?
-            return old.engine->stop().finally([old = std::move(old)] {});
-        });
-    });
+    co_await container().invoke_on_all(
+      [this, &engine_factory, &meta](service& s) {
+          auto e = engine_factory->make_engine(
+            _schema_registry ? _schema_registry->_store.get() : nullptr);
+          return e->start().then([&meta, &s, e = std::move(e)]() mutable {
+              auto& m = s._transforms;
+              auto it = m.find(meta.input);
+              if (it == m.end()) {
+                  auto p = std::make_unique<probe>();
+                  p->setup_metrics(meta.function_name);
+                  m.insert_or_assign(
+                    meta.input,
+                    {.meta = meta,
+                     .engine = std::move(e),
+                     .probe = std::move(p)});
+                  return ss::now();
+              }
+              auto old = std::move(it->second);
+              m.insert_or_assign(
+                meta.input,
+                {
+                  .meta = meta,
+                  .engine = std::move(e),
+                  .probe = std::move(old.probe),
+                });
+              // TODO: How to handle stop failures?
+              return old.engine->stop().finally([old = std::move(old)] {});
+          });
+      });
 }
 
 ss::future<> service::undeploy_transform(const transform::metadata& meta) {

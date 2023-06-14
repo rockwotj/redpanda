@@ -19,9 +19,9 @@ import (
 )
 
 func main() {
-	redpanda.OnTransform(onTransform)
+	redpanda.OnRecordWritten(identityTransform)
 }
 
-func onTransform(e redpanda.TransformEvent) ([]redpanda.Record, error) {
+func identityTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 	return []redpanda.Record{e.Record()}, nil
 }

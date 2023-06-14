@@ -1026,6 +1026,12 @@ void application::wire_up_runtime_services(model::node_id node_id) {
           *_schema_reg_config,
           std::reference_wrapper(controller));
     }
+
+    // TODO: Flag guard this
+    syschecks::systemd_message("Creating wasm service").get();
+    construct_service(wasm_service, thread_worker.get(), _schema_registry.get())
+      .get();
+
     construct_single_service(_monitor_unsafe_log_flag, std::ref(feature_table));
 
     configure_admin_server();
@@ -1471,10 +1477,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(storage))
       .get();
 
-    syschecks::systemd_message("Creating wasm service").get();
-    construct_service(wasm_service, thread_worker.get()).get();
-    wasm_service.invoke_on_all(&wasm::service::install_signal_handlers).get();
-
     syschecks::systemd_message("Creating tx coordinator frontend").get();
     // usually it'a an anti-pattern to let the same object be accessed
     // from different cores without precautionary measures like foreign
@@ -1597,6 +1599,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           });
       })
       .get();
+
     std::optional<kafka::qdc_monitor::config> qdc_config;
     if (config::shard_local_cfg().kafka_qdc_enable()) {
         qdc_config = kafka::qdc_monitor::config{

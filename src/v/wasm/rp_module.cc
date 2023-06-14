@@ -13,9 +13,12 @@
 #include "model/compression.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "utils/vint.h"
 #include "vassert.h"
+#include "wasm/ffi.h"
 
+#include <algorithm>
 #include <exception>
 #include <ios>
 #include <stdexcept>
@@ -23,8 +26,12 @@
 namespace wasm {
 
 namespace {
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
 static ss::logger log("rp_wasm_module_log");
-}
+} // namespace
+
+redpanda_module::redpanda_module(pandaproxy::schema_registry::sharded_store* s)
+  : _schema_registry_store(s) {}
 
 model::record_batch redpanda_module::for_each_record(
   const model::record_batch* input,
@@ -195,6 +202,42 @@ int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
     _call_ctx->output_records.append_fragments(std::move(b));
     _call_ctx->output_record_count += 1;
     return int32_t(buf.size());
+}
+ss::future<int32_t> redpanda_module::get_schema_definition_len(
+  pandaproxy::schema_registry::schema_id schema_id, uint32_t* size_out) {
+    if (!_schema_registry_store) {
+        co_return -1;
+    }
+    auto schema = co_await _schema_registry_store->get_schema_definition(
+      schema_id);
+    const auto& raw_schema = schema.raw();
+    *size_out = raw_schema().size();
+    // TODO: Encode references
+    co_return 0;
+}
+ss::future<int32_t> redpanda_module::get_schema_definition(
+  pandaproxy::schema_registry::schema_id schema_id, ffi::array<uint8_t> buf) {
+    if (!_schema_registry_store) {
+        co_return -1;
+    }
+    auto schema = co_await _schema_registry_store->get_schema_definition(
+      schema_id);
+    const auto& raw_schema = schema.raw();
+    if (buf.size() < raw_schema().size()) {
+        // buffer too small
+        co_return -2;
+    }
+    std::copy_n(raw_schema().data(), raw_schema().size(), buf.raw());
+    // TODO: Encode references
+    switch (schema.type()) {
+    case pandaproxy::schema_registry::schema_type::avro:
+        co_return 1;
+    case pandaproxy::schema_registry::schema_type::protobuf:
+        co_return 2;
+    case pandaproxy::schema_registry::schema_type::json:
+        co_return 3;
+    }
+    __builtin_unreachable();
 }
 
 } // namespace wasm

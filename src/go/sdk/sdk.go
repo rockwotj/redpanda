@@ -18,28 +18,30 @@ import (
 	"time"
 )
 
-// The ABI that our SDK provides. Redpanda executes this function to determine the protocol contract to execute.
-
-type EventErrorCode int32
-
-const (
-	evtSuccess       = EventErrorCode(0)
-	evtConfigError   = EventErrorCode(1)
-	evtUserError     = EventErrorCode(2)
-	evtInternalError = EventErrorCode(3)
-)
-
-type inputBatchHandle int32
-type inputRecordHandle int32
-
-// OnTransformFn is a callback to transform records
-type OnTransformFn func(e TransformEvent) ([]Record, error)
-
-var userTransformFunction OnTransformFn = nil
-
 // OnTransform should be called in a package's `main` function to register the transform function that will be applied.
-func OnTransform(fn OnTransformFn) {
+func OnRecordWritten(fn OnRecordWrittenCallback) {
 	userTransformFunction = fn
+}
+
+// OnRecordWrittenCallback is a callback to transform records
+type OnRecordWrittenCallback func(e WriteEvent) ([]Record, error)
+
+var userTransformFunction OnRecordWrittenCallback = nil
+
+// Event contains information about the current record.
+type WriteEvent interface {
+	// Access the record associated with this event
+	Record() Record
+}
+
+// Look at options/builder pattern for making TransformEvent, and make it a "private" interface
+
+type writeEvent struct {
+	record Record
+}
+
+func (e *writeEvent) Record() Record {
+	return e.record
 }
 
 // Headers are optional key/value pairs that are passed along with
@@ -49,14 +51,29 @@ type RecordHeader struct {
 	Value []byte
 }
 
+// Record is a record that has been written to Redpanda.
 type Record struct {
-	Key   []byte
+	// Key is an optional field.
+	Key []byte
+	// Value is the blob of data that is written to Redpanda.
 	Value []byte
-
-	Attrs     RecordAttrs
-	Headers   []RecordHeader
+	// Headers are client specified key/value pairs that are
+	// attached to a record.
+	Headers []RecordHeader
+	// Attrs is the attributes of a record.
+	//
+	// Output records should leave these unset.
+	Attrs RecordAttrs
+	// The timestamp associated with this record.
+	//
+	// For output records this can be left unset as it will
+	// always be the same value as the input record.
 	Timestamp time.Time
-	Offset    int64
+	// The offset of this record in the partition.
+	//
+	// For output records this field is left unset,
+	// as it will be set by Redpanda.
+	Offset int64
 }
 
 type RecordAttrs struct {
@@ -68,28 +85,4 @@ func (a RecordAttrs) TimestampType() int8 {
 		return -1
 	}
 	return int8(a.attr&0b0000_1000) >> 3
-}
-
-func (a RecordAttrs) CompressionType() uint8 {
-	return a.attr & 0b0000_0111
-}
-
-func (a RecordAttrs) IsTransactional() bool {
-	return a.attr&0b0001_0000 != 0
-}
-
-func (a RecordAttrs) IsControl() bool {
-	return a.attr&0b0010_0000 != 0
-}
-
-type TransformEvent interface {
-	Record() Record
-}
-
-type transformEvent struct {
-	record Record
-}
-
-func (e *transformEvent) Record() Record {
-	return e.record
 }

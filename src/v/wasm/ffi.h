@@ -120,6 +120,8 @@ void transform_type(std::vector<val_type>& types) {
         types.push_back(val_type::i32);
     } else if constexpr (reflection::is_rp_named_type<Type>) {
         transform_type<typename Type::type>(types);
+    } else if constexpr (ss::is_future<Type>::value) {
+        transform_type<typename Type::value_type>(types);
     } else {
         static_assert(dependent_false<Type>::value, "Unknown type");
     }
@@ -151,12 +153,17 @@ std::tuple<Type> extract_parameter(
         auto ptr_len = static_cast<uint32_t>(raw_params[idx++]);
         void* host_ptr = mem->translate(
           guest_ptr, ptr_len * sizeof(typename Type::element_type));
-        if (host_ptr == nullptr) {
-            return std::tuple<Type>();
-        }
         return std::make_tuple(ffi::array<typename Type::element_type>(
           // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
           reinterpret_cast<typename Type::element_type*>(host_ptr),
+          ptr_len));
+    } else if constexpr (std::is_same_v<ss::sstring, Type>) {
+        auto guest_ptr = static_cast<uint32_t>(raw_params[idx++]);
+        auto ptr_len = static_cast<uint32_t>(raw_params[idx++]);
+        void* host_ptr = mem->translate(guest_ptr, ptr_len);
+        return std::make_tuple(ss::sstring(
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          reinterpret_cast<char*>(host_ptr),
           ptr_len));
     } else if constexpr (
       std::is_same_v<Type, const void*> || std::is_same_v<Type, void*>) {
@@ -168,10 +175,6 @@ std::tuple<Type> extract_parameter(
         auto guest_ptr = static_cast<uint32_t>(raw_params[idx++]);
         uint32_t ptr_len = sizeof(typename std::remove_pointer_t<Type>);
         void* host_ptr = mem->translate(guest_ptr, ptr_len);
-        if (host_ptr == nullptr) {
-            return std::tuple<Type>();
-        }
-
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return std::make_tuple(reinterpret_cast<Type>(host_ptr));
     } else if constexpr (std::is_integral_v<Type>) {

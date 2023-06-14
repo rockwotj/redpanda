@@ -23,12 +23,7 @@ wasm_test_fixture::wasm_test_fixture()
       model::random_topic_namespace(),
       model::random_topic_namespace()) {
     _worker.start().get();
-    _service.start(&_worker).get();
-    // wasmtime uses SIGILL to handle traps, by default these fail tests, so we
-    // register this handler as a noop.
-    // Additionally, this signal handler is registered globally once, so only
-    // one test case will be able to setup seastar at a time.
-    seastar::engine().handle_signal(SIGILL, [] {});
+    _service.start(&_worker, nullptr).get();
 }
 wasm_test_fixture::~wasm_test_fixture() {
     _service.stop().get();

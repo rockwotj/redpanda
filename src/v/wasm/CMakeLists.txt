@@ -15,6 +15,7 @@ v_cc_library(
     v::storage
     v::http
     v::model
+    v::pandaproxy_schema_registry
     #wasmtime
     Seastar::seastar
 )
