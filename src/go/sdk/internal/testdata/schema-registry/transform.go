@@ -15,15 +15,38 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
+
 	"github.com/rockwotj/redpanda/src/go/sdk"
+	"github.com/rockwotj/redpanda/src/go/sdk/sr"
 )
 
 func main() {
-	redpanda.OnRecordWritten(identityTransform)
+	redpanda.OnRecordWritten(avroToJsonTransform)
 }
 
-var sr redpanda.SchemaRegistryClient
+var c sr.SchemaRegistryClient
 
-func identityTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
-	return []redpanda.Record{e.Record()}, nil
+func avroToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+	v := e.Record().Value
+	if len(v) < 5 || v[0] != 0 {
+		return nil, errors.New("invalid schema registry header")
+	}
+	id := binary.BigEndian.Uint32(v[1:5])
+	s, err := c.LookupSchemaById(sr.SchemaId(id))
+	if err != nil {
+		return nil, err
+	}
+	v = v[5:]
+	ex, err := DeserializeExampleFromSchema(bytes.NewReader(v), string(s.Schema))
+	if err != nil {
+		return nil, err
+	}
+	j, err := ex.MarshalJSON()
+	return []redpanda.Record{{
+		Key:   e.Record().Key,
+		Value: j,
+	}}, err
 }

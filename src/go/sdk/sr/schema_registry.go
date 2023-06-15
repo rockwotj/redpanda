@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package redpanda
+package sr
 
 import (
 	"errors"
@@ -19,7 +19,7 @@ import (
 	"unsafe"
 )
 
-type schemaId int32
+type SchemaId uint32
 
 // SchemaType is an enum for the different types of schemas that can be stored in schema registry.
 type SchemaType int
@@ -37,21 +37,21 @@ type Schema struct {
 }
 
 type SchemaRegistryClient struct {
-	schemaByIdCache map[int]*Schema
+	schemaByIdCache map[SchemaId]*Schema
 }
 
-func (sr *SchemaRegistryClient) LookupSchemaById(id int) (s *Schema, err error) {
+func (sr *SchemaRegistryClient) LookupSchemaById(id SchemaId) (s *Schema, err error) {
 	cached, ok := sr.schemaByIdCache[id]
 	if ok {
 		return cached, nil
 	}
 	var length int32
-	errno := getSchemaDefinitionLen(schemaId(id), unsafe.Pointer(&length))
+	errno := getSchemaDefinitionLen(SchemaId(id), unsafe.Pointer(&length))
 	if errno != 0 {
-		return nil, errors.New("unable to find a schema definition with id " + strconv.Itoa(id))
+		return nil, errors.New("unable to find a schema definition with id " + strconv.Itoa(int(id)))
 	}
 	buf := make([]byte, length)
-	result := getSchemaDefinition(schemaId(id), unsafe.Pointer(&buf[0]), length)
+	result := getSchemaDefinition(SchemaId(id), unsafe.Pointer(&buf[0]), length)
 	var t SchemaType
 	switch result {
 	case 1:
@@ -62,7 +62,7 @@ func (sr *SchemaRegistryClient) LookupSchemaById(id int) (s *Schema, err error) 
 		t = TypeJSON
 	default:
 		if result < 0 {
-			err = errors.New("unable to find a schema definition with id " + strconv.Itoa(id))
+			err = errors.New("unable to find a schema definition with id " + strconv.Itoa(int(id)))
 		} else {
 			err = errors.New("unknown schema type")
 		}

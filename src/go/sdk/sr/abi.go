@@ -14,7 +14,7 @@
 
 //go:build tinygo
 
-package redpanda
+package sr
 
 import (
 	"unsafe"
@@ -24,7 +24,7 @@ import (
 // See: https://github.com/golang/go/issues/59149
 
 //go:wasmimport redpanda get_schema_definition_len
-func getSchemaDefinitionLen(schemaId schemaId, length unsafe.Pointer) int32
+func getSchemaDefinitionLen(schemaId SchemaId, length unsafe.Pointer) int32
 
 //go:wasmimport redpanda get_schema_definition
-func getSchemaDefinition(schemaId schemaId, buf unsafe.Pointer, len int32) int32
+func getSchemaDefinition(schemaId SchemaId, buf unsafe.Pointer, len int32) int32

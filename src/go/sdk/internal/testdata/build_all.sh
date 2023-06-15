@@ -11,9 +11,11 @@ PKGS=(
 for PKG in "${PKGS[@]}"
 do
   echo "Building $PKG..."
+  pushd $PKG
   tinygo build -target wasi -opt=z \
     -panic print -scheduler none \
-    -o "$PKG.wasm" "$PKG/transform.go"
+    -o "$PKG.wasm"
   echo "done ✔️"
+  popd
 done
 echo "All packages built 🚀"
