@@ -4,5 +4,5 @@ go 1.20
 
 require (
 	github.com/actgardner/gogen-avro/v10 v10.2.1
-	github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230615164355-34aeaa2d6d64
+	github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230615165821-0726796cd41e
 )

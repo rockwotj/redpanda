@@ -23,11 +23,12 @@ import (
 	"github.com/rockwotj/redpanda/src/go/sdk/sr"
 )
 
+var c sr.SchemaRegistryClient
+
 func main() {
+	c = sr.NewClient()
 	redpanda.OnRecordWritten(avroToJsonTransform)
 }
-
-var c sr.SchemaRegistryClient
 
 func avroToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 	v := e.Record().Value

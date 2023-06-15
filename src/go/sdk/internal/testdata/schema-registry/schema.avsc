@@ -1,9 +1,9 @@
 {
 	"type": "record",
 	"name": "Example",
-	"doc": "example\nrecord",
+	"namespace": "com.example",
 	"fields": [
-		{"name": "LongField", "type": "long", "default": 0},
-		{"name": "StringField", "type": "string", "default": ""}
+		{"name": "a", "type": "long", "default": 0},
+		{"name": "b", "type": "string", "default": ""}
 	]
 }

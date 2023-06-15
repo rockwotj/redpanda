@@ -17,19 +17,18 @@ import (
 
 var _ = fmt.Printf
 
-// example record
 type Example struct {
-	LongField int64 `json:"LongField"`
+	A int64 `json:"a"`
 
-	StringField string `json:"StringField"`
+	B string `json:"b"`
 }
 
-const ExampleAvroCRC64Fingerprint = "@\xa2\xa1\x15\xe1\x8fa\x9e"
+const ExampleAvroCRC64Fingerprint = "\x90\x96ќ\\\x13jW"
 
 func NewExample() Example {
 	r := Example{}
-	r.LongField = 0
-	r.StringField = ""
+	r.A = 0
+	r.B = ""
 	return r
 }
 
@@ -58,11 +57,11 @@ func DeserializeExampleFromSchema(r io.Reader, schema string) (Example, error) {
 
 func writeExample(r Example, w io.Writer) error {
 	var err error
-	err = vm.WriteLong(r.LongField, w)
+	err = vm.WriteLong(r.A, w)
 	if err != nil {
 		return err
 	}
-	err = vm.WriteString(r.StringField, w)
+	err = vm.WriteString(r.B, w)
 	if err != nil {
 		return err
 	}
@@ -74,11 +73,11 @@ func (r Example) Serialize(w io.Writer) error {
 }
 
 func (r Example) Schema() string {
-	return "{\"doc\":\"example\\nrecord\",\"fields\":[{\"default\":0,\"name\":\"LongField\",\"type\":\"long\"},{\"default\":\"\",\"name\":\"StringField\",\"type\":\"string\"}],\"name\":\"Example\",\"type\":\"record\"}"
+	return "{\"fields\":[{\"default\":0,\"name\":\"a\",\"type\":\"long\"},{\"default\":\"\",\"name\":\"b\",\"type\":\"string\"}],\"name\":\"com.example.Example\",\"type\":\"record\"}"
 }
 
 func (r Example) SchemaName() string {
-	return "Example"
+	return "com.example.Example"
 }
 
 func (_ Example) SetBoolean(v bool)    { panic("Unsupported operation") }
@@ -93,12 +92,12 @@ func (_ Example) SetUnionElem(v int64) { panic("Unsupported operation") }
 func (r *Example) Get(i int) types.Field {
 	switch i {
 	case 0:
-		w := types.Long{Target: &r.LongField}
+		w := types.Long{Target: &r.A}
 
 		return w
 
 	case 1:
-		w := types.String{Target: &r.StringField}
+		w := types.String{Target: &r.B}
 
 		return w
 
@@ -109,10 +108,10 @@ func (r *Example) Get(i int) types.Field {
 func (r *Example) SetDefault(i int) {
 	switch i {
 	case 0:
-		r.LongField = 0
+		r.A = 0
 		return
 	case 1:
-		r.StringField = ""
+		r.B = ""
 		return
 	}
 	panic("Unknown field index")
@@ -136,11 +135,11 @@ func (_ Example) AvroCRC64Fingerprint() []byte {
 func (r Example) MarshalJSON() ([]byte, error) {
 	var err error
 	output := make(map[string]json.RawMessage)
-	output["LongField"], err = json.Marshal(r.LongField)
+	output["a"], err = json.Marshal(r.A)
 	if err != nil {
 		return nil, err
 	}
-	output["StringField"], err = json.Marshal(r.StringField)
+	output["b"], err = json.Marshal(r.B)
 	if err != nil {
 		return nil, err
 	}
@@ -155,32 +154,32 @@ func (r *Example) UnmarshalJSON(data []byte) error {
 
 	var val json.RawMessage
 	val = func() json.RawMessage {
-		if v, ok := fields["LongField"]; ok {
+		if v, ok := fields["a"]; ok {
 			return v
 		}
 		return nil
 	}()
 
 	if val != nil {
-		if err := json.Unmarshal([]byte(val), &r.LongField); err != nil {
+		if err := json.Unmarshal([]byte(val), &r.A); err != nil {
 			return err
 		}
 	} else {
-		r.LongField = 0
+		r.A = 0
 	}
 	val = func() json.RawMessage {
-		if v, ok := fields["StringField"]; ok {
+		if v, ok := fields["b"]; ok {
 			return v
 		}
 		return nil
 	}()
 
 	if val != nil {
-		if err := json.Unmarshal([]byte(val), &r.StringField); err != nil {
+		if err := json.Unmarshal([]byte(val), &r.B); err != nil {
 			return err
 		}
 	} else {
-		r.StringField = ""
+		r.B = ""
 	}
 	return nil
 }
