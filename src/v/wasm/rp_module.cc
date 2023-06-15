@@ -208,11 +208,16 @@ ss::future<int32_t> redpanda_module::get_schema_definition_len(
     if (!_schema_registry_store) {
         co_return -1;
     }
-    auto schema = co_await _schema_registry_store->get_schema_definition(
-      schema_id);
-    const auto& raw_schema = schema.raw();
-    *size_out = raw_schema().size();
-    // TODO: Encode references
+    try {
+        auto schema = co_await _schema_registry_store->get_schema_definition(
+          schema_id);
+        const auto& raw_schema = schema.raw();
+        *size_out = raw_schema().size();
+        // TODO: Encode references
+    } catch (...) {
+        vlog(log.warn, "error fetching schema definition {}", schema_id);
+        co_return -2;
+    }
     co_return 0;
 }
 ss::future<int32_t> redpanda_module::get_schema_definition(
@@ -220,24 +225,29 @@ ss::future<int32_t> redpanda_module::get_schema_definition(
     if (!_schema_registry_store) {
         co_return -1;
     }
-    auto schema = co_await _schema_registry_store->get_schema_definition(
-      schema_id);
-    const auto& raw_schema = schema.raw();
-    if (buf.size() < raw_schema().size()) {
-        // buffer too small
+    try {
+        auto schema = co_await _schema_registry_store->get_schema_definition(
+          schema_id);
+        const auto& raw_schema = schema.raw();
+        if (buf.size() < raw_schema().size()) {
+            // buffer too small
+            co_return -3;
+        }
+        std::copy_n(raw_schema().data(), raw_schema().size(), buf.raw());
+        // TODO: Encode references
+        switch (schema.type()) {
+        case pandaproxy::schema_registry::schema_type::avro:
+            co_return 1;
+        case pandaproxy::schema_registry::schema_type::protobuf:
+            co_return 2;
+        case pandaproxy::schema_registry::schema_type::json:
+            co_return 3;
+        }
+        __builtin_unreachable();
+    } catch (...) {
+        vlog(log.warn, "error fetching schema definition {}", schema_id);
         co_return -2;
     }
-    std::copy_n(raw_schema().data(), raw_schema().size(), buf.raw());
-    // TODO: Encode references
-    switch (schema.type()) {
-    case pandaproxy::schema_registry::schema_type::avro:
-        co_return 1;
-    case pandaproxy::schema_registry::schema_type::protobuf:
-        co_return 2;
-    case pandaproxy::schema_registry::schema_type::json:
-        co_return 3;
-    }
-    __builtin_unreachable();
 }
 
 } // namespace wasm

@@ -5,6 +5,7 @@ PKGS=(
   setup-panic
   transform-error
   transform-panic
+  schema-registry
 )
 
 for PKG in "${PKGS[@]}"

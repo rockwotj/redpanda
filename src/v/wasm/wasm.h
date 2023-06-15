@@ -18,7 +18,6 @@
 #include "model/record_batch_reader.h"
 #include "outcome.h"
 #include "pandaproxy/schema_registry/fwd.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
 #include "seastarx.h"
 #include "ssx/thread_worker.h"
 

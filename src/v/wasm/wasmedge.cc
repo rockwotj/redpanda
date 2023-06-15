@@ -26,6 +26,7 @@
 #include "wasm/wasi.h"
 #include "wasm/wasm.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/queue.hh>
 #include <seastar/core/sstring.hh>
@@ -340,6 +341,7 @@ public:
         _is_running = false;
         // Enqueue a task to flush the queue
         co_await enqueue<void>([] {});
+        _queue.abort(std::make_exception_ptr(ss::abort_requested_exception()));
         co_await _thread.join();
     }
 
@@ -481,6 +483,7 @@ private:
 
     ss::queue<ss::noncopyable_function<void()>> _queue{1};
     bool _is_running = true;
+    // TODO: Specify a special scheduling group
     ss::thread _thread{[this] {
         while (_is_running) {
             auto task = _queue.pop_eventually().get();
