@@ -246,18 +246,22 @@ ss::future<> produce_wasm_function(
     }
     auto reader = reader_from_lcore_batch(std::move(batch));
     auto& server = octx.rctx.connection()->server();
+    reader = server.wasm_service().wrap_batch_reader(
+      {ntp.ns, ntp.tp.topic}, std::move(reader));
+    auto transformed = co_await model::consume_reader_to_memory(
+      std::move(reader), model::no_timeout);
+    reader = model::make_foreign_memory_record_batch_reader(
+      std::move(transformed));
     auto outcome = co_await octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
-      [reader = std::move(reader), &server, ntp = std::move(ntp)](
-        cluster::partition_manager& mgr) mutable {
+      [reader = std::move(reader),
+       ntp = std::move(ntp)](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition || !partition->is_elected_leader()) {
               throw std::runtime_error(ss::format(
                 "Expected partition to be the leader for wasm: {}", partition));
           }
-          reader = server.wasm_service().wrap_batch_reader(
-            {ntp.ns, ntp.tp.topic}, std::move(reader));
           return partition->replicate(
             std::move(reader),
             raft::replicate_options(raft::consistency_level::quorum_ack));

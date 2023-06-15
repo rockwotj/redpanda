@@ -102,7 +102,12 @@ service::service(
 service::~service() = default;
 
 ss::future<> service::start() { return ss::now(); }
-ss::future<> service::stop() { co_await _gate.close(); }
+ss::future<> service::stop() {
+    co_await _gate.close();
+    for (auto& [_, t] : _transforms) {
+        co_await t.engine->stop();
+    }
+}
 
 model::record_batch_reader service::wrap_batch_reader(
   const model::topic_namespace_view& nt,
