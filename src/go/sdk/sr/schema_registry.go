@@ -36,11 +36,21 @@ type Schema struct {
 	References []*Schema
 }
 
-type SchemaRegistryClient struct {
+type SchemaRegistryClient interface {
+	LookupSchemaById(id SchemaId) (s *Schema, err error)
+}
+
+type schemaRegistryClient struct {
 	schemaByIdCache map[SchemaId]*Schema
 }
 
-func (sr *SchemaRegistryClient) LookupSchemaById(id SchemaId) (s *Schema, err error) {
+func NewClient() SchemaRegistryClient {
+	return &schemaRegistryClient{
+		schemaByIdCache: make(map[SchemaId]*Schema),
+	}
+}
+
+func (sr *schemaRegistryClient) LookupSchemaById(id SchemaId) (s *Schema, err error) {
 	cached, ok := sr.schemaByIdCache[id]
 	if ok {
 		return cached, nil
