@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package wasm
+package transform
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/wasm/template"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/template"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -37,7 +37,7 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "init [DIRECTORY]",
-		Short: "Initialize a Wasm transform",
+		Short: "Initialize a transform",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			var path string
@@ -92,7 +92,7 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 					}
 				}
 				if lang == "" {
-					out.Die("unknown wasm language %q", langVal)
+					out.Die("unknown language %q", langVal)
 				}
 			}
 			p := transformProject{Name: name, Path: path, Lang: lang}
@@ -109,8 +109,8 @@ func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
 					fmt.Println("\tcd", rel)
 				}
 			}
-			fmt.Println("\trpk wasm build")
-			fmt.Println("\trpk wasm deploy")
+			fmt.Println("\trpk transform build")
+			fmt.Println("\trpk transform deploy")
 		},
 	}
 	cmd.Flags().StringVar(&langVal, "lang", "", "The language used to develop the transform")
@@ -144,7 +144,7 @@ func generateManifest(p transformProject) (map[string][]genFile, error) {
 			},
 		}, nil
 	}
-	return nil, fmt.Errorf("unknown wasm language %q", p.Lang)
+	return nil, fmt.Errorf("unknown language %q", p.Lang)
 }
 
 func executeGenerate(fs afero.Fs, p transformProject) error {
@@ -187,5 +187,5 @@ func installDeps(ctx context.Context, p transformProject) error {
 			fmt.Println("go modules are tidy 🧹")
 		}
 	}
-	return fmt.Errorf("Unknown wasm language %q", p.Lang)
+	return fmt.Errorf("Unknown language %q", p.Lang)
 }

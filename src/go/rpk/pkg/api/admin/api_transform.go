@@ -7,8 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// NOTES: ending this file in _wasm makes golang think this is a wasm only file similar to _linux, _windows etc.
-
 package admin
 
 import (
@@ -63,7 +61,7 @@ func (a *AdminAPI) ListWasmTransforms(ctx context.Context) ([]ClusterWasmTransfo
 }
 
 // Delete a wasm transforms in a cluster
-func (a *AdminAPI) UndeployWasmTransform(ctx context.Context, t ClusterWasmTransform) error {
+func (a *AdminAPI) DeleteWasmTransform(ctx context.Context, t ClusterWasmTransform) error {
 	params := url.Values{
 		"namespace":     {t.Namespace},
 		"input_topic":   {t.InputTopic},

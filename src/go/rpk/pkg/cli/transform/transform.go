@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package wasm
+package transform
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -17,8 +17,10 @@ import (
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "wasm",
-		Short: "Develop, deploy and manage Wasm data transforms",
+		Use:        "transform",
+		Aliases:    []string{"wasm"},
+		SuggestFor: []string{"transfrom"},
+		Short:      "Develop, deploy and manage Redpanda data transforms",
 	}
 	p.InstallKafkaFlags(cmd)
 	cmd.AddCommand(
@@ -26,7 +28,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newBuildCommand(fs),
 		newDeployCommand(fs, p),
 		newListCommand(fs, p),
-		newUndeployCommand(fs, p),
+		newDeleteCommand(fs, p),
 	)
 	return cmd
 }

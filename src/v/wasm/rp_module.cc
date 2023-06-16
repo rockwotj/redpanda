@@ -203,6 +203,21 @@ int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
     _call_ctx->output_record_count += 1;
     return int32_t(buf.size());
 }
+
+namespace {
+
+uint32_t encoded_schema_size(
+  const pandaproxy::schema_registry::canonical_schema_definition& def) {
+    const auto& raw_schema = def.raw();
+    return raw_schema().size();
+}
+
+int32_t write_encoded_schema(
+  const pandaproxy::schema_registry::canonical_schema_definition& def,
+  ffi::array<uint8_t>) {}
+
+} // namespace
+
 ss::future<int32_t> redpanda_module::get_schema_definition_len(
   pandaproxy::schema_registry::schema_id schema_id, uint32_t* size_out) {
     if (!_schema_registry_store) {
@@ -211,15 +226,14 @@ ss::future<int32_t> redpanda_module::get_schema_definition_len(
     try {
         auto schema = co_await _schema_registry_store->get_schema_definition(
           schema_id);
-        const auto& raw_schema = schema.raw();
-        *size_out = raw_schema().size();
-        // TODO: Encode references
+        *size_out = encoded_schema_size(schema);
     } catch (...) {
         vlog(log.warn, "error fetching schema definition {}", schema_id);
         co_return -2;
     }
     co_return 0;
 }
+
 ss::future<int32_t> redpanda_module::get_schema_definition(
   pandaproxy::schema_registry::schema_id schema_id, ffi::array<uint8_t> buf) {
     if (!_schema_registry_store) {
@@ -228,12 +242,10 @@ ss::future<int32_t> redpanda_module::get_schema_definition(
     try {
         auto schema = co_await _schema_registry_store->get_schema_definition(
           schema_id);
-        const auto& raw_schema = schema.raw();
-        if (buf.size() < raw_schema().size()) {
-            // buffer too small
-            co_return -3;
+        int32_t errno = write_encoded_schema(schema, buf);
+        if (errno < 0) {
+            co_return errno;
         }
-        std::copy_n(raw_schema().data(), raw_schema().size(), buf.raw());
         // TODO: Encode references
         switch (schema.type()) {
         case pandaproxy::schema_registry::schema_type::avro:
@@ -248,6 +260,26 @@ ss::future<int32_t> redpanda_module::get_schema_definition(
         vlog(log.warn, "error fetching schema definition {}", schema_id);
         co_return -2;
     }
+}
+ss::future<int32_t> redpanda_module::get_subject_schema_len(
+  pandaproxy::schema_registry::subject,
+  pandaproxy::schema_registry::schema_version,
+  uint32_t*) {
+    if (!_schema_registry_store) {
+        co_return -1;
+    }
+
+    co_return 0;
+}
+
+ss::future<int32_t> redpanda_module::get_subject_schema(
+  pandaproxy::schema_registry::subject,
+  pandaproxy::schema_registry::schema_version,
+  ffi::array<uint8_t>) {
+    if (!_schema_registry_store) {
+        co_return -1;
+    }
+    co_return 0;
 }
 
 } // namespace wasm

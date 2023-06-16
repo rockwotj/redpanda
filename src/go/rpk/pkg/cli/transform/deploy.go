@@ -1,4 +1,12 @@
-package wasm
+// Copyright 2023 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+package transform
 
 import (
 	"bytes"
@@ -19,7 +27,7 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "deploy [WASM]",
-		Short: "Deploy a Wasm transform",
+		Short: "Deploy a transform",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
@@ -64,7 +72,7 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			file, err := afero.ReadFile(fs, path)
-			out.MaybeDie(err, "missing %q: %v did you run `rpk wasm build`", path, err)
+			out.MaybeDie(err, "missing %q: %v did you run `rpk transform build`", path, err)
 
 			transforms, err := api.ListWasmTransforms(cmd.Context())
 			out.MaybeDie(err, "unable to list existing transforms: %v", err)
@@ -87,7 +95,7 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			err = api.DeployWasmTransform(cmd.Context(), inputTopic, outputTopic, functionName, bytes.NewReader(file))
-			out.MaybeDie(err, "unable to deploy wasm %q: %v", path, err)
+			out.MaybeDie(err, "unable to deploy transfrom %q: %v", path, err)
 
 			fmt.Println("Deploy successful!")
 

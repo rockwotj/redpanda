@@ -1,4 +1,13 @@
-package wasm
+// Copyright 2020 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+package transform
 
 import (
 	"fmt"
@@ -10,10 +19,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newUndeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "undeploy [NAME]",
-		Short: "Undeploy a Wasm transform",
+		Use:   "delete [NAME]",
+		Short: "Delete a data transform",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
@@ -46,10 +55,10 @@ func newUndeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("unknown transform %q", functionName)
 			}
 
-			err = api.UndeployWasmTransform(cmd.Context(), *selected)
-			out.MaybeDie(err, "unable to undeploy transform %q: %v", functionName, err)
+			err = api.DeleteWasmTransform(cmd.Context(), *selected)
+			out.MaybeDie(err, "unable to delete transform %q: %v", functionName, err)
 
-			fmt.Println("Undeploy successful!")
+			fmt.Println("Delete successful!")
 		},
 	}
 	return cmd

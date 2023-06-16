@@ -41,7 +41,10 @@ func avroToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 		return nil, err
 	}
 	v = v[5:]
-	ex, err := DeserializeExampleFromSchema(bytes.NewReader(v), string(s.Schema))
+	ex, err := DeserializeExampleFromSchema(
+		bytes.NewReader(v),
+		string(s.Schema),
+	)
 	if err != nil {
 		return nil, err
 	}

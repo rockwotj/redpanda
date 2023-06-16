@@ -95,6 +95,16 @@ public:
     ss::future<int32_t> get_schema_definition(
       pandaproxy::schema_registry::schema_id, ffi::array<uint8_t>);
 
+    ss::future<int32_t> get_subject_schema_len(
+      pandaproxy::schema_registry::subject,
+      pandaproxy::schema_registry::schema_version,
+      uint32_t*);
+
+    ss::future<int32_t> get_subject_schema(
+      pandaproxy::schema_registry::subject,
+      pandaproxy::schema_registry::schema_version,
+      ffi::array<uint8_t>);
+
     // End ABI exports
 
 private:
