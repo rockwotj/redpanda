@@ -36,7 +36,7 @@ template<typename E>
 std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
   from_string_view(std::string_view);
 
-enum class schema_type { avro = 0, json, protobuf };
+enum class schema_type : uint8_t { avro = 0, json, protobuf };
 
 constexpr std::string_view to_string_view(schema_type e) {
     switch (e) {

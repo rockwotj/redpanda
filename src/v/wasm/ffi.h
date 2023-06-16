@@ -9,8 +9,11 @@
  */
 #pragma once
 
+#include "bytes/bytes.h"
+#include "bytes/iobuf.h"
 #include "reflection/type_traits.h"
 #include "utils/hdr_hist.h"
+#include "vassert.h"
 
 #include <cstdint>
 #include <span>
@@ -20,6 +23,16 @@
 
 namespace wasm::ffi {
 
+/**
+ * An container for a sequence of T from the Wasm VM guest.
+ *
+ * This can be used in exposed functions, and the parameter translation will
+ * convert this to two parameters on the guest side: a raw pointer and the size
+ * of that pointer.
+ *
+ * We'll bounds check the entire array during the parameter translation
+ * transparently.
+ */
 template<typename T>
 class array {
 public:
@@ -58,11 +71,110 @@ public:
 
     uint32_t size() const noexcept { return _size; }
 
+    ffi::array<T> slice(size_t offset, size_t length) {
+        vassert(
+          offset + length <= _size,
+          "out of bounds slice for ffi::array offset={} length={} size={}",
+          offset,
+          length,
+          _size);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        return ffi::array(_ptr + offset, length);
+    }
+
 private:
     T* _ptr;
     uint32_t _size;
 };
 
+/**
+ * A helper class to compute the size of buffer that is needed for encoding.
+ *
+ * This can be used in conjunction with `writer` share code between computing
+ * the size of needed for a buffer and actually writing to it.
+ *
+ * Example FFI call usage:
+ *
+ * template <typename T>
+ * int32_t serialize_flubber(const flubber& f, T* out) {
+ *   out->append(f.foo());
+ *   out->append_with_length(f.bar());
+ *   return out->total();
+ * }
+ *
+ * int32_t get_flubber_len() {
+ *   sizer s;
+ *   return serialize_flubber(flubber(), &s);
+ * }
+ * int32_t get_flubber(ffi::array<uint8_t> buf) {
+ *   writer w(buf);
+ *   return serialize_flubber(flubber(), &w);
+ * }
+ *
+ */
+class sizer {
+public:
+    sizer() = default;
+    sizer(const sizer&) = delete;
+    sizer& operator=(const sizer&) = delete;
+    sizer(sizer&&) = default;
+    sizer& operator=(sizer&&) = default;
+    ~sizer() = default;
+
+    void append(const ss::sstring&);
+    void append(const iobuf&);
+    void append_with_length(const ss::sstring&);
+    void append_with_length(const iobuf&);
+    void append(uint32_t);
+    void append(int32_t);
+    void append(uint64_t);
+    void append(int64_t);
+
+    size_t total() const noexcept { return _offset; };
+
+private:
+    size_t _offset{0};
+};
+
+/**
+ * A helper class for writing data to an ffi::array<uint8_t> (aka guest buffer).
+ *
+ * See the sizer documentation for more information.
+ */
+class writer {
+public:
+    explicit writer(ffi::array<uint8_t>);
+    writer(const writer&) = delete;
+    writer& operator=(const writer&) = delete;
+    writer(writer&&) = default;
+    writer& operator=(writer&&) = default;
+    ~writer() = default;
+
+    void append(const ss::sstring&);
+    void append(const iobuf&);
+    void append_with_length(const ss::sstring&);
+    void append_with_length(const iobuf&);
+    void append(uint32_t);
+    void append(int32_t);
+    void append(uint64_t);
+    void append(int64_t);
+
+    size_t total() const noexcept { return _offset; };
+
+private:
+    void ensure_size(size_t);
+    ffi::array<uint8_t> slice_remainder();
+
+    bytes _tmp;
+    ffi::array<uint8_t> _output;
+    size_t _offset{0};
+};
+
+/**
+ * An abstraction for linear memory within a WASM guest.
+ *
+ * This is used to translate from guest memory into host memory.
+ */
 class memory {
 public:
     memory() = default;
@@ -103,11 +215,15 @@ struct is_array<C<U>> {
     static constexpr bool value = std::is_same<C<U>, array<U>>::value;
 };
 
+/**
+ * Translate a single type into the types needed by the FFI boundary.
+ */
 template<typename Type>
 void transform_type(std::vector<val_type>& types) {
     if constexpr (std::is_same_v<ffi::memory*, Type> || std::is_void_v<Type>) {
-        // We don't bind this type over the FFI boundary, but make the runtime
-        // provide it
+        // We don't pass memory type over the FFI boundary, but make the runtime
+        // provide it, so we can just ignore it here (along with void for return
+        // types).
     } else if constexpr (ffi::is_array<Type>::value) {
         // Push back an arg for the pointer
         types.push_back(val_type::i32);
@@ -143,6 +259,9 @@ void transform_types(std::vector<val_type>& types) {
     transform_types<Rest...>(types);
 }
 
+/**
+ * This extracts raw FFI call parameters into our higher level types.
+ */
 template<typename Type>
 std::tuple<Type> extract_parameter(
   ffi::memory* mem, std::span<const uint64_t> raw_params, unsigned& idx) {

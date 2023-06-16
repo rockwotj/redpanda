@@ -14,6 +14,7 @@
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "utils/named_type.h"
 #include "utils/vint.h"
 #include "vassert.h"
 #include "wasm/ffi.h"
@@ -21,6 +22,7 @@
 #include <algorithm>
 #include <exception>
 #include <ios>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 namespace wasm {
@@ -206,28 +208,26 @@ int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
 
 namespace {
 
-uint32_t encoded_schema_def_size(
-  const pandaproxy::schema_registry::canonical_schema_definition& def) {
-    const auto& raw_schema = def.raw();
-    return raw_schema().size();
+template<typename T>
+void write_encoded_schema_def(
+  const pandaproxy::schema_registry::canonical_schema_definition& def, T* w) {
+    w->append(int32_t(def.type()));
+    w->append_with_length(def.raw()());
+    w->append(def.refs().size());
+    for (const auto& ref : def.refs()) {
+        w->append_with_length(ref.name);
+        w->append_with_length(ref.sub());
+        w->append(ref.version());
+    }
 }
 
-int32_t write_encoded_schema_def(
-  const pandaproxy::schema_registry::canonical_schema_definition&,
-  ffi::array<uint8_t>) {
-    return 0;
-}
-
-uint32_t encoded_schema_subject_size(
-  const pandaproxy::schema_registry::canonical_schema_definition& def) {
-    const auto& raw_schema = def.raw();
-    return raw_schema().size();
-}
-
-int32_t write_encoded_schema_subject(
-  const pandaproxy::schema_registry::canonical_schema_definition&,
-  ffi::array<uint8_t>) {
-    return 0;
+template<typename T>
+void write_encoded_schema_subject(
+  const pandaproxy::schema_registry::subject_schema& schema, T* w) {
+    w->append(schema.id());
+    w->append(schema.version());
+    // not writing the subject because the client should already have it.
+    write_encoded_schema_def(schema.schema.def(), w);
 }
 
 } // namespace
@@ -240,12 +240,14 @@ ss::future<int32_t> redpanda_module::get_schema_definition_len(
     try {
         auto schema = co_await _schema_registry_store->get_schema_definition(
           schema_id);
-        *size_out = encoded_schema_def_size(schema);
+        ffi::sizer sizer;
+        write_encoded_schema_def(schema, &sizer);
+        *size_out = sizer.total();
+        co_return 0;
     } catch (...) {
         vlog(log.warn, "error fetching schema definition {}", schema_id);
         co_return -2;
     }
-    co_return 0;
 }
 
 ss::future<int32_t> redpanda_module::get_schema_definition(
@@ -256,19 +258,9 @@ ss::future<int32_t> redpanda_module::get_schema_definition(
     try {
         auto schema = co_await _schema_registry_store->get_schema_definition(
           schema_id);
-        int32_t errc = write_encoded_schema_def(schema, buf);
-        if (errc < 0) {
-            co_return errc;
-        }
-        switch (schema.type()) {
-        case pandaproxy::schema_registry::schema_type::avro:
-            co_return 1;
-        case pandaproxy::schema_registry::schema_type::protobuf:
-            co_return 2;
-        case pandaproxy::schema_registry::schema_type::json:
-            co_return 3;
-        }
-        __builtin_unreachable();
+        ffi::writer writer(buf);
+        write_encoded_schema_def(schema, &writer);
+        co_return writer.total();
     } catch (...) {
         vlog(log.warn, "error fetching schema definition {}", schema_id);
         co_return -2;
@@ -277,33 +269,49 @@ ss::future<int32_t> redpanda_module::get_schema_definition(
 ss::future<int32_t> redpanda_module::get_subject_schema_len(
   pandaproxy::schema_registry::subject sub,
   pandaproxy::schema_registry::schema_version version,
-  uint32_t*) {
+  uint32_t* size_out) {
     if (!_schema_registry_store) {
         co_return -1;
     }
 
+    using namespace pandaproxy::schema_registry;
     try {
+        std::optional<schema_version> v = version == invalid_schema_version
+                                            ? std::nullopt
+                                            : std::make_optional(version);
+        auto schema = co_await _schema_registry_store->get_subject_schema(
+          sub, v, include_deleted::no);
+        ffi::sizer sizer;
+        write_encoded_schema_subject(schema, &sizer);
+        *size_out = sizer.total();
+        co_return 0;
     } catch (...) {
-        vlog(log.warn, "error fetching schema definition {}/{}", sub, version);
+        vlog(log.warn, "error fetching schema {}/{}", sub, version);
         co_return -2;
     }
-
-    co_return 0;
 }
 
 ss::future<int32_t> redpanda_module::get_subject_schema(
   pandaproxy::schema_registry::subject sub,
   pandaproxy::schema_registry::schema_version version,
-  ffi::array<uint8_t>) {
+  ffi::array<uint8_t> buf) {
     if (!_schema_registry_store) {
         co_return -1;
     }
+    using namespace pandaproxy::schema_registry;
     try {
+        std::optional<schema_version> v = version == invalid_schema_version
+                                            ? std::nullopt
+                                            : std::make_optional(version);
+        auto schema = co_await _schema_registry_store->get_subject_schema(
+          sub, v, include_deleted::no);
+        ffi::writer writer(buf);
+        write_encoded_schema_subject(schema, &writer);
+        co_return writer.total();
     } catch (...) {
-        vlog(log.warn, "error fetching schema definition {}/{}", sub, version);
+        vlog(log.warn, "error fetching schema {}/{}", sub, version);
         co_return -2;
     }
-    co_return 0;
 }
 
 } // namespace wasm

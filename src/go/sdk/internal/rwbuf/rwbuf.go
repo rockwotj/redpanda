@@ -48,37 +48,46 @@ func (r *RWBuf) Reset() {
 	r.r = 0
 	r.w = 0
 }
+
 func (r *RWBuf) WriterBuf() []byte {
 	return r.buf[r.w:]
 }
+
 func (r *RWBuf) WriterBufPtr() *byte {
 	return &r.buf[r.w]
 }
+
 func (r *RWBuf) WriterLen() int {
 	return len(r.buf) - r.w
 }
+
 func (r *RWBuf) EnsureWriterSpace(n int) {
 	r.EnsureSize(r.w + n)
 }
+
 func (r *RWBuf) AdvanceWriter(n int) {
 	r.w += n
 }
+
 func (r *RWBuf) WriteVarint(v int64) {
 	r.EnsureWriterSpace(binary.MaxVarintLen64)
 	r.w += binary.PutVarint(r.WriterBuf(), v)
 }
+
 func (r *RWBuf) Write(b []byte) (int, error) {
 	r.EnsureWriterSpace(len(b))
 	copy(r.WriterBuf(), b)
 	r.w += len(b)
 	return len(b), nil
 }
+
 func (r *RWBuf) WriteByte(b byte) error {
 	r.EnsureWriterSpace(1)
 	r.buf[r.w] = b
 	r.w++
 	return nil
 }
+
 func (r *RWBuf) WriteBytesWithSize(b []byte) {
 	if b == nil {
 		r.WriteVarint(-1)
@@ -99,15 +108,18 @@ func (r *RWBuf) DelayWrite(n int, fn func(b []byte)) func() {
 		fn(r.buf[m:n])
 	}
 }
+
 func (r *RWBuf) AdvanceReader(n int) {
 	r.r += n
 	if r.r > r.w {
 		r.r = r.w
 	}
 }
+
 func (r *RWBuf) ReaderLen() int {
 	return r.w - r.r
 }
+
 func (r *RWBuf) ReadByte() (byte, error) {
 	if r.ReaderLen() == 0 {
 		return 0, io.EOF
@@ -116,6 +128,7 @@ func (r *RWBuf) ReadByte() (byte, error) {
 	r.r++
 	return c, nil
 }
+
 func (r *RWBuf) ReadSlice(n int) ([]byte, error) {
 	if n > r.ReaderLen() {
 		return nil, io.ErrShortBuffer
@@ -124,6 +137,7 @@ func (r *RWBuf) ReadSlice(n int) ([]byte, error) {
 	r.r += n
 	return r.buf[i:r.r], nil
 }
+
 func (r *RWBuf) ReadSizedSlice() ([]byte, error) {
 	l, err := binary.ReadVarint(r)
 	if err != nil {
@@ -138,6 +152,15 @@ func (r *RWBuf) ReadSizedSlice() ([]byte, error) {
 	}
 	return v, nil
 }
+
+func (r *RWBuf) ReadSizedStringCopy() (string, error) {
+	b, err := r.ReadSizedSlice()
+	if err != nil {
+		return "", err
+	}
+	return string(b), err
+}
+
 func (r *RWBuf) ReadAll() []byte {
 	// Errors are impossible here
 	b, _ := r.ReadSlice(r.ReaderLen())

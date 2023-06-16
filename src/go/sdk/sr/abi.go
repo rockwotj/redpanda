@@ -24,10 +24,10 @@ import (
 // See: https://github.com/golang/go/issues/59149
 
 //go:wasmimport redpanda get_schema_definition_len
-func getSchemaDefinitionLen(schemaId SchemaId, length unsafe.Pointer) int32
+func getSchemaDefinitionLen(schemaId schemaId, length unsafe.Pointer) int32
 
 //go:wasmimport redpanda get_schema_definition
-func getSchemaDefinition(schemaId SchemaId, buf unsafe.Pointer, len int32) int32
+func getSchemaDefinition(schemaId schemaId, buf unsafe.Pointer, len int32) int32
 
 //go:wasmimport redpanda get_schema_subject_len
 func getSchemaSubjectLen(subject unsafe.Pointer, subjectLen int32, version int32, lenOut unsafe.Pointer) int32

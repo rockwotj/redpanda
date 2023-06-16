@@ -29,7 +29,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
 			l, err := api.ListWasmTransforms(cmd.Context())
-			out.MaybeDie(err, "unable to list transform: %v", err)
+			out.MaybeDie(err, "unable to list transforms: %v", err)
 
 			w := out.NewTable("NAME", "INPUT TOPIC", "OUTPUT TOPIC")
 			defer w.Flush()

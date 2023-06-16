@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,8 +29,10 @@ const (
 	evtInternalError = eventErrorCode(3)
 )
 
-type inputBatchHandle int32
-type inputRecordHandle int32
+type (
+	inputBatchHandle  int32
+	inputRecordHandle int32
+)
 
 type batchHeader struct {
 	handle               inputBatchHandle
@@ -55,6 +57,7 @@ var (
 )
 
 // The ABI that our SDK provides. Redpanda executes this function to determine the protocol contract to execute.
+//
 //export redpanda_abi_version
 func redpandaAbiVersion() int32 {
 	return 2

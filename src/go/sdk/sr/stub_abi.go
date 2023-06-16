@@ -20,11 +20,11 @@ import (
 	"unsafe"
 )
 
-func getSchemaDefinitionLen(schemaId SchemaId, length unsafe.Pointer) int32 {
+func getSchemaDefinitionLen(schemaId schemaId, length unsafe.Pointer) int32 {
 	panic("stub")
 }
 
-func getSchemaDefinition(schemaId SchemaId, buf unsafe.Pointer, len int32) int32 {
+func getSchemaDefinition(schemaId schemaId, buf unsafe.Pointer, len int32) int32 {
 	panic("stub")
 }
 
