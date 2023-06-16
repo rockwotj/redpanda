@@ -206,15 +206,29 @@ int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
 
 namespace {
 
-uint32_t encoded_schema_size(
+uint32_t encoded_schema_def_size(
   const pandaproxy::schema_registry::canonical_schema_definition& def) {
     const auto& raw_schema = def.raw();
     return raw_schema().size();
 }
 
-int32_t write_encoded_schema(
-  const pandaproxy::schema_registry::canonical_schema_definition& def,
-  ffi::array<uint8_t>) {}
+int32_t write_encoded_schema_def(
+  const pandaproxy::schema_registry::canonical_schema_definition&,
+  ffi::array<uint8_t>) {
+    return 0;
+}
+
+uint32_t encoded_schema_subject_size(
+  const pandaproxy::schema_registry::canonical_schema_definition& def) {
+    const auto& raw_schema = def.raw();
+    return raw_schema().size();
+}
+
+int32_t write_encoded_schema_subject(
+  const pandaproxy::schema_registry::canonical_schema_definition&,
+  ffi::array<uint8_t>) {
+    return 0;
+}
 
 } // namespace
 
@@ -226,7 +240,7 @@ ss::future<int32_t> redpanda_module::get_schema_definition_len(
     try {
         auto schema = co_await _schema_registry_store->get_schema_definition(
           schema_id);
-        *size_out = encoded_schema_size(schema);
+        *size_out = encoded_schema_def_size(schema);
     } catch (...) {
         vlog(log.warn, "error fetching schema definition {}", schema_id);
         co_return -2;
@@ -242,11 +256,10 @@ ss::future<int32_t> redpanda_module::get_schema_definition(
     try {
         auto schema = co_await _schema_registry_store->get_schema_definition(
           schema_id);
-        int32_t errno = write_encoded_schema(schema, buf);
-        if (errno < 0) {
-            co_return errno;
+        int32_t errc = write_encoded_schema_def(schema, buf);
+        if (errc < 0) {
+            co_return errc;
         }
-        // TODO: Encode references
         switch (schema.type()) {
         case pandaproxy::schema_registry::schema_type::avro:
             co_return 1;
@@ -262,22 +275,33 @@ ss::future<int32_t> redpanda_module::get_schema_definition(
     }
 }
 ss::future<int32_t> redpanda_module::get_subject_schema_len(
-  pandaproxy::schema_registry::subject,
-  pandaproxy::schema_registry::schema_version,
+  pandaproxy::schema_registry::subject sub,
+  pandaproxy::schema_registry::schema_version version,
   uint32_t*) {
     if (!_schema_registry_store) {
         co_return -1;
+    }
+
+    try {
+    } catch (...) {
+        vlog(log.warn, "error fetching schema definition {}/{}", sub, version);
+        co_return -2;
     }
 
     co_return 0;
 }
 
 ss::future<int32_t> redpanda_module::get_subject_schema(
-  pandaproxy::schema_registry::subject,
-  pandaproxy::schema_registry::schema_version,
+  pandaproxy::schema_registry::subject sub,
+  pandaproxy::schema_registry::schema_version version,
   ffi::array<uint8_t>) {
     if (!_schema_registry_store) {
         co_return -1;
+    }
+    try {
+    } catch (...) {
+        vlog(log.warn, "error fetching schema definition {}/{}", sub, version);
+        co_return -2;
     }
     co_return 0;
 }

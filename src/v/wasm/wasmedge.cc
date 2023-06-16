@@ -306,6 +306,8 @@ void register_rp_module(
     REG_HOST_FN(write_record);
     REG_HOST_FN(get_schema_definition);
     REG_HOST_FN(get_schema_definition_len);
+    REG_HOST_FN(get_subject_schema);
+    REG_HOST_FN(get_subject_schema_len);
 #undef REG_HOST_FN
 }
 

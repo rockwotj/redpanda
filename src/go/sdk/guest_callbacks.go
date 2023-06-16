@@ -49,8 +49,8 @@ type batchHeader struct {
 // Cache a bunch of objects to not GC
 var (
 	currentHeader batchHeader  = batchHeader{handle: -1}
-	inbuf         *rwbuf.RWBuf = rwbuf.New(2048)
-	outbuf        *rwbuf.RWBuf = rwbuf.New(2048)
+	inbuf         *rwbuf.RWBuf = rwbuf.New(128)
+	outbuf        *rwbuf.RWBuf = rwbuf.New(128)
 	e             writeEvent
 )
 
