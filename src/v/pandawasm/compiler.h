@@ -43,13 +43,12 @@ struct runtime_value_location;
 class runtime_value_location_stack;
 class jit_function_compiler {
 public:
-    jit_function_compiler(
-      asmjit::CodeHolder*, function_signature ft, std::vector<valtype> locals);
+    jit_function_compiler(asmjit::CodeHolder*, function::metadata);
     jit_function_compiler(const jit_function_compiler&) = delete;
     jit_function_compiler& operator=(const jit_function_compiler&) = delete;
     jit_function_compiler(jit_function_compiler&&) = delete;
     jit_function_compiler& operator=(jit_function_compiler&&) = delete;
-    ~jit_function_compiler() = default;
+    ~jit_function_compiler();
 
     void prologue();
     void epilogue();
@@ -67,9 +66,7 @@ private:
     asmjit::x86::Assembler _asm;
     asmjit::FuncFrame _frame;
 
-    function_signature _ft;
-    // Does not include params in this list.
-    std::vector<valtype> _locals;
+    function::metadata _func_meta;
     std::unique_ptr<runtime_value_location_stack> _stack;
 };
 
@@ -82,12 +79,12 @@ public:
     jit_compiler& operator=(jit_compiler&&) = delete;
     ~jit_compiler();
 
-    std::unique_ptr<jit_function_compiler>
-    add_func(function_signature, std::vector<valtype> locals);
+    std::unique_ptr<jit_function_compiler> add_func(function::metadata);
 
 private:
     asmjit::JitRuntime _rt;
     asmjit::CodeHolder _code;
+    std::unique_ptr<asmjit::Logger> _logger;
 };
 
 } // namespace pandawasm

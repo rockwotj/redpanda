@@ -21,12 +21,15 @@
 
 #include <cstdint>
 #include <iterator>
+#include <string>
 #include <utility>
 #include <vector>
 
 namespace pandawasm {
 
 namespace {
+
+static ss::logger logger("wasmpanda_parser");
 
 constexpr size_t MAX_FUNCTIONS = 1U << 16U;
 constexpr size_t MAX_FUNCTION_LOCALS = 1U << 8U;
@@ -190,7 +193,7 @@ public:
 
     ss::future<> parse(iobuf_const_parser* parser);
 
-    ss::future<parsed_module> build() &&;
+    ss::future<parsed_module> build();
 
 private:
     // The main loop of parsing functions.
@@ -257,8 +260,10 @@ private:
     std::optional<funcidx> _start;
 };
 
-ss::future<parsed_module> module_builder::build() && {
-    co_return parsed_module{.functions = std::move(_functions)};
+ss::future<parsed_module> module_builder::build() {
+    parsed_module parsed;
+    std::swap(_functions, parsed.functions);
+    co_return parsed;
 }
 
 ss::future<>
@@ -630,9 +635,8 @@ ss::future<> module_builder::parse(iobuf_const_parser* parser) {
     if (version != 1) {
         throw parse_exception("unsupported wasm version");
     }
-    module_builder builder;
     while (parser->bytes_left() > 0) {
-        co_await builder.parse_one_section(parser);
+        co_await parse_one_section(parser);
         co_await ss::coroutine::maybe_yield();
     }
 }
@@ -643,7 +647,7 @@ ss::future<parsed_module> parse_module(iobuf buffer) {
     iobuf_const_parser parser(buffer);
     module_builder builder;
     co_await builder.parse(&parser);
-    co_return co_await std::move(builder).build();
+    co_return co_await builder.build();
 }
 
 } // namespace pandawasm

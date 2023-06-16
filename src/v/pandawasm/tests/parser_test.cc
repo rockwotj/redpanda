@@ -1,6 +1,9 @@
+#include "pandawasm/compiler.h"
 #include "pandawasm/parser.h"
 
 #include <seastar/testing/thread_test_case.hh>
+
+#include <boost/test/tools/old/interface.hpp>
 
 #include <initializer_list>
 
@@ -22,4 +25,14 @@ SEASTAR_THREAD_TEST_CASE(parse_simple_module) {
     iobuf buf;
     buf.append(bytes.data(), bytes.size());
     auto parsed = pandawasm::parse_module(std::move(buf)).get();
+    BOOST_CHECK_EQUAL(parsed.functions.size(), 1);
+    const auto& add_fn = parsed.functions.front();
+
+    pandawasm::jit_compiler compiler;
+    auto jitter = compiler.add_func(add_fn.meta);
+    jitter->prologue();
+    for (const auto& inst : add_fn.body) {
+        std::visit(*jitter.get(), inst);
+    }
+    jitter->epilogue();
 }
