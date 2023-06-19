@@ -16,12 +16,13 @@
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
+#include <string_view>
 
 namespace wasm::ffi {
 
-void sizer::append(const ss::sstring& s) { _offset += s.size(); }
+void sizer::append(std::string_view s) { _offset += s.size(); }
 void sizer::append(const iobuf& b) { _offset += b.size_bytes(); }
-void sizer::append_with_length(const ss::sstring& s) {
+void sizer::append_with_length(std::string_view s) {
     append(s.size());
     append(s);
 }
@@ -42,11 +43,11 @@ void writer::append_with_length(const iobuf& b) {
     append(b.size_bytes());
     append(b);
 }
-void writer::append_with_length(const ss::sstring& s) {
+void writer::append_with_length(std::string_view s) {
     append(s.size());
     append(s);
 }
-void writer::append(const ss::sstring& s) {
+void writer::append(std::string_view s) {
     ensure_size(s.size());
     std::copy(s.cbegin(), s.cend(), &_output[_offset]);
     _offset += s.size();

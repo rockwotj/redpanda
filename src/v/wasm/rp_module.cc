@@ -13,6 +13,7 @@
 #include "model/compression.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
+#include "model/timestamp.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "utils/named_type.h"
 #include "utils/vint.h"
@@ -67,6 +68,8 @@ model::record_batch redpanda_module::for_each_record(
 
     for (const auto& record_position : record_positions) {
         _call_ctx->current_record = record_position;
+        auto current_record_timestamp = input->header().first_timestamp()
+                                        + record_position.timestamp_delta;
         try {
             func({
               .batch_handle = bh,
@@ -74,6 +77,8 @@ model::record_batch redpanda_module::for_each_record(
                 int32_t(record_position.start_index)),
               .record_size = int32_t(record_position.size),
               .current_record_offset = int32_t(_call_ctx->output_record_count),
+              .current_record_timestamp = model::timestamp(
+                current_record_timestamp),
             });
         } catch (...) {
             _call_ctx = std::nullopt;

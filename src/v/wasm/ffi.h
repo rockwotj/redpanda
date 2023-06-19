@@ -121,9 +121,9 @@ public:
     sizer& operator=(sizer&&) = default;
     ~sizer() = default;
 
-    void append(const ss::sstring&);
+    void append(std::string_view);
     void append(const iobuf&);
-    void append_with_length(const ss::sstring&);
+    void append_with_length(std::string_view);
     void append_with_length(const iobuf&);
     void append(uint32_t);
     void append(int32_t);
@@ -150,9 +150,9 @@ public:
     writer& operator=(writer&&) = default;
     ~writer() = default;
 
-    void append(const ss::sstring&);
+    void append(std::string_view);
     void append(const iobuf&);
-    void append_with_length(const ss::sstring&);
+    void append_with_length(std::string_view);
     void append_with_length(const iobuf&);
     void append(uint32_t);
     void append(int32_t);
@@ -186,7 +186,14 @@ public:
 
     /* returns the host pointer for a given guest ptr and length. Throws if out
      * of bounds. */
-    virtual void* translate(size_t guest_ptr, size_t len) = 0;
+    virtual void* translate_raw(size_t guest_ptr, size_t len) = 0;
+
+    template<typename T>
+    ffi::array<T> translate(size_t guest_ptr, size_t len) {
+        void* ptr = translate_raw(guest_ptr, len * sizeof(T));
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return ffi::array<T>(reinterpret_cast<T*>(ptr), len);
+    }
 };
 
 enum class val_type { i32, i64, f32, f64 };
@@ -270,7 +277,7 @@ std::tuple<Type> extract_parameter(
     } else if constexpr (ffi::is_array<Type>::value) {
         auto guest_ptr = static_cast<uint32_t>(raw_params[idx++]);
         auto ptr_len = static_cast<uint32_t>(raw_params[idx++]);
-        void* host_ptr = mem->translate(
+        void* host_ptr = mem->translate_raw(
           guest_ptr, ptr_len * sizeof(typename Type::element_type));
         return std::make_tuple(ffi::array<typename Type::element_type>(
           // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -279,7 +286,7 @@ std::tuple<Type> extract_parameter(
     } else if constexpr (std::is_same_v<ss::sstring, Type>) {
         auto guest_ptr = static_cast<uint32_t>(raw_params[idx++]);
         auto ptr_len = static_cast<uint32_t>(raw_params[idx++]);
-        void* host_ptr = mem->translate(guest_ptr, ptr_len);
+        void* host_ptr = mem->translate_raw(guest_ptr, ptr_len);
         return std::make_tuple(ss::sstring(
           // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
           reinterpret_cast<char*>(host_ptr),
@@ -293,7 +300,7 @@ std::tuple<Type> extract_parameter(
         // Assume this is an out val
         auto guest_ptr = static_cast<uint32_t>(raw_params[idx++]);
         uint32_t ptr_len = sizeof(typename std::remove_pointer_t<Type>);
-        void* host_ptr = mem->translate(guest_ptr, ptr_len);
+        void* host_ptr = mem->translate_raw(guest_ptr, ptr_len);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return std::make_tuple(reinterpret_cast<Type>(host_ptr));
     } else if constexpr (std::is_integral_v<Type>) {

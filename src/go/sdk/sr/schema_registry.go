@@ -67,15 +67,17 @@ type SubjectSchema struct {
 //
 // The client provides caching out of the box, which can be configured with options.
 type SchemaRegistryClient interface {
+	// LookupSchemaById looks up a schema via it's global ID.
 	LookupSchemaById(id int) (s *Schema, err error)
+	// LookupSchemaByVersion looks up a schema via a subject for a specific version.
+	//
+	// Use version -1 to get the latest version.
+	LookupSchemaByVersion(subject string, version int) (s *SubjectSchema, err error)
 }
 
 type (
 	clientOpts struct {
-		// Max size of the cache for ids. Defaults to -1, which means unbounded, 0 disables the cache
-		cacheByIdSize int
-		// Max size of the cache for (subject,version). Defaults to -1, which means unbounded, 0 disables the cache
-		cacheBySubjectVersionSize int
+		disableCaches bool
 	}
 	// ClientOpt is an option to configure a SchemaRegistryClient
 	ClientOpt     interface{ apply(*clientOpts) }
@@ -86,46 +88,60 @@ func (f clientOptFunc) apply(opts *clientOpts) {
 	f(opts)
 }
 
-type schemaRegistryClientImpl struct {
-	clientOpts
-	schemaByIdCache map[schemaId]*Schema
+type subjectVersion struct {
+	subject string
+	version int
 }
 
-// WithMaxIdCacheSize sets the maximum size of the schema registry cache when doing id lookups
-func WithMaxIdCacheSize(maxSize int) ClientOpt {
-	return clientOptFunc(func(o *clientOpts) {
-		o.cacheByIdSize = maxSize
-	})
-}
+type (
+	clientImpl struct {
+	}
+	cachingClientImpl struct {
+		underlying                  SchemaRegistryClient
+		schemaByIdCache             map[schemaId]*Schema
+		schemaBySubjectVersionCache map[subjectVersion]*SubjectSchema
+	}
+)
 
-// WithMaxSubjectCacheSize sets the maximum size of the schema registry cache when doing (subject, version) lookups
-func WithMaxSubjectCacheSize(maxSize int) ClientOpt {
+// WithCachesDisabled disables any caching done by the client
+func WithCachesDisabled() ClientOpt {
 	return clientOptFunc(func(o *clientOpts) {
-		o.cacheBySubjectVersionSize = maxSize
+		o.disableCaches = true
 	})
 }
 
 // NewClient creates a new SchemaRegistryClient with the specified options applied.
-func NewClient(opts ...ClientOpt) SchemaRegistryClient {
+func NewClient(opts ...ClientOpt) (c SchemaRegistryClient) {
 	o := clientOpts{
-		cacheByIdSize:             -1,
-		cacheBySubjectVersionSize: -1,
+		disableCaches: false,
 	}
 	for _, opt := range opts {
 		opt.apply(&o)
 	}
-	return &schemaRegistryClientImpl{
-		clientOpts:      o,
-		schemaByIdCache: make(map[schemaId]*Schema),
+	c = &clientImpl{}
+	if o.disableCaches {
+		return c
 	}
+	c = &cachingClientImpl{
+		underlying:                  c,
+		schemaByIdCache:             make(map[schemaId]*Schema),
+		schemaBySubjectVersionCache: make(map[subjectVersion]*SubjectSchema),
+	}
+	return c
 }
 
-// LookupSchemaById looks up a schema via it's global ID.
-func (sr *schemaRegistryClientImpl) LookupSchemaById(id int) (*Schema, error) {
+func (sr *cachingClientImpl) LookupSchemaById(id int) (s *Schema, err error) {
 	cached, ok := sr.schemaByIdCache[schemaId(id)]
 	if ok {
 		return cached, nil
 	}
+	s, err = sr.underlying.LookupSchemaById(id)
+	if err != nil {
+		sr.schemaByIdCache[schemaId(id)] = s
+	}
+	return
+}
+func (sr *clientImpl) LookupSchemaById(id int) (*Schema, error) {
 	var length int32
 	errno := getSchemaDefinitionLen(schemaId(id), unsafe.Pointer(&length))
 	if errno != 0 {
@@ -145,16 +161,27 @@ func (sr *schemaRegistryClientImpl) LookupSchemaById(id int) (*Schema, error) {
 	if err != nil {
 		return nil, err
 	}
-	sr.schemaByIdCache[schemaId(id)] = &schema
 	return &schema, nil
 }
 
+func (sr *cachingClientImpl) LookupSchemaByVersion(subject string, version int) (s *SubjectSchema, err error) {
+	cached, ok := sr.schemaBySubjectVersionCache[subjectVersion{subject, version}]
+	if ok {
+		return cached, nil
+	}
+	s, err = sr.underlying.LookupSchemaByVersion(subject, version)
+	if err != nil {
+		sr.schemaBySubjectVersionCache[subjectVersion{subject, version}] = s
+	}
+	return
+}
+
 // LookupSchemaById looks up a schema via a subject for a specific version.
-func (sr *schemaRegistryClientImpl) LookupSchemaByVersion(subject string, version int) (s *SubjectSchema, err error) {
+func (sr *clientImpl) LookupSchemaByVersion(subject string, version int) (s *SubjectSchema, err error) {
 	var length int32
 	errno := getSchemaSubjectLen(
 		unsafe.Pointer(unsafe.StringData(subject)),
-		len(subject),
+		int32(len(subject)),
 		int32(version),
 		unsafe.Pointer(&length),
 	)
@@ -164,7 +191,7 @@ func (sr *schemaRegistryClientImpl) LookupSchemaByVersion(subject string, versio
 	buf := rwbuf.New(int(length))
 	result := getSchemaSubject(
 		unsafe.Pointer(unsafe.StringData(subject)),
-		len(subject),
+		int32(len(subject)),
 		int32(version),
 		unsafe.Pointer(buf.WriterBufPtr()),
 		int32(buf.WriterLen()),

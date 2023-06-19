@@ -35,6 +35,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/type_traits/function_traits.hpp>
 #include <wasmedge/wasmedge.h>
 
@@ -49,6 +50,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 #include <wasm.h>
 #include <wasmtime.h>
 
@@ -407,6 +409,7 @@ private:
     invoke_transform(const model::record_batch* batch, probe* probe) {
         return _rp_module->for_each_record(
           batch, [this, probe](wasm_call_params params) {
+	  	wasi_module->set_timestamp(params.current_record_timestamp);
               auto ml = probe->latency_measurement();
               auto mc = probe->cpu_time_measurement();
               WasmEdge_Result result;
@@ -529,7 +532,9 @@ public:
         register_rp_module(rp_module.get(), wasmedge_rp_module);
 
         auto wasmedge_wasi_module = create_module(wasi::preview1_module::name);
-        auto wasi_module = std::make_unique<wasi::preview1_module>();
+        std::vector<ss::sstring> args{_user_module_name};
+        absl::flat_hash_map<ss::sstring, ss::sstring> env{{"USER", "redpanda"}};
+        auto wasi_module = std::make_unique<wasi::preview1_module>(args, env);
         register_wasi_module(wasi_module.get(), wasmedge_wasi_module);
 
         result = WasmEdge_VMRegisterModuleFromImport(

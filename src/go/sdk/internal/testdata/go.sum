@@ -8,5 +8,7 @@ github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230615164355-34aeaa2d6d64 h1:mB
 github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230615164355-34aeaa2d6d64/go.mod h1:23S80kD79G/N+gmtq/fGD7NqOFoh3zJhVmFW9I7pwUo=
 github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230615165821-0726796cd41e h1:eTCaWB002j5eEnwReL6Fbt1CSJ3/KqNs1UfG8ZburzI=
 github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230615165821-0726796cd41e/go.mod h1:23S80kD79G/N+gmtq/fGD7NqOFoh3zJhVmFW9I7pwUo=
+github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230616184525-c176cb7b379b h1:U6ChOFQVNtAzE6NYLTErSfXdAfDFyb+X5eJIKsGy4fs=
+github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230616184525-c176cb7b379b/go.mod h1:23S80kD79G/N+gmtq/fGD7NqOFoh3zJhVmFW9I7pwUo=
 github.com/stretchr/testify v1.7.1 h1:5TQK59W5E3v0r2duFAb7P95B6hEeOyEnHRa8MjYSMTY=
 gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b h1:h8qDotaEPuJATrMmW04NCwg7v22aHH28wwpauUhK9Oo=

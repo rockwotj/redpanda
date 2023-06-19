@@ -46,6 +46,7 @@ struct wasm_call_params {
     record_handle record_handle;
     int32_t record_size;
     int32_t current_record_offset;
+    model::timestamp current_record_timestamp;
 };
 
 /**

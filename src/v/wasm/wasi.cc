@@ -11,45 +11,143 @@
 
 #include "ffi.h"
 #include "seastarx.h"
+#include "vassert.h"
+#include "vlog.h"
 
+#include <seastar/core/byteorder.hh>
+#include <seastar/core/coroutine.hh>
+#include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 
+#include <chrono>
+#include <exception>
 #include <sstream>
 
 namespace wasm::wasi {
 
 static ss::logger wasi_log("wasi");
 
+preview1_module::preview1_module(
+  std::vector<ss::sstring> args, const environ_map_t& environ)
+  : _args(std::move(args)) {
+    _environ.reserve(environ.size());
+    for (const auto& [k, v] : environ) {
+        vassert(
+          k.find("=") == ss::sstring::npos, "invalid environment key: {}", k);
+        _environ.push_back(ss::format("{}={}", k, v));
+    }
+}
+
 // We don't have control over this API, so there will be some redundant
 // wrappers. NOLINTBEGIN(bugprone-easily-swappable-parameters)
 
-errno_t preview1_module::clock_res_get(clock_id_t, timestamp_t*) {
-    return ERRNO_NOSYS;
-}
-
-errno_t preview1_module::clock_time_get(clock_id_t, timestamp_t, timestamp_t*) {
-    return ERRNO_NOSYS;
+errno_t preview1_module::clock_res_get(clock_id_t id, timestamp_t* out) {
+    switch (id) {
+    case REALTIME_CLOCK_ID:
+    case MONOTONIC_CLOCK_ID:
+    case PROCESS_CPUTIME_CLOCK_ID:
+    case THREAD_CPUTIME_CLOCK_ID: {
+        using namespace std::chrono;
+        milliseconds ms(1);
+        nanoseconds ns = duration_cast<nanoseconds>(ms);
+        *out = timestamp_t(ns.count());
+        return ERRNO_SUCCESS;
+    }
+    default:
+        return ERRNO_INVAL;
+    }
 }
 
 errno_t
+preview1_module::clock_time_get(clock_id_t id, timestamp_t, timestamp_t* out) {
+    switch (id) {
+    case REALTIME_CLOCK_ID:
+    case MONOTONIC_CLOCK_ID:
+    case PROCESS_CPUTIME_CLOCK_ID:
+    case THREAD_CPUTIME_CLOCK_ID:
+        *out = _now;
+        return ERRNO_SUCCESS;
+    default:
+        return ERRNO_INVAL;
+    }
+}
+namespace {
+size_t serialized_args_size(const std::vector<ss::sstring>& args) {
+    size_t n = 0;
+    for (const auto& arg : args) {
+        // Add one for the null byte
+        n += arg.size() + 1;
+    }
+    return n;
+}
+
+template<typename T>
+void serialize_args(
+  const std::vector<ss::sstring>& args,
+  int32_t ptrs_offset,
+  T* ptrs_out,
+  T* data_out) {
+    int32_t n = 0;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    std::string_view n_bytes{reinterpret_cast<char*>(&n), sizeof(int32_t)};
+    for (const auto& arg : args) {
+        n = ptrs_offset + data_out->total();
+        ptrs_out->append(n_bytes);
+        data_out->append(arg);
+        data_out->append("\0");
+    }
+}
+} // namespace
+
+errno_t
 preview1_module::args_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
-    *count_ptr = 0;
-    *size_ptr = 0;
+    *count_ptr = _args.size();
+    *size_ptr = serialized_args_size(_args);
     return ERRNO_SUCCESS;
 }
 
-errno_t preview1_module::args_get(uint8_t**, uint8_t*) { return ERRNO_SUCCESS; }
-
-errno_t preview1_module::environ_get(uint8_t**, uint8_t*) {
-    return ERRNO_SUCCESS;
+errno_t preview1_module::args_get(
+  ffi::memory mem, int32_t args_ptrs_offset, int32_t args_buf_offset) {
+    try {
+        auto environ_ptrs_buf = mem.translate<uint8_t>(
+          args_ptrs_offset, _args.size() * sizeof(int32_t));
+        auto environ_data_buf = mem.translate<uint8_t>(
+          args_ptrs_offset, serialized_args_size(_args));
+        ffi::writer ptrs_writer(environ_ptrs_buf);
+        ffi::writer data_writer(environ_data_buf);
+        serialize_args(_args, args_buf_offset, &ptrs_writer, &ptrs_writer);
+        return ERRNO_SUCCESS;
+    } catch (const std::exception& ex) {
+        vlog(wasi_log.warn, "args_get: {}", ex);
+        return ERRNO_INVAL;
+    }
 }
 
 errno_t
 preview1_module::environ_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
-    *count_ptr = 0;
-    *size_ptr = 0;
+    *count_ptr = _environ.size();
+    *size_ptr = serialized_args_size(_environ);
     return ERRNO_SUCCESS;
 }
+
+errno_t preview1_module::environ_get(
+  ffi::memory mem, int32_t environ_ptrs_offset, int32_t environ_buf_offset) {
+    try {
+        auto environ_ptrs_buf = mem.translate<uint8_t>(
+          environ_ptrs_offset, _environ.size() * sizeof(int32_t));
+        auto environ_data_buf = mem.translate<uint8_t>(
+          environ_ptrs_offset, serialized_args_size(_environ));
+        ffi::writer ptrs_writer(environ_ptrs_buf);
+        ffi::writer data_writer(environ_data_buf);
+        serialize_args(
+          _environ, environ_buf_offset, &ptrs_writer, &ptrs_writer);
+        return ERRNO_SUCCESS;
+    } catch (const std::exception& ex) {
+        vlog(wasi_log.warn, "environ_get: {}", ex);
+        return ERRNO_INVAL;
+    }
+}
+
 errno_t preview1_module::fd_advise(fd_t, uint64_t, uint64_t, uint8_t) {
     return ERRNO_NOSYS;
 }
@@ -112,14 +210,14 @@ errno_t preview1_module::fd_write(
         std::stringstream ss;
         for (unsigned i = 0; i < iovecs.size(); ++i) {
             const auto& vec = iovecs[i];
-            const void* data = mem->translate(vec.buf, vec.buf_len);
-            if (data == nullptr) [[unlikely]] {
+            try {
+                ffi::array<char> data = mem->translate<char>(
+                  vec.buf, vec.buf_len);
+                ss << std::string_view(data.raw(), data.size());
+            } catch (const std::exception& ex) {
+                vlog(wasi_log.warn, "fd_write: {}", ex);
                 return ERRNO_INVAL;
             }
-            ss << std::string_view(
-              // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-              reinterpret_cast<const char*>(data),
-              vec.buf_len);
         }
         // TODO: We should be buffering these until a newline or something and
         // emitting logs line by line Also: rate limit logs
@@ -200,9 +298,9 @@ errno_t preview1_module::sock_shutdown(fd_t, uint8_t) { return ERRNO_NOSYS; }
 void preview1_module::proc_exit(int32_t exit_code) {
     throw std::runtime_error(ss::format("Exiting: {}", exit_code));
 }
-errno_t preview1_module::sched_yield() {
-    // TODO: actually yield
-    return ERRNO_SUCCESS;
+ss::future<errno_t> preview1_module::sched_yield() {
+    co_await ss::yield();
+    co_return ERRNO_SUCCESS;
 }
 // NOLINTEND(bugprone-easily-swappable-parameters)
 } // namespace wasm::wasi

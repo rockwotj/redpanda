@@ -6,6 +6,7 @@ PKGS=(
   transform-error
   transform-panic
   schema-registry
+  wasi
 )
 
 for PKG in "${PKGS[@]}"

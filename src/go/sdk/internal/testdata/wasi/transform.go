@@ -15,13 +15,35 @@
 package main
 
 import (
+	"encoding/json"
+	"math/rand"
+	"os"
+	"time"
+
 	"github.com/rockwotj/redpanda/src/go/sdk"
 )
 
 func main() {
-	redpanda.OnRecordWritten(identityTransform)
+	redpanda.OnRecordWritten(wasiTransform)
 }
 
-func identityTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
-	return []redpanda.Record{e.Record()}, nil
+type WasiInfo struct {
+	Args         []string
+	Env          []string
+	NowNanos     int64
+	RandomNumber int
+}
+
+func wasiTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+	w := &WasiInfo{
+		Args:         os.Args,
+		Env:          os.Environ(),
+		NowNanos:     time.Now().UnixNano(),
+		RandomNumber: rand.Int(),
+	}
+	b, err := json.Marshal(w)
+	if err != nil {
+		return nil, err
+	}
+	return []redpanda.Record{{Value: b}}, nil
 }

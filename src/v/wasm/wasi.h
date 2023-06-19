@@ -10,7 +10,12 @@
 #pragma once
 
 #include "ffi.h"
+#include "model/timestamp.h"
 #include "utils/named_type.h"
+
+#include <seastar/core/sstring.hh>
+
+#include <absl/container/flat_hash_map.h>
 
 #include <string_view>
 
@@ -51,18 +56,25 @@ struct iovec_t {
     uint32_t buf_len;
 };
 
+using environ_map_t = absl::flat_hash_map<ss::sstring, ss::sstring>;
+
 /**
  * Implementation of the wasi preview1 which is a snapshot of the wasi spec from
  * 2020.
  */
 class preview1_module {
 public:
-    preview1_module() = default;
+    // Create a wasi module using the args and environ to initialize the runtime
+    // with.
+    preview1_module(std::vector<ss::sstring>, const environ_map_t&);
     preview1_module(const preview1_module&) = delete;
     preview1_module& operator=(const preview1_module&) = delete;
     preview1_module(preview1_module&&) = default;
     preview1_module& operator=(preview1_module&&) = default;
     ~preview1_module() = default;
+
+    // Set the current timestamp that clocks will return.
+    void set_time(model::timestamp);
 
     static constexpr std::string_view name = "wasi_snapshot_preview1";
 
@@ -73,9 +85,9 @@ public:
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1409-L1418
     errno_t args_sizes_get(uint32_t*, uint32_t*);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1400-L1408
-    errno_t args_get(uint8_t**, uint8_t*);
+    errno_t args_get(ffi::memory, int32_t, int32_t);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1419-L1427
-    errno_t environ_get(uint8_t**, uint8_t*);
+    errno_t environ_get(ffi::memory, int32_t, int32_t);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1428-L1437
     errno_t environ_sizes_get(uint32_t*, uint32_t*);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1470-L1488
@@ -156,7 +168,7 @@ public:
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1982-L1992
     void proc_exit(int32_t exit_code);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1993-L1999
-    errno_t sched_yield();
+    ss::future<errno_t> sched_yield();
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L2015-L2031
     errno_t sock_accept(fd_t, uint16_t, fd_t*);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L2032-L2055
@@ -166,6 +178,11 @@ public:
     errno_t sock_send(fd_t, ffi::array<iovec_t>, uint16_t, uint32_t*);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L2079-L2090
     errno_t sock_shutdown(fd_t, uint8_t);
+
+private:
+    timestamp_t _now{0};
+    std::vector<ss::sstring> _args;
+    std::vector<ss::sstring> _environ;
 };
 
 } // namespace wasm::wasi
