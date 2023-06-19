@@ -36,7 +36,7 @@ func avroToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 		return nil, errors.New("invalid schema registry header")
 	}
 	id := binary.BigEndian.Uint32(v[1:5])
-	s, err := c.LookupSchemaById(sr.SchemaId(id))
+	s, err := c.LookupSchemaById(int(id))
 	if err != nil {
 		return nil, err
 	}
