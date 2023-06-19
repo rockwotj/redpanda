@@ -17,8 +17,10 @@
 #include "pandawasm/instruction.h"
 
 #include <asmjit/asmjit.h>
+#include <asmjit/core/codeholder.h>
 #include <asmjit/core/compiler.h>
 #include <asmjit/core/errorhandler.h>
+#include <asmjit/core/jitruntime.h>
 #include <asmjit/x86.h>
 #include <asmjit/x86/x86assembler.h>
 #include <asmjit/x86/x86operand.h>
@@ -39,35 +41,21 @@ private:
     std::string _msg;
 };
 
-struct runtime_value_location;
-class runtime_value_location_stack;
-class jit_function_compiler {
+class compiled_function {
 public:
-    jit_function_compiler(asmjit::CodeHolder*, function::metadata);
-    jit_function_compiler(const jit_function_compiler&) = delete;
-    jit_function_compiler& operator=(const jit_function_compiler&) = delete;
-    jit_function_compiler(jit_function_compiler&&) = delete;
-    jit_function_compiler& operator=(jit_function_compiler&&) = delete;
-    ~jit_function_compiler();
+    explicit compiled_function(void* ptr)
+      : _ptr(ptr) {}
 
-    void prologue();
-    void epilogue();
+    template<typename R, typename... A>
+    R invoke(A... args) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return reinterpret_cast<R (*)(A...)>(_ptr)(args...);
+    }
 
-    void operator()(op::const_i32);
-    void operator()(op::add_i32);
-    void operator()(op::get_local_i32);
-    void operator()(op::set_local_i32);
-    void operator()(op::return_values);
+    void* get() { return _ptr; }
 
 private:
-    asmjit::x86::Gpq ensure_in_reg(runtime_value_location*);
-    asmjit::x86::Gpq allocate_register(runtime_value_location*);
-
-    asmjit::x86::Assembler _asm;
-    asmjit::FuncFrame _frame;
-
-    function::metadata _func_meta;
-    std::unique_ptr<runtime_value_location_stack> _stack;
+    void* _ptr;
 };
 
 class jit_compiler {
@@ -79,12 +67,11 @@ public:
     jit_compiler& operator=(jit_compiler&&) = delete;
     ~jit_compiler();
 
-    std::unique_ptr<jit_function_compiler> add_func(function::metadata);
+    ss::future<compiled_function> compile(function);
+    void release(compiled_function func);
 
 private:
     asmjit::JitRuntime _rt;
-    asmjit::CodeHolder _code;
-    std::unique_ptr<asmjit::Logger> _logger;
 };
 
 } // namespace pandawasm

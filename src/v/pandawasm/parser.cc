@@ -33,7 +33,11 @@ static ss::logger logger("wasmpanda_parser");
 
 constexpr size_t MAX_FUNCTIONS = 1U << 16U;
 constexpr size_t MAX_FUNCTION_LOCALS = 1U << 8U;
-constexpr size_t MAX_FUNCTION_PARAMETERS = asmjit::Globals::kMaxFuncArgs;
+// These are currently set so that we're always passing everything into
+// registers.
+constexpr size_t MAX_FUNCTION_PARAMETERS = 6;
+constexpr size_t MAX_FUNCTION_RESULTS = 1;
+
 constexpr size_t MAX_FUNCTION_SIGNATURES = 1U << 17U;
 constexpr size_t MAX_IMPORTS = 1U << 8U;
 // NOTE: Tables and memories both have maximums for an individual entity, but
@@ -96,9 +100,10 @@ globalidx parse_globalidx(iobuf_const_parser* parser) {
     return globalidx(leb128::decode<uint32_t>(parser));
 }
 
+template<size_t max>
 std::vector<valtype> parse_signature_types(iobuf_const_parser* parser) {
     auto vector_size = leb128::decode<uint32_t>(parser);
-    if (vector_size > MAX_FUNCTION_PARAMETERS) {
+    if (vector_size > max) {
         throw module_too_large_exception(
           ss::format("too many parameters to function: {}", vector_size));
     }
@@ -117,8 +122,9 @@ function_signature parse_signature(iobuf_const_parser* parser) {
         throw parse_exception(
           ss::format("function type magic mismatch: {}", magic));
     }
-    auto parameter_types = parse_signature_types(parser);
-    auto result_types = parse_signature_types(parser);
+    auto parameter_types = parse_signature_types<MAX_FUNCTION_PARAMETERS>(
+      parser);
+    auto result_types = parse_signature_types<MAX_FUNCTION_RESULTS>(parser);
     return function_signature{
       .parameter_types = std::move(parameter_types),
       .result_types = std::move(result_types)};

@@ -29,10 +29,7 @@ SEASTAR_THREAD_TEST_CASE(parse_simple_module) {
     const auto& add_fn = parsed.functions.front();
 
     pandawasm::jit_compiler compiler;
-    auto jitter = compiler.add_func(add_fn.meta);
-    jitter->prologue();
-    for (const auto& inst : add_fn.body) {
-        std::visit(*jitter.get(), inst);
-    }
-    jitter->epilogue();
+    auto compiled_add_fn = compiler.compile(add_fn).get();
+    auto result = compiled_add_fn.invoke<int32_t, int32_t, int32_t>(3, 4);
+    BOOST_CHECK_EQUAL(result, 7);
 }
