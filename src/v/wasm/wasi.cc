@@ -22,6 +22,7 @@
 #include <chrono>
 #include <exception>
 #include <sstream>
+#include <unistd.h>
 
 namespace wasm::wasi {
 
@@ -36,6 +37,13 @@ preview1_module::preview1_module(
           k.find("=") == ss::sstring::npos, "invalid environment key: {}", k);
         _environ.push_back(ss::format("{}={}", k, v));
     }
+}
+
+void preview1_module::set_timestamp(model::timestamp ts) {
+    using namespace std::chrono;
+    milliseconds ms(ts.value());
+    nanoseconds ns = duration_cast<nanoseconds>(ms);
+    _now = timestamp_t(ns.count());
 }
 
 // We don't have control over this API, so there will be some redundant
@@ -81,20 +89,18 @@ size_t serialized_args_size(const std::vector<ss::sstring>& args) {
     return n;
 }
 
-template<typename T>
 void serialize_args(
   const std::vector<ss::sstring>& args,
-  int32_t ptrs_offset,
-  T* ptrs_out,
-  T* data_out) {
-    int32_t n = 0;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    std::string_view n_bytes{reinterpret_cast<char*>(&n), sizeof(int32_t)};
-    for (const auto& arg : args) {
-        n = ptrs_offset + data_out->total();
-        ptrs_out->append(n_bytes);
+  uint32_t offset,
+  ffi::array<uint32_t> ptrs,
+  ffi::writer* data_out) {
+    uint32_t position = offset;
+    for (size_t i = 0; i < args.size(); ++i) {
+        const auto& arg = args[i];
+        ptrs[i] = position;
         data_out->append(arg);
-        data_out->append("\0");
+        data_out->append(std::string_view{"\0", 1});
+        position += arg.size() + 1;
     }
 }
 } // namespace
@@ -107,15 +113,14 @@ preview1_module::args_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
 }
 
 errno_t preview1_module::args_get(
-  ffi::memory mem, int32_t args_ptrs_offset, int32_t args_buf_offset) {
+  ffi::memory* mem, uint32_t args_ptrs_offset, uint32_t args_buf_offset) {
     try {
-        auto environ_ptrs_buf = mem.translate<uint8_t>(
-          args_ptrs_offset, _args.size() * sizeof(int32_t));
-        auto environ_data_buf = mem.translate<uint8_t>(
-          args_ptrs_offset, serialized_args_size(_args));
-        ffi::writer ptrs_writer(environ_ptrs_buf);
-        ffi::writer data_writer(environ_data_buf);
-        serialize_args(_args, args_buf_offset, &ptrs_writer, &ptrs_writer);
+        auto args_ptrs_buf = mem->translate<uint32_t>(
+          args_ptrs_offset, _args.size());
+        auto args_data_buf = mem->translate<uint8_t>(
+          args_buf_offset, serialized_args_size(_args));
+        ffi::writer data_writer(args_data_buf);
+        serialize_args(_args, args_buf_offset, args_ptrs_buf, &data_writer);
         return ERRNO_SUCCESS;
     } catch (const std::exception& ex) {
         vlog(wasi_log.warn, "args_get: {}", ex);
@@ -131,16 +136,15 @@ preview1_module::environ_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
 }
 
 errno_t preview1_module::environ_get(
-  ffi::memory mem, int32_t environ_ptrs_offset, int32_t environ_buf_offset) {
+  ffi::memory* mem, uint32_t environ_ptrs_offset, uint32_t environ_buf_offset) {
     try {
-        auto environ_ptrs_buf = mem.translate<uint8_t>(
-          environ_ptrs_offset, _environ.size() * sizeof(int32_t));
-        auto environ_data_buf = mem.translate<uint8_t>(
-          environ_ptrs_offset, serialized_args_size(_environ));
-        ffi::writer ptrs_writer(environ_ptrs_buf);
+        auto environ_ptrs_buf = mem->translate<uint32_t>(
+          environ_ptrs_offset, _environ.size());
+        auto environ_data_buf = mem->translate<uint8_t>(
+          environ_buf_offset, serialized_args_size(_environ));
         ffi::writer data_writer(environ_data_buf);
         serialize_args(
-          _environ, environ_buf_offset, &ptrs_writer, &ptrs_writer);
+          _environ, environ_buf_offset, environ_ptrs_buf, &data_writer);
         return ERRNO_SUCCESS;
     } catch (const std::exception& ex) {
         vlog(wasi_log.warn, "environ_get: {}", ex);

@@ -122,6 +122,7 @@ public:
     ~sizer() = default;
 
     void append(std::string_view);
+    void append(bytes_view);
     void append(const iobuf&);
     void append_with_length(std::string_view);
     void append_with_length(const iobuf&);
@@ -151,6 +152,7 @@ public:
     ~writer() = default;
 
     void append(std::string_view);
+    void append(bytes_view);
     void append(const iobuf&);
     void append_with_length(std::string_view);
     void append_with_length(const iobuf&);
@@ -231,7 +233,8 @@ void transform_type(std::vector<val_type>& types) {
         // We don't pass memory type over the FFI boundary, but make the runtime
         // provide it, so we can just ignore it here (along with void for return
         // types).
-    } else if constexpr (ffi::is_array<Type>::value) {
+    } else if constexpr (
+      ffi::is_array<Type>::value || std::is_same_v<Type, ss::sstring>) {
         // Push back an arg for the pointer
         types.push_back(val_type::i32);
         // Push back an other arg for the length

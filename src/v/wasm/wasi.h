@@ -74,7 +74,7 @@ public:
     ~preview1_module() = default;
 
     // Set the current timestamp that clocks will return.
-    void set_time(model::timestamp);
+    void set_timestamp(model::timestamp);
 
     static constexpr std::string_view name = "wasi_snapshot_preview1";
 
@@ -85,9 +85,9 @@ public:
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1409-L1418
     errno_t args_sizes_get(uint32_t*, uint32_t*);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1400-L1408
-    errno_t args_get(ffi::memory, int32_t, int32_t);
+    errno_t args_get(ffi::memory*, uint32_t, uint32_t);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1419-L1427
-    errno_t environ_get(ffi::memory, int32_t, int32_t);
+    errno_t environ_get(ffi::memory*, uint32_t, uint32_t);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1428-L1437
     errno_t environ_sizes_get(uint32_t*, uint32_t*);
     // https://github.com/WebAssembly/wasi-libc/blob/a6f871343313220b76009827ed0153586361c0d5/libc-bottom-half/headers/public/wasi/api.h#L1470-L1488

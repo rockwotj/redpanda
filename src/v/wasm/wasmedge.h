@@ -26,7 +26,7 @@ std::unique_ptr<runtime, decltype(&delete_runtime)> make_runtime();
  */
 bool is_running();
 
-std::unique_ptr<engine::factory> compile(
-  runtime*, std::string_view wasm_module_name, std::string_view wasm_source);
+std::unique_ptr<engine::factory>
+compile(runtime*, transform::metadata, std::string_view wasm_source);
 
 } // namespace wasm::wasmedge

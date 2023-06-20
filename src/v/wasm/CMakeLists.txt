@@ -6,7 +6,7 @@ v_cc_library(
     "wasm.cc"
     "probe.cc"
     "wasi.cc"
-    #"wasmtime.cc"
+    "wasmtime.cc"
     "wasmedge.cc"
     "ffi.cc"
     "rp_module.cc"
@@ -16,7 +16,7 @@ v_cc_library(
     v::http
     v::model
     v::pandaproxy_schema_registry
-    #wasmtime
+    wasmtime
     Seastar::seastar
 )
 

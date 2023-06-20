@@ -12,7 +12,7 @@ v_cc_library(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME wasm_transform_test
+  BINARY_NAME wasm_transform
   SOURCES
     wasm_transform_test.cc
   LIBRARIES 
@@ -27,7 +27,7 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME wasm_transform_error_test
+  BINARY_NAME wasm_transform_error
   SOURCES
     wasm_transform_error_test.cc
   LIBRARIES 
@@ -42,7 +42,7 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME wasm_transform_trap_test
+  BINARY_NAME wasm_transform_trap
   SOURCES
     wasm_transform_trap_test.cc
   LIBRARIES 
@@ -57,7 +57,7 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME wasm_setup_trap_test
+  BINARY_NAME wasm_setup_trap
   SOURCES
     wasm_setup_trap_test.cc
   LIBRARIES 
@@ -66,6 +66,21 @@ rp_test(
   # TODO: Hookup this to the build system properly
   INPUT_FILES 
     ${CMAKE_SOURCE_DIR}/src/go/sdk/internal/testdata/setup-panic.wasm
+  ARGS "-- -c 1"
+  LABELS wasm
+)
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME wasi
+  SOURCES
+    wasi_test.cc
+  LIBRARIES 
+    v::seastar_testing_main
+    v::wasm_test_fixture
+  # TODO: Hookup this to the build system properly
+  INPUT_FILES 
+    ${CMAKE_SOURCE_DIR}/src/go/sdk/internal/testdata/wasi.wasm
   ARGS "-- -c 1"
   LABELS wasm
 )

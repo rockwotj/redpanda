@@ -46,5 +46,6 @@ model::record_batch wasm_test_fixture::make_tiny_batch() {
     return model::test::make_random_batch(model::test::record_batch_spec{
       .allow_compression = false,
       .count = 1,
+      .timestamp = NOW,
     });
 }

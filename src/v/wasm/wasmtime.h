@@ -14,9 +14,6 @@
 #include <memory>
 #include <wasm.h>
 
-class wasm_engine_t;
-extern void wasm_engine_delete(wasm_engine_t*);
-
 namespace wasm::wasmtime {
 
 template<typename T, auto fn>
@@ -26,25 +23,17 @@ struct deleter {
 template<typename T, auto fn>
 using handle = std::unique_ptr<T, deleter<T, fn>>;
 
-class runtime {
-public:
-    explicit runtime(wasm_engine_t* e)
-      : _engine(e) {}
+struct runtime;
 
-    wasm_engine_t* get() const { return _engine.get(); }
-
-private:
-    handle<wasm_engine_t, wasm_engine_delete> _engine;
-};
-
-std::unique_ptr<runtime> make_runtime();
+void delete_runtime(runtime*);
+std::unique_ptr<runtime, decltype(&delete_runtime)> make_runtime();
 
 /**
  * If this existing thread is running, used for signal handling.
  */
 bool is_running();
 
-std::unique_ptr<engine::factory> compile(
-  runtime*, std::string_view wasm_module_name, std::string_view wasm_source);
+std::unique_ptr<engine::factory>
+compile(runtime*, transform::metadata, std::string_view wasm_source);
 
 } // namespace wasm::wasmtime

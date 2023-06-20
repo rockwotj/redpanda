@@ -16,6 +16,7 @@
 #include "wasm/errc.h"
 #include "wasm/probe.h"
 #include "wasm/wasmedge.h"
+#include "wasm/wasmtime.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/smp.hh>
@@ -95,7 +96,7 @@ service::service(
   , _transforms()
   , _schema_registry(schema_registry) {
     if (ss::this_shard_id() == runtime_shard) {
-        _runtime = wasmedge::make_runtime();
+        _runtime = wasmtime::make_runtime();
     }
 }
 
@@ -161,7 +162,7 @@ service::deploy_transform(transform::metadata meta, ss::sstring source) {
     vlog(wasm_log.info, "Creating wasm engine: {}", meta.function_name);
     auto engine_factory = co_await _worker->submit(
       [this, meta, source = std::move(source)] {
-          return wasmedge::compile(_runtime.get(), meta.function_name, source);
+          return wasmtime::compile(_runtime.get(), meta, source);
       });
     vlog(wasm_log.info, "Created wasm engine: {}", meta.function_name);
     // TODO: Handle engines failing to start.

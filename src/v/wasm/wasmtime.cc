@@ -180,7 +180,7 @@ public:
       , _ctx(ctx)
       , _underlying(mem) {}
 
-    void* translate(size_t guest_ptr, size_t len) final {
+    void* translate_raw(size_t guest_ptr, size_t len) final {
         auto memory_size = wasmtime_memory_data_size(_ctx, _underlying);
         if ((guest_ptr + len) > memory_size) [[unlikely]] {
             throw wasm_exception(
@@ -464,19 +464,22 @@ private:
             }
             return _rp_module->for_each_record(
               batch, [this, &ctx, &cb, probe](wasm_call_params params) {
+                  _wasi_module->set_timestamp(params.current_record_timestamp);
                   auto ml = probe->latency_measurement();
                   auto mc = probe->cpu_time_measurement();
                   wasmtime_val_t result = {
                     .kind = WASMTIME_I32, .of = {.i32 = -1}};
                   try {
-                      std::array<wasmtime_val_t, 3> args = {
+                      std::array<wasmtime_val_t, 4> args = {
                         wasmtime_val_t{
                           .kind = WASMTIME_I32,
                           .of = {.i32 = params.batch_handle}},
                         {.kind = WASMTIME_I32,
                          .of = {.i32 = params.record_handle}},
                         {.kind = WASMTIME_I32,
-                         .of = {.i32 = params.record_size}}};
+                         .of = {.i32 = params.record_size}},
+                        {.kind = WASMTIME_I32,
+                         .of = {.i32 = params.current_record_offset}}};
                       is_executing = true;
                       wasm_trap_t* trap_ptr = nullptr;
                       handle<wasmtime_error_t, wasmtime_error_delete> error{
@@ -530,22 +533,29 @@ public:
     wasmtime_engine_factory(
       wasm_engine_t* engine,
       std::shared_ptr<wasmtime_module_t> mod,
-      ss::sstring user_module_name)
+      transform::metadata meta)
       : _engine(engine)
       , _module(std::move(mod))
-      , _user_module_name(std::move(user_module_name)) {}
+      , _meta(std::move(meta)) {}
 
-    std::unique_ptr<engine> make_engine() final {
+    std::unique_ptr<engine> make_engine(
+      pandaproxy::schema_registry::sharded_store* schema_registry_store) final {
         handle<wasmtime_store_t, wasmtime_store_delete> store{
           wasmtime_store_new(_engine, nullptr, nullptr)};
         auto* context = wasmtime_store_context(store.get());
         handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
           wasmtime_linker_new(_engine)};
 
-        auto rp_module = std::make_unique<redpanda_module>();
+        auto rp_module = std::make_unique<redpanda_module>(
+          schema_registry_store);
         register_rp_module(rp_module.get(), linker.get());
 
-        auto wasi_module = std::make_unique<wasi::preview1_module>();
+        std::vector<ss::sstring> args{_meta.function_name};
+        absl::flat_hash_map<ss::sstring, ss::sstring> env{
+          {"REDPANDA_INPUT_TOPIC", _meta.input.tp()},
+          {"REDPANDA_OUTPUT_TOPIC", _meta.output.tp()},
+        };
+        auto wasi_module = std::make_unique<wasi::preview1_module>(args, env);
         register_wasi_module(wasi_module.get(), linker.get());
 
         wasmtime_instance_t instance;
@@ -558,7 +568,7 @@ public:
         check_trap(trap.get());
 
         return std::make_unique<wasmtime_engine>(
-          _user_module_name,
+          _meta.function_name,
           _engine,
           std::move(linker),
           std::move(store),
@@ -571,12 +581,24 @@ public:
 private:
     wasm_engine_t* _engine;
     std::shared_ptr<wasmtime_module_t> _module;
-    ss::sstring _user_module_name;
+    transform::metadata _meta;
 };
 
 } // namespace
 
-std::unique_ptr<runtime> make_runtime() {
+struct runtime {
+public:
+    explicit runtime(wasm_engine_t* e)
+      : _engine(e) {}
+
+    wasm_engine_t* get() const { return _engine.get(); }
+
+private:
+    handle<wasm_engine_t, wasm_engine_delete> _engine;
+};
+
+void delete_runtime(runtime* rt) { delete rt; }
+std::unique_ptr<runtime, decltype(&delete_runtime)> make_runtime() {
     wasm_config_t* config = wasm_config_new();
 
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_NONE);
@@ -587,15 +609,13 @@ std::unique_ptr<runtime> make_runtime() {
     wasmtime_config_max_wasm_stack_set(config, 8_KiB);
     wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
 
-    return std::make_unique<runtime>(wasm_engine_new_with_config(config));
+    return {new runtime(wasm_engine_new_with_config(config)), &delete_runtime};
 }
 
 bool is_running() { return is_executing; }
 
-std::unique_ptr<engine::factory> compile(
-  runtime* rt,
-  std::string_view wasm_module_name,
-  std::string_view wasm_source) {
+std::unique_ptr<engine::factory>
+compile(runtime* rt, transform::metadata meta, std::string_view wasm_source) {
     wasmtime_module_t* user_module_ptr = nullptr;
     handle<wasmtime_error_t, wasmtime_error_delete> error{wasmtime_module_new(
       rt->get(),
@@ -606,6 +626,6 @@ std::unique_ptr<engine::factory> compile(
       user_module_ptr, wasmtime_module_delete};
     check_error(error.get());
     return std::make_unique<wasmtime_engine_factory>(
-      rt->get(), user_module, ss::sstring(wasm_module_name));
+      rt->get(), user_module, std::move(meta));
 }
 } // namespace wasm::wasmtime

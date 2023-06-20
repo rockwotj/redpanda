@@ -33,6 +33,7 @@
 #include <seastar/core/thread.hh>
 #include <seastar/core/thread_cputime_clock.hh>
 #include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/backtrace.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -93,7 +94,7 @@ public:
       : ffi::memory()
       , _underlying(mem) {}
 
-    void* translate(size_t guest_ptr, size_t len) final {
+    void* translate_raw(size_t guest_ptr, size_t len) final {
         void* ptr = WasmEdge_MemoryInstanceGetPointer(
           _underlying, guest_ptr, len);
         if (ptr == nullptr) [[unlikely]] {
@@ -395,10 +396,17 @@ private:
           returns.size());
         is_executing = false;
         if (!WasmEdge_ResultOK(result)) {
+            vlog(
+              wasmedge_log.info,
+              "Wasm function {} failed to init: {}",
+              _user_module_name,
+              WasmEdge_ResultGetMessage(result));
             // Get the right transform name here
             throw wasm_exception(
               ss::format(
-                "wasi _start initialization {} failed", _user_module_name),
+                "wasi _start initialization {} failed: {}",
+                _user_module_name,
+                WasmEdge_ResultGetMessage(result)),
               errc::user_code_failure);
         }
         vlog(
@@ -409,7 +417,7 @@ private:
     invoke_transform(const model::record_batch* batch, probe* probe) {
         return _rp_module->for_each_record(
           batch, [this, probe](wasm_call_params params) {
-	  	wasi_module->set_timestamp(params.current_record_timestamp);
+              _wasi_module->set_timestamp(params.current_record_timestamp);
               auto ml = probe->latency_measurement();
               auto mc = probe->cpu_time_measurement();
               WasmEdge_Result result;
@@ -513,10 +521,10 @@ WasmEdgeModule create_module(std::string_view name) {
 class wasmedge_engine_factory : public engine::factory {
 public:
     wasmedge_engine_factory(
-      runtime* rt, ss::sstring user_module_source, ss::sstring user_module_name)
+      runtime* rt, transform::metadata meta, ss::sstring user_module_source)
       : _rt(rt)
       , _user_module_source(std::move(user_module_source))
-      , _user_module_name(std::move(user_module_name)) {}
+      , _meta(std::move(meta)) {}
 
     std::unique_ptr<engine> make_engine(
       pandaproxy::schema_registry::sharded_store* schema_registry_store) final {
@@ -532,8 +540,11 @@ public:
         register_rp_module(rp_module.get(), wasmedge_rp_module);
 
         auto wasmedge_wasi_module = create_module(wasi::preview1_module::name);
-        std::vector<ss::sstring> args{_user_module_name};
-        absl::flat_hash_map<ss::sstring, ss::sstring> env{{"USER", "redpanda"}};
+        std::vector<ss::sstring> args{_meta.function_name};
+        absl::flat_hash_map<ss::sstring, ss::sstring> env{
+          {"REDPANDA_INPUT_TOPIC", _meta.input.tp()},
+          {"REDPANDA_OUTPUT_TOPIC", _meta.output.tp()},
+        };
         auto wasi_module = std::make_unique<wasi::preview1_module>(args, env);
         register_wasi_module(wasi_module.get(), wasmedge_wasi_module);
 
@@ -631,7 +642,7 @@ public:
         modules.push_back(std::move(wasmedge_wasi_module));
 
         return std::make_unique<wasmedge_engine>(
-          _user_module_name,
+          _meta.function_name,
           std::move(modules),
           std::move(store_ctx),
           std::move(vm_ctx),
@@ -642,7 +653,7 @@ public:
 private:
     runtime* _rt;
     ss::sstring _user_module_source;
-    ss::sstring _user_module_name;
+    transform::metadata _meta;
 };
 
 } // namespace
@@ -653,12 +664,10 @@ std::unique_ptr<runtime, decltype(&delete_runtime)> make_runtime() {
 
 bool is_running() { return is_executing; }
 
-std::unique_ptr<engine::factory> compile(
-  runtime* rt,
-  std::string_view wasm_module_name,
-  std::string_view wasm_source) {
+std::unique_ptr<engine::factory>
+compile(runtime* rt, transform::metadata meta, std::string_view wasm_source) {
     // TODO: see if compiling works here
     return std::make_unique<wasmedge_engine_factory>(
-      rt, ss::sstring(wasm_source), ss::sstring(wasm_module_name));
+      rt, std::move(meta), ss::sstring(wasm_source));
 }
 } // namespace wasm::wasmedge

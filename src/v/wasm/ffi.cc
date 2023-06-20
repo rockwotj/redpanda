@@ -21,6 +21,7 @@
 namespace wasm::ffi {
 
 void sizer::append(std::string_view s) { _offset += s.size(); }
+void sizer::append(bytes_view s) { _offset += s.size(); }
 void sizer::append(const iobuf& b) { _offset += b.size_bytes(); }
 void sizer::append_with_length(std::string_view s) {
     append(s.size());
@@ -48,6 +49,11 @@ void writer::append_with_length(std::string_view s) {
     append(s);
 }
 void writer::append(std::string_view s) {
+    ensure_size(s.size());
+    std::copy(s.cbegin(), s.cend(), &_output[_offset]);
+    _offset += s.size();
+}
+void writer::append(bytes_view s) {
     ensure_size(s.size());
     std::copy(s.cbegin(), s.cend(), &_output[_offset]);
     _offset += s.size();
@@ -88,7 +94,10 @@ void writer::ensure_size(size_t size) {
     auto remainder = slice_remainder();
     if (size > remainder.size()) {
         throw std::out_of_range(ss::format(
-          "ffi::array buffer too small {} > {}", size, remainder.size()));
+          "ffi::array buffer too small {} > {}, total: {}",
+          size,
+          remainder.size(),
+          _output.size()));
     }
 }
 ffi::array<uint8_t> writer::slice_remainder() {

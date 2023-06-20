@@ -11,6 +11,7 @@
 
 #include "model/record.h"
 #include "model/tests/random_batch.h"
+#include "model/timeout_clock.h"
 #include "ssx/thread_worker.h"
 #include "wasm/probe.h"
 #include "wasm/wasm.h"
@@ -22,6 +23,8 @@
 
 class wasm_test_fixture {
 public:
+    static constexpr model::timestamp NOW = model::timestamp(1687201340524ULL);
+
     wasm_test_fixture();
     wasm_test_fixture(const wasm_test_fixture&) = delete;
     wasm_test_fixture& operator=(const wasm_test_fixture&) = delete;
@@ -33,6 +36,8 @@ public:
     model::record_batch make_tiny_batch();
     ss::circular_buffer<model::record_batch>
     transform(const model::record_batch&);
+
+    wasm::transform::metadata meta() const { return _meta; };
 
 private:
     ssx::thread_worker _worker;
