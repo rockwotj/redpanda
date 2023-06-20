@@ -22,6 +22,11 @@
 
 namespace wasm::ffi {
 
+std::string_view array_as_string_view(array<uint8_t> arr) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return {reinterpret_cast<char*>(arr.raw()), arr.size()};
+}
+
 void sizer::append(std::string_view s) { _offset += s.size(); }
 void sizer::append(bytes_view s) { _offset += s.size(); }
 void sizer::append(const iobuf& b) { _offset += b.size_bytes(); }

@@ -87,6 +87,8 @@ private:
     uint32_t _size;
 };
 
+std::string_view array_as_string_view(array<uint8_t> arr);
+
 /**
  * A helper class to compute the size of buffer that is needed for encoding.
  *
@@ -226,20 +228,11 @@ public:
     }
 };
 
+/** The values we support passing via FFI right now. */
 enum class val_type { i32, i64, f32, f64 };
-
 std::ostream& operator<<(std::ostream& o, val_type vt);
 
-struct val {
-    val_type type;
-    uint64_t value;
-};
-
-inline std::string_view array_as_string_view(array<uint8_t> arr) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return {reinterpret_cast<char*>(arr.raw()), arr.size()};
-}
-
+namespace detail {
 template<class T>
 struct dependent_false : std::false_type {};
 
@@ -257,12 +250,12 @@ struct is_array<C<U>> {
  */
 template<typename Type>
 void transform_type(std::vector<val_type>& types) {
-    if constexpr (std::is_same_v<ffi::memory*, Type> || std::is_void_v<Type>) {
+    if constexpr (std::is_same_v<memory*, Type> || std::is_void_v<Type>) {
         // We don't pass memory type over the FFI boundary, but make the runtime
         // provide it, so we can just ignore it here (along with void for return
         // types).
     } else if constexpr (
-      ffi::is_array<Type>::value || std::is_same_v<Type, ss::sstring>) {
+      is_array<Type>::value || std::is_same_v<Type, ss::sstring>) {
         // Push back an arg for the pointer
         types.push_back(val_type::i32);
         // Push back an other arg for the length
@@ -281,22 +274,6 @@ void transform_type(std::vector<val_type>& types) {
     }
 }
 
-template<typename... Args>
-concept EmptyPack = sizeof...(Args) == 0;
-
-template<typename... Rest>
-void transform_types(std::vector<val_type>&)
-requires EmptyPack<Rest...>
-{
-    // Nothing to do
-}
-
-template<typename Type, typename... Rest>
-void transform_types(std::vector<val_type>& types) {
-    transform_type<Type>(types);
-    transform_types<Rest...>(types);
-}
-
 /**
  * This extracts raw FFI call parameters into our higher level types.
  */
@@ -305,7 +282,7 @@ std::tuple<Type> extract_parameter(
   ffi::memory* mem, std::span<const uint64_t> raw_params, unsigned& idx) {
     if constexpr (std::is_same_v<ffi::memory*, Type>) {
         return std::tuple(mem);
-    } else if constexpr (ffi::is_array<Type>::value) {
+    } else if constexpr (detail::is_array<Type>::value) {
         auto guest_ptr = static_cast<uint32_t>(raw_params[idx++]);
         auto ptr_len = static_cast<uint32_t>(raw_params[idx++]);
         void* host_ptr = mem->translate_raw(
@@ -345,10 +322,27 @@ std::tuple<Type> extract_parameter(
     }
 }
 
+template<typename... Args>
+concept EmptyPack = sizeof...(Args) == 0;
+} // namespace detail
+
+template<typename... Rest>
+void transform_types(std::vector<val_type>&)
+requires detail::EmptyPack<Rest...>
+{
+    // Nothing to do
+}
+
+template<typename Type, typename... Rest>
+void transform_types(std::vector<val_type>& types) {
+    transform_type<Type>(types);
+    transform_types<Rest...>(types);
+}
+
 template<typename... Rest>
 std::tuple<>
 extract_parameters(ffi::memory*, std::span<const uint64_t>, unsigned)
-requires EmptyPack<Rest...>
+requires detail::EmptyPack<Rest...>
 {
     return std::make_tuple();
 }
@@ -356,23 +350,23 @@ requires EmptyPack<Rest...>
 template<typename Type, typename... Rest>
 std::tuple<Type, Rest...> extract_parameters(
   ffi::memory* mem, std::span<const uint64_t> params, unsigned idx) {
-    auto head_type = extract_parameter<Type>(mem, params, idx);
+    auto head_type = detail::extract_parameter<Type>(mem, params, idx);
     return std::tuple_cat(
       std::move(head_type), extract_parameters<Rest...>(mem, params, idx));
 }
 
 template<typename... Rest>
 size_t parameter_count()
-requires EmptyPack<Rest...>
+requires detail::EmptyPack<Rest...>
 {
     return 0;
 }
 template<typename Type, typename... Rest>
 size_t parameter_count() {
     size_t r = 0;
-    if constexpr (std::is_same_v<ffi::memory*, Type>) {
+    if constexpr (std::is_same_v<memory*, Type>) {
         r = 0;
-    } else if constexpr (ffi::is_array<Type>::value) {
+    } else if constexpr (detail::is_array<Type>::value) {
         r = 2;
     } else {
         r = 1;
