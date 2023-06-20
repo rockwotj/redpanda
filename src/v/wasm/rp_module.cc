@@ -14,6 +14,7 @@
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "utils/named_type.h"
 #include "utils/vint.h"
@@ -33,8 +34,11 @@ namespace {
 static ss::logger log("rp_wasm_module_log");
 } // namespace
 
-redpanda_module::redpanda_module(pandaproxy::schema_registry::sharded_store* s)
-  : _schema_registry_store(s) {}
+redpanda_module::redpanda_module(
+  pandaproxy::schema_registry::sharded_store* s,
+  pandaproxy::schema_registry::seq_writer* w)
+  : _schema_registry_store(s)
+  , _seq_writer(w) {}
 
 model::record_batch redpanda_module::for_each_record(
   const model::record_batch* input,
@@ -290,8 +294,8 @@ ss::future<int32_t> redpanda_module::get_subject_schema_len(
         write_encoded_schema_subject(schema, &sizer);
         *size_out = sizer.total();
         co_return 0;
-    } catch (...) {
-        vlog(log.warn, "error fetching schema {}/{}", sub, version);
+    } catch (const std::exception& ex) {
+        vlog(log.warn, "error fetching schema {}/{}: {}", sub, version, ex);
         co_return -2;
     }
 }
@@ -313,10 +317,72 @@ ss::future<int32_t> redpanda_module::get_subject_schema(
         ffi::writer writer(buf);
         write_encoded_schema_subject(schema, &writer);
         co_return writer.total();
-    } catch (...) {
-        vlog(log.warn, "error fetching schema {}/{}", sub, version);
+    } catch (const std::exception& ex) {
+        vlog(log.warn, "error fetching schema {}/{}: {}", sub, version, ex);
         co_return -2;
     }
+}
+
+ss::future<int32_t> redpanda_module::create_subject_schema(
+  pandaproxy::schema_registry::subject sub,
+  ffi::array<uint8_t> buf,
+  pandaproxy::schema_registry::schema_id* out_schema_id) {
+    if (!_seq_writer || !_schema_registry_store) {
+        co_return -1;
+    }
+
+    ffi::reader r(buf);
+    using namespace pandaproxy::schema_registry;
+    schema_type type = schema_type::avro;
+    ss::sstring def;
+    unparsed_schema_definition::references refs;
+    try {
+        switch (r.read_varint()) {
+        case int64_t(schema_type::avro):
+            type = schema_type::avro;
+            break;
+        case int64_t(schema_type::protobuf):
+            type = schema_type::protobuf;
+            break;
+        case int64_t(schema_type::json):
+            type = schema_type::json;
+            break;
+        default:
+            co_return -2;
+        }
+        def = r.read_sized_string();
+        auto rc = r.read_varint();
+        refs.reserve(rc);
+        for (int i = 0; i < rc; ++i) {
+            auto name = r.read_sized_string();
+            auto sub = r.read_sized_string();
+            auto v = int(r.read_varint());
+            refs.emplace_back(name, subject(sub), schema_version(v));
+        }
+    } catch (const std::exception& ex) {
+        vlog(log.warn, "error decoding subject schema: {}", ex);
+        co_return -2;
+    }
+    canonical_schema parsed;
+    try {
+        co_await _seq_writer->read_sync();
+        parsed = co_await _schema_registry_store->make_canonical_schema(
+          unparsed_schema(
+            sub,
+            unparsed_schema_definition(std::move(def), type, std::move(refs))));
+    } catch (const std::exception& ex) {
+        vlog(log.warn, "error parsing subject schema: {}", ex);
+        co_return -2;
+    }
+    try {
+        *out_schema_id = co_await _seq_writer->write_subject_version(
+          {.schema = std::move(parsed)});
+    } catch (const std::exception& ex) {
+        vlog(log.warn, "error registering subject schema: {}", ex);
+        co_return -2;
+    }
+
+    co_return 0;
 }
 
 } // namespace wasm

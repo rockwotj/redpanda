@@ -61,8 +61,10 @@ public:
         factory& operator=(const factory&) = delete;
         factory(factory&&) = delete;
         factory& operator=(factory&&) = delete;
-        virtual std::unique_ptr<engine>
-        make_engine(pandaproxy::schema_registry::sharded_store*) = 0;
+        virtual std::unique_ptr<engine> make_engine(
+          pandaproxy::schema_registry::sharded_store*,
+          pandaproxy::schema_registry::seq_writer*)
+          = 0;
         virtual ~factory() = default;
     };
 };

@@ -15,8 +15,10 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <string_view>
+#include <valarray>
 
 namespace wasm::ffi {
 
@@ -36,7 +38,7 @@ void sizer::append(int32_t v) { _offset += vint::vint_size(v); }
 void sizer::append(uint64_t v) { _offset += vint::vint_size(int64_t(v)); }
 void sizer::append(int64_t v) { _offset += vint::vint_size(v); }
 
-writer::writer(ffi::array<uint8_t> buf)
+writer::writer(array<uint8_t> buf)
   : _tmp(vint::max_length, 0)
   , _output(buf) {}
 
@@ -67,7 +69,7 @@ void writer::append(const iobuf& b) {
 
 namespace {
 template<typename T>
-size_t append_integer(bytes tmp, T v, ffi::array<uint8_t> output) {
+size_t append_integer(bytes tmp, T v, array<uint8_t> output) {
     size_t amt = vint::serialize(int64_t(v), tmp.data());
     if (amt > output.size()) {
         throw std::out_of_range(ss::format(
@@ -100,8 +102,57 @@ void writer::ensure_size(size_t size) {
           _output.size()));
     }
 }
-ffi::array<uint8_t> writer::slice_remainder() {
+array<uint8_t> writer::slice_remainder() {
     return _output.slice(_offset, _output.size() - _offset);
+}
+
+reader::reader(ffi::array<uint8_t> buf)
+  : _input(buf) {}
+ss::sstring reader::read_string(size_t size) {
+    auto r = slice_remainder();
+    if (r.size() < size) {
+        throw std::out_of_range(ss::format(
+          "ffi::array buffer too small {} > {}, total: {}",
+          size,
+          r.size(),
+          _input.size()));
+    }
+    ss::sstring s;
+    auto sv = array_as_string_view(slice_remainder());
+    s.append(sv.data(), size);
+    _offset += size;
+    return s;
+}
+iobuf reader::read_iobuf(size_t size) {
+    auto r = slice_remainder();
+    if (r.size() < size) {
+        throw std::out_of_range(ss::format(
+          "ffi::array buffer too small {} > {}, total: {}",
+          size,
+          r.size(),
+          _input.size()));
+    }
+    iobuf b;
+    b.append(r.raw(), size);
+    _offset += size;
+    return b;
+}
+iobuf reader::read_sized_iobuf() {
+    int64_t size = read_varint();
+    return read_iobuf(size);
+}
+ss::sstring reader::read_sized_string() {
+    int64_t size = read_varint();
+    return read_string(size);
+}
+int64_t reader::read_varint() {
+    auto r = slice_remainder();
+    auto [v, sz] = vint::deserialize(std::span<uint8_t>{r.raw(), r.size()});
+    _offset += sz;
+    return v;
+}
+array<uint8_t> reader::slice_remainder() {
+    return _input.slice(_offset, _input.size() - _offset);
 }
 
 std::ostream& operator<<(std::ostream& o, val_type vt) {

@@ -169,7 +169,8 @@ service::deploy_transform(transform::metadata meta, ss::sstring source) {
     co_await container().invoke_on_all(
       [this, &engine_factory, &meta](service& s) {
           auto e = engine_factory->make_engine(
-            _schema_registry ? _schema_registry->_store.get() : nullptr);
+            _schema_registry ? _schema_registry->_store.get() : nullptr,
+            _schema_registry ? &_schema_registry->_sequencer.local() : nullptr);
           return e->start().then([&meta, &s, e = std::move(e)]() mutable {
               auto& m = s._transforms;
               auto it = m.find(meta.input);

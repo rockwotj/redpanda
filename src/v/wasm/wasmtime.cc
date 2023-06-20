@@ -351,6 +351,7 @@ void register_rp_module(redpanda_module* mod, wasmtime_linker_t* linker) {
     REG_HOST_FN(write_record);
     REG_HOST_FN(get_schema_definition);
     REG_HOST_FN(get_schema_definition_len);
+    REG_HOST_FN(create_subject_schema);
 #undef REG_HOST_FN
 }
 
@@ -539,7 +540,8 @@ public:
       , _meta(std::move(meta)) {}
 
     std::unique_ptr<engine> make_engine(
-      pandaproxy::schema_registry::sharded_store* schema_registry_store) final {
+      pandaproxy::schema_registry::sharded_store* schema_registry_store,
+      pandaproxy::schema_registry::seq_writer* schema_registry_writer) final {
         handle<wasmtime_store_t, wasmtime_store_delete> store{
           wasmtime_store_new(_engine, nullptr, nullptr)};
         auto* context = wasmtime_store_context(store.get());
@@ -547,7 +549,7 @@ public:
           wasmtime_linker_new(_engine)};
 
         auto rp_module = std::make_unique<redpanda_module>(
-          schema_registry_store);
+          schema_registry_store, schema_registry_writer);
         register_rp_module(rp_module.get(), linker.get());
 
         std::vector<ss::sstring> args{_meta.function_name};

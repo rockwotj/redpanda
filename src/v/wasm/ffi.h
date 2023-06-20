@@ -138,13 +138,13 @@ private:
 };
 
 /**
- * A helper class for writing data to an ffi::array<uint8_t> (aka guest buffer).
+ * A helper class for writing data to a ffi::array<uint8_t> (aka guest buffer).
  *
  * See the sizer documentation for more information.
  */
 class writer {
 public:
-    explicit writer(ffi::array<uint8_t>);
+    explicit writer(array<uint8_t>);
     writer(const writer&) = delete;
     writer& operator=(const writer&) = delete;
     writer(writer&&) = default;
@@ -165,10 +165,38 @@ public:
 
 private:
     void ensure_size(size_t);
-    ffi::array<uint8_t> slice_remainder();
+    array<uint8_t> slice_remainder();
 
     bytes _tmp;
-    ffi::array<uint8_t> _output;
+    array<uint8_t> _output;
+    size_t _offset{0};
+};
+
+/**
+ * A helper class for reading data from a ffi::array<uint8_t> (aka guest
+ * buffer).
+ *
+ * This can perform the mirror of operations that are supported in writer.
+ */
+class reader {
+public:
+    explicit reader(array<uint8_t>);
+    reader(const reader&) = delete;
+    reader& operator=(const reader&) = delete;
+    reader(reader&&) = default;
+    reader& operator=(reader&&) = default;
+    ~reader() = default;
+
+    ss::sstring read_string(size_t);
+    iobuf read_iobuf(size_t);
+    iobuf read_sized_iobuf();
+    ss::sstring read_sized_string();
+    int64_t read_varint();
+
+private:
+    array<uint8_t> slice_remainder();
+
+    array<uint8_t> _input;
     size_t _offset{0};
 };
 
