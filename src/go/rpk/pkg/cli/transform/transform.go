@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) error) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:        "transform",
 		Aliases:    []string{"wasm"},
@@ -25,7 +25,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	p.InstallKafkaFlags(cmd)
 	cmd.AddCommand(
 		newInitializeCommand(fs, p),
-		newBuildCommand(fs),
+		newBuildCommand(fs, execFn),
 		newDeployCommand(fs, p),
 		newListCommand(fs, p),
 		newDeleteCommand(fs, p),

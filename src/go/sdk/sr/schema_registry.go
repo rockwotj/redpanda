@@ -94,8 +94,7 @@ type subjectVersion struct {
 }
 
 type (
-	clientImpl struct {
-	}
+	clientImpl        struct{}
 	cachingClientImpl struct {
 		underlying                  SchemaRegistryClient
 		schemaByIdCache             map[schemaId]*Schema
@@ -141,6 +140,7 @@ func (sr *cachingClientImpl) LookupSchemaById(id int) (s *Schema, err error) {
 	}
 	return
 }
+
 func (sr *clientImpl) LookupSchemaById(id int) (*Schema, error) {
 	var length int32
 	errno := getSchemaDefinitionLen(schemaId(id), unsafe.Pointer(&length))
