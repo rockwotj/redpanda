@@ -113,8 +113,8 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			// }
 		},
 	}
-	cmd.Flags().StringVar(&inputTopic, "input-topic", "", "The input topic to apply the transform to")
-	cmd.Flags().StringVar(&outputTopic, "output-topic", "", "The output topic to write the transform results to")
+	cmd.Flags().StringVarP(&inputTopic, "input-topic", "i", "", "The input topic to apply the transform to")
+	cmd.Flags().StringVarP(&outputTopic, "output-topic", "o", "", "The output topic to write the transform results to")
 	cmd.Flags().StringVar(&functionName, "name", "", "The name of the transform")
 	return cmd
 }
