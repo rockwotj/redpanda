@@ -30,6 +30,7 @@ func main() {
 	redpanda.OnRecordWritten(avroToJsonTransform)
 }
 
+// This is an example transform that converts avro->json using the avro schema specified in schema registry.
 func avroToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 	v := e.Record().Value
 	if len(v) < 5 || v[0] != 0 {
