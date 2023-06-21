@@ -118,7 +118,6 @@ var (
 )
 
 func init() {
-	// Don't register a wasm-opt as it's really a tinygo dep
 	for _, p := range []buildPlugin{tinygoPlugin} {
 		plugin.RegisterManaged(p.Name, []string{"transform", "build", p.Name}, func(c *cobra.Command, fs afero.Fs, _ *config.Params) *cobra.Command {
 			run := c.Run
@@ -127,9 +126,7 @@ func init() {
 				out.MaybeDie(err, "unable to find the transform, are you in the same directory as the %q?", configFileName)
 				_, err = installPlugin(cmd.Context(), tinygoPlugin, fs)
 				out.MaybeDie(err, "unable to install %s plugin: %v", p.Name, err)
-				if p.modifyArgs != nil {
-					args = p.modifyArgs(cmd, cfg, args)
-				}
+				args = p.ModifyArgs(cmd, cfg, args)
 				run(cmd, args)
 			}
 			return c
@@ -189,7 +186,7 @@ func installPlugin(ctx context.Context, p buildPlugin, fs afero.Fs) (path string
 		if err != nil {
 			return "", err
 		}
-		path, err = downloadPlugin(ctx, dep, fs, depSha, true)
+		_, err = downloadPlugin(ctx, dep, fs, depSha, true)
 		if err != nil {
 			return "", err
 		}
