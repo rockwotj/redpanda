@@ -10,7 +10,6 @@ package transform
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -24,31 +23,60 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var tinygoPluginSha256 string
+type buildPlugin struct {
+	// the name of the plugin, this will also be the command name.
+	name string
+	// the base url to download the plugin from, the end should be `/{name}-{goos}-{goarch}.tar.gz`
+	baseUrl string
+	// [GOOS][GOARCH] = shasum
+	shaSums map[string]map[string]string
+	// A callback to modify arguments before executing the command
+	modifyArgs func(c *cobra.Command, p WasmProjectConfig, args []string) []string
+}
 
-func init() {
-	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
-		tinygoPluginSha256 = "6cc3ffbbba25429b46bb83dc36a87e4d83e5b33d9e562492339c91e4338ca95b"
-	} else if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" {
-		tinygoPluginSha256 = "ec86763291dd3993f83db4600f529451d8f31d70a85917573536b759808607b3"
-	}
-	plugin.RegisterManaged("tinygo", []string{"transform", "build", "tinygo"}, func(c *cobra.Command, fs afero.Fs, _ *config.Params) *cobra.Command {
-		run := c.Run
-		c.Run = func(cmd *cobra.Command, args []string) {
-			cfg, err := loadCfg(fs)
-			out.MaybeDie(err, "unable to find the transform, are you in the same directory as the %q?", configFileName)
-			_, err = installPlugin(cmd.Context(), fs)
-			out.MaybeDie(err, "unable to install tinygo plugin", err)
+var (
+	tinygoPlugin = buildPlugin{
+		name:    "tinygo",
+		baseUrl: "https://github.com/rockwotj/tinygo/releases/download/v0.28.1-rpk",
+		shaSums: map[string]map[string]string{
+			"linux": map[string]string{
+				"amd64": "f2dff481f71319007f7715d61cabf60643838dd7ceeda05d7af68811d13e813d",
+				"arm64": "e42e393e073b4955eb3b25f630dfd0d013328e8d7664bc9efe97c76b833cf811",
+			},
+			"darwin": map[string]string{
+				"amd64": "",
+				"arm64": "",
+			},
+		},
+		modifyArgs: func(c *cobra.Command, p WasmProjectConfig, args []string) []string {
+			// Add the output flag if not specified
 			for _, arg := range args {
 				if arg == "-o" || strings.HasPrefix(arg, "-o=") {
-					run(cmd, args)
-					return
+					return args
 				}
 			}
-			run(cmd, append(args, "-o", fmt.Sprintf("%s.wasm", cfg.Name)))
-		}
-		return c
-	})
+			return append(args, "-o", fmt.Sprintf("%s.wasm", p.Name))
+		},
+	}
+)
+
+func init() {
+	for _, p := range []buildPlugin{tinygoPlugin} {
+		plugin.RegisterManaged(p.name, []string{"transform", "build", p.name}, func(c *cobra.Command, fs afero.Fs, _ *config.Params) *cobra.Command {
+			run := c.Run
+			c.Run = func(cmd *cobra.Command, args []string) {
+				cfg, err := loadCfg(fs)
+				out.MaybeDie(err, "unable to find the transform, are you in the same directory as the %q?", configFileName)
+				_, err = installPlugin(cmd.Context(), tinygoPlugin, fs)
+				out.MaybeDie(err, "unable to install %s plugin: %v", p.name, err)
+				if p.modifyArgs != nil {
+					args = p.modifyArgs(cmd, cfg, args)
+				}
+				run(cmd, args)
+			}
+			return c
+		})
+	}
 }
 
 func newBuildCommand(fs afero.Fs, execFn func(string, []string) error) *cobra.Command {
@@ -61,7 +89,7 @@ func newBuildCommand(fs afero.Fs, execFn func(string, []string) error) *cobra.Co
 			out.MaybeDie(err, "unable to find the transform, are you in the same directory as the %q?", configFileName)
 			switch cfg.Language {
 			case WasmLangTinygo:
-				tinygo, err := installPlugin(cmd.Context(), fs)
+				tinygo, err := installPlugin(cmd.Context(), tinygoPlugin, fs)
 				out.MaybeDie(err, "unable to install tinygo plugin: %v", err)
 				out.MaybeDieErr(execFn(tinygo, []string{"-o", fmt.Sprintf("%s.wasm", cfg.Name)}))
 			default:
@@ -72,32 +100,43 @@ func newBuildCommand(fs afero.Fs, execFn func(string, []string) error) *cobra.Co
 	return cmd
 }
 
-func installPlugin(ctx context.Context, fs afero.Fs) (path string, err error) {
-	if tinygoPluginSha256 == "" {
-		return "", errors.New("tinygo plugin is not supported in this environment")
+func installPlugin(ctx context.Context, p buildPlugin, fs afero.Fs) (path string, err error) {
+	sha := ""
+	a, ok := p.shaSums[runtime.GOOS]
+	if ok {
+		archSha, ok := a[runtime.GOARCH]
+		if ok {
+			sha = archSha
+		}
+	}
+	if sha == "" {
+		return "", fmt.Errorf("%s plugin is not supported in this environment", p.name)
 	}
 	// First load our configuration and token.
 	pluginDir, err := plugin.DefaultBinPath()
 	if err != nil {
 		return "", fmt.Errorf("unable to determine managed plugin path: %v", err)
 	}
-	tinygo, pluginExists := plugin.ListPlugins(fs, []string{pluginDir}).Find("tinygo")
+	tinygo, pluginExists := plugin.ListPlugins(fs, []string{pluginDir}).Find(p.name)
 	if pluginExists {
-		sha, err := plugin.Sha256Path(fs, tinygo.Path)
+		fsha, err := plugin.Sha256Path(fs, tinygo.Path)
 		if err != nil {
 			return "", fmt.Errorf("unable to determine if plugin is up to date: %v", err)
 		}
-		if sha == tinygoPluginSha256 {
+		if sha == fsha {
 			return tinygo.Path, nil
 		}
 	}
 	url := fmt.Sprintf(
-		"https://github.com/rockwotj/tinygo/releases/download/v.0.28.1/tinygo-%s-%s.tar.gz",
+		"%s/%s-%s-%s.tar.gz",
+		p.baseUrl,
+		p.name,
 		runtime.GOOS,
 		runtime.GOARCH,
 	)
-	fmt.Println("latest tinygo build plugin not found, downloading now...")
-	bin, err := plugin.Download(ctx, url, true, tinygoPluginSha256)
+	fmt.Println(url)
+	fmt.Printf("latest %s build plugin not found, downloading now...\n", p.name)
+	bin, err := plugin.Download(ctx, url, true, sha)
 	if exists, _ := afero.DirExists(fs, pluginDir); !exists {
 		if rpkos.IsRunningSudo() {
 			return "", fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the plugin as a root owned binary in %s", pluginDir)
@@ -107,10 +146,10 @@ func installPlugin(ctx context.Context, fs afero.Fs) (path string, err error) {
 			return "", fmt.Errorf("unable to create plugin bin directory: %v", err)
 		}
 	}
-	path, err = plugin.WriteBinary(fs, "tinygo", pluginDir, bin, false, true)
+	path, err = plugin.WriteBinary(fs, p.name, pluginDir, bin, false, true)
 	if err != nil {
-		return "", fmt.Errorf("unable to write tinygo plugin to disk: %v", err)
+		return "", fmt.Errorf("unable to write %s plugin to disk: %v", p.name, err)
 	}
-	fmt.Println("latest tinygo build plugin download complete ✔️")
+	fmt.Printf("latest %s build plugin download complete\n", p.name)
 	return path, nil
 }
