@@ -16,39 +16,60 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
-	"errors"
 
 	"github.com/rockwotj/redpanda/src/go/sdk"
 	"github.com/rockwotj/redpanda/src/go/sdk/sr"
 )
 
-var c sr.SchemaRegistryClient
+var (
+	c         sr.SchemaRegistryClient
+	s         sr.Serde[*Example]
+	topicName = "demo-topic"
+)
 
 func main() {
 	c = sr.NewClient()
+	e := Example{}
+	c.CreateSchema(topicName+"-value", sr.Schema{
+		Type:   sr.TypeAvro,
+		Schema: e.Schema(),
+	})
 	redpanda.OnRecordWritten(avroToJsonTransform)
 }
 
 // This is an example transform that converts avro->json using the avro schema specified in schema registry.
 func avroToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 	v := e.Record().Value
-	if len(v) < 5 || v[0] != 0 {
-		return nil, errors.New("invalid schema registry header")
-	}
-	id := binary.BigEndian.Uint32(v[1:5])
-	s, err := c.LookupSchemaById(int(id))
-	if err != nil {
+	ex := Example{}
+	// Attempt to decode the value, if it's from a schema we don't know about then
+	// look it up and then try to decode.
+	err := s.Decode(v, &ex)
+	if err == sr.ErrNotRegistered {
+		id, err := sr.ExtractID(v)
+		if err != nil {
+			return nil, err
+		}
+		schema, err := c.LookupSchemaById(id)
+		if err != nil {
+			return nil, err
+		}
+		// Register the new schema
+		s.Register(id, sr.DecodeFn[*Example](func(b []byte, e *Example) error {
+			ex, err := DeserializeExampleFromSchema(
+				bytes.NewReader(b),
+				schema.Schema,
+			)
+			*e = ex
+			return err
+		}))
+		// Now try and decode the value now that we've looked it up.
+		if err = s.Decode(v, &ex); err != nil {
+			return nil, err
+		}
+	} else if err != nil {
 		return nil, err
 	}
-	v = v[5:]
-	ex, err := DeserializeExampleFromSchema(
-		bytes.NewReader(v),
-		s.Schema,
-	)
-	if err != nil {
-		return nil, err
-	}
+	// Output the record as JSON.
 	j, err := ex.MarshalJSON()
 	return []redpanda.Record{{
 		Key:   e.Record().Key,
