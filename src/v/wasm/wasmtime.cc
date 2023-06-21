@@ -169,7 +169,8 @@ wasmtime_val_t convert_to_wasmtime(T value) {
           .kind = WASMTIME_I32, .of = {.i32 = static_cast<int32_t>(value)}};
     } else {
         static_assert(
-          ffi::dependent_false<T>::value, "Unsupported wasm result type");
+          ffi::detail::dependent_false<T>::value,
+          "Unsupported wasm result type");
     }
 }
 

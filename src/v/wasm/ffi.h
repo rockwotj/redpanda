@@ -335,7 +335,7 @@ requires detail::EmptyPack<Rest...>
 
 template<typename Type, typename... Rest>
 void transform_types(std::vector<val_type>& types) {
-    transform_type<Type>(types);
+    detail::transform_type<Type>(types);
     transform_types<Rest...>(types);
 }
 

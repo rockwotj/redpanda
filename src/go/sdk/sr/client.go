@@ -73,6 +73,12 @@ type SchemaRegistryClient interface {
 	//
 	// Use version -1 to get the latest version.
 	LookupSchemaByVersion(subject string, version int) (s *SubjectSchema, err error)
+	// CreateSchema creates a schema under the given subject, returning the version and ID.
+	//
+	// If an equivalent schema already exists globally, that schema ID will be reused.
+	// If an equivalent schema already exists within that subject, this will be a noop and the
+	// existing schema will be returned.
+	CreateSchema(subject string, schema Schema) (s *SubjectSchema, err error)
 }
 
 type (
@@ -176,7 +182,6 @@ func (sr *cachingClientImpl) LookupSchemaByVersion(subject string, version int) 
 	return
 }
 
-// LookupSchemaById looks up a schema via a subject for a specific version.
 func (sr *clientImpl) LookupSchemaByVersion(subject string, version int) (s *SubjectSchema, err error) {
 	var length int32
 	errno := getSchemaSubjectLen(
@@ -207,51 +212,32 @@ func (sr *clientImpl) LookupSchemaByVersion(subject string, version int) (s *Sub
 	return &schema, nil
 }
 
-func decodeSchema(subject string, buf *rwbuf.RWBuf) (s SubjectSchema, err error) {
-	s.Subject = subject
-	id, err := binary.ReadVarint(buf)
+func (sr *cachingClientImpl) CreateSchema(subject string, schema Schema) (s *SubjectSchema, err error) {
+	s, err = sr.underlying.CreateSchema(subject, schema)
 	if err != nil {
-		return s, err
+		sr.schemaBySubjectVersionCache[subjectVersion{subject, s.Version}] = s
 	}
-	s.ID = int(id)
-	v, err := binary.ReadVarint(buf)
-	if err != nil {
-		return s, err
-	}
-	s.Version = int(v)
-	s.Schema, err = decodeSchemaDef(buf)
 	return
 }
 
-func decodeSchemaDef(buf *rwbuf.RWBuf) (s Schema, err error) {
-	t, err := binary.ReadVarint(buf)
-	if err != nil {
-		return s, err
+func (sr *clientImpl) CreateSchema(subject string, schema Schema) (s *SubjectSchema, err error) {
+	buf := rwbuf.New(binary.MaxVarintLen32 + len(schema.Schema) + binary.MaxVarintLen32)
+	encodeSchemaDef(buf, schema)
+	b := buf.ReadAll()
+	var id schemaId
+	errno := createSubjectSchema(
+		unsafe.Pointer(unsafe.StringData(subject)),
+		int32(len(subject)),
+		unsafe.Pointer(&b[0]),
+		int32(len(b)),
+		unsafe.Pointer(&id),
+	)
+	if errno != 0 {
+		return nil, errors.New("unable to create new schema")
 	}
-	s.Type = SchemaType(t)
-	s.Schema, err = buf.ReadSizedStringCopy()
-	if err != nil {
-		return s, err
-	}
-	rc, err := binary.ReadVarint(buf)
-	if err != nil {
-		return s, err
-	}
-	s.References = make([]Reference, rc)
-	for i := int64(0); i < rc; i++ {
-		s.References[i].Name, err = buf.ReadSizedStringCopy()
-		if err != nil {
-			return
-		}
-		s.References[i].Name, err = buf.ReadSizedStringCopy()
-		if err != nil {
-			return
-		}
-		v, err := binary.ReadVarint(buf)
-		if err != nil {
-			return s, err
-		}
-		s.References[i].Version = int(v)
-	}
-	return
+	return &SubjectSchema{
+		Subject: subject,
+		ID:      int(id),
+		Schema:  schema,
+	}, nil
 }

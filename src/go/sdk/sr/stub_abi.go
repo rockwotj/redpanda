@@ -35,3 +35,7 @@ func getSchemaSubjectLen(subject unsafe.Pointer, subjectLen int32, version int32
 func getSchemaSubject(subject unsafe.Pointer, subjectLen int32, version int32, buf unsafe.Pointer, len int32) int32 {
 	panic("stub")
 }
+
+func createSubjectSchema(subject unsafe.Pointer, subjectLen int32, buf unsafe.Pointer, len int32, schemaIdOut unsafe.Pointer) int32 {
+	panic("stub")
+}

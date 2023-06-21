@@ -80,6 +80,10 @@ func (r *RWBuf) Write(b []byte) (int, error) {
 	r.w += len(b)
 	return len(b), nil
 }
+func (r *RWBuf) WriteString(s string) (int, error) {
+	// This is "safe" because we only copy out of this slice, never write to it.
+	return r.Write(unsafeStringToBytes(s))
+}
 
 func (r *RWBuf) WriteByte(b byte) error {
 	r.EnsureWriterSpace(1)
@@ -95,6 +99,11 @@ func (r *RWBuf) WriteBytesWithSize(b []byte) {
 	}
 	r.WriteVarint(int64(len(b)))
 	r.Write(b)
+}
+
+func (r *RWBuf) WriteStringWithSize(s string) {
+	r.WriteVarint(int64(len(s)))
+	r.WriteString(s)
 }
 
 // Delay a write of size n, that will be issued using the supplied function,

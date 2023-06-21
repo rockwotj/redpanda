@@ -23,7 +23,6 @@
 
 #include <algorithm>
 #include <exception>
-#include <ios>
 #include <optional>
 #include <stdexcept>
 #include <vector>
@@ -32,6 +31,82 @@ namespace wasm {
 namespace {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
 static ss::logger log("rp_wasm_module_log");
+
+using serialized_schema_type = named_type<int64_t, struct schema_id_tag>;
+constexpr serialized_schema_type avro = serialized_schema_type(0);
+constexpr serialized_schema_type protobuf = serialized_schema_type(1);
+constexpr serialized_schema_type json = serialized_schema_type(2);
+
+serialized_schema_type
+serialize_schema_type(pandaproxy::schema_registry::schema_type st) {
+    switch (st) {
+    case pandaproxy::schema_registry::schema_type::avro:
+        return avro;
+    case pandaproxy::schema_registry::schema_type::json:
+        return json;
+    case pandaproxy::schema_registry::schema_type::protobuf:
+        return protobuf;
+    }
+    vassert(false, "unknown schema type: {}", st);
+}
+
+std::optional<pandaproxy::schema_registry::schema_type>
+deserialize_schema_type(serialized_schema_type st) {
+    switch (st()) {
+    case avro():
+        return pandaproxy::schema_registry::schema_type::avro;
+    case json():
+        return pandaproxy::schema_registry::schema_type::json;
+    case protobuf():
+        return pandaproxy::schema_registry::schema_type::protobuf;
+    }
+    return std::nullopt;
+}
+
+template<typename T>
+void write_encoded_schema_def(
+  const pandaproxy::schema_registry::canonical_schema_definition& def, T* w) {
+    w->append(serialize_schema_type(def.type()));
+    w->append_with_length(def.raw()());
+    w->append(def.refs().size());
+    for (const auto& ref : def.refs()) {
+        w->append_with_length(ref.name);
+        w->append_with_length(ref.sub());
+        w->append(ref.version());
+    }
+}
+
+pandaproxy::schema_registry::unparsed_schema_definition
+read_encoded_schema_def(ffi::reader* r) {
+    using namespace pandaproxy::schema_registry;
+    auto serialized_type = serialized_schema_type(r->read_varint());
+    auto type = deserialize_schema_type(serialized_type);
+    if (!type.has_value()) {
+        throw std::runtime_error(
+          ss::format("unknown schema type: {}", serialized_type));
+    }
+    auto def = r->read_sized_string();
+    auto rc = r->read_varint();
+    unparsed_schema_definition::references refs;
+    refs.reserve(rc);
+    for (int i = 0; i < rc; ++i) {
+        auto name = r->read_sized_string();
+        auto sub = r->read_sized_string();
+        auto v = int(r->read_varint());
+        refs.emplace_back(name, subject(sub), schema_version(v));
+    }
+    return {def, *type, refs};
+}
+
+template<typename T>
+void write_encoded_schema_subject(
+  const pandaproxy::schema_registry::subject_schema& schema, T* w) {
+    w->append(schema.id());
+    w->append(schema.version());
+    // not writing the subject because the client should already have it.
+    write_encoded_schema_def(schema.schema.def(), w);
+}
+
 } // namespace
 
 redpanda_module::redpanda_module(
@@ -215,32 +290,6 @@ int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
     return int32_t(buf.size());
 }
 
-namespace {
-
-template<typename T>
-void write_encoded_schema_def(
-  const pandaproxy::schema_registry::canonical_schema_definition& def, T* w) {
-    w->append(int32_t(def.type()));
-    w->append_with_length(def.raw()());
-    w->append(def.refs().size());
-    for (const auto& ref : def.refs()) {
-        w->append_with_length(ref.name);
-        w->append_with_length(ref.sub());
-        w->append(ref.version());
-    }
-}
-
-template<typename T>
-void write_encoded_schema_subject(
-  const pandaproxy::schema_registry::subject_schema& schema, T* w) {
-    w->append(schema.id());
-    w->append(schema.version());
-    // not writing the subject because the client should already have it.
-    write_encoded_schema_def(schema.schema.def(), w);
-}
-
-} // namespace
-
 ss::future<int32_t> redpanda_module::get_schema_definition_len(
   pandaproxy::schema_registry::schema_id schema_id, uint32_t* size_out) {
     if (!_schema_registry_store) {
@@ -333,43 +382,12 @@ ss::future<int32_t> redpanda_module::create_subject_schema(
 
     ffi::reader r(buf);
     using namespace pandaproxy::schema_registry;
-    schema_type type = schema_type::avro;
-    ss::sstring def;
-    unparsed_schema_definition::references refs;
-    try {
-        switch (r.read_varint()) {
-        case int64_t(schema_type::avro):
-            type = schema_type::avro;
-            break;
-        case int64_t(schema_type::protobuf):
-            type = schema_type::protobuf;
-            break;
-        case int64_t(schema_type::json):
-            type = schema_type::json;
-            break;
-        default:
-            co_return -2;
-        }
-        def = r.read_sized_string();
-        auto rc = r.read_varint();
-        refs.reserve(rc);
-        for (int i = 0; i < rc; ++i) {
-            auto name = r.read_sized_string();
-            auto sub = r.read_sized_string();
-            auto v = int(r.read_varint());
-            refs.emplace_back(name, subject(sub), schema_version(v));
-        }
-    } catch (const std::exception& ex) {
-        vlog(log.warn, "error decoding subject schema: {}", ex);
-        co_return -2;
-    }
     canonical_schema parsed;
     try {
+        auto unparsed = read_encoded_schema_def(&r);
         co_await _seq_writer->read_sync();
         parsed = co_await _schema_registry_store->make_canonical_schema(
-          unparsed_schema(
-            sub,
-            unparsed_schema_definition(std::move(def), type, std::move(refs))));
+          unparsed_schema(sub, unparsed));
     } catch (const std::exception& ex) {
         vlog(log.warn, "error parsing subject schema: {}", ex);
         co_return -2;

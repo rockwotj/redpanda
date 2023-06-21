@@ -29,8 +29,11 @@ func getSchemaDefinitionLen(schemaId schemaId, length unsafe.Pointer) int32
 //go:wasmimport redpanda get_schema_definition
 func getSchemaDefinition(schemaId schemaId, buf unsafe.Pointer, len int32) int32
 
-//go:wasmimport redpanda get_schema_subject_len
+//go:wasmimport redpanda get_subject_schema_len
 func getSchemaSubjectLen(subject unsafe.Pointer, subjectLen int32, version int32, lenOut unsafe.Pointer) int32
 
-//go:wasmimport redpanda get_schema_subject
+//go:wasmimport redpanda get_subject_schema
 func getSchemaSubject(subject unsafe.Pointer, subjectLen int32, version int32, buf unsafe.Pointer, len int32) int32
+
+//go:wasmimport redpanda create_schema_subject
+func createSubjectSchema(subject unsafe.Pointer, subjectLen int32, buf unsafe.Pointer, len int32, schemaIdOut unsafe.Pointer) int32

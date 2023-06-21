@@ -149,7 +149,8 @@ WasmEdge_Value convert_to_wasmedge(T value) {
         return WasmEdge_ValueGenI32(value);
     } else {
         static_assert(
-          ffi::dependent_false<T>::value, "Unsupported wasm result type");
+          ffi::detail::dependent_false<T>::value,
+          "Unsupported wasm result type");
     }
 }
 
