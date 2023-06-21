@@ -15,20 +15,41 @@
 package redpanda_test
 
 import (
+	"encoding/json"
+
 	"github.com/rockwotj/redpanda/src/go/sdk"
 )
 
-// This example shows the basic usage of the package:
-// This is a transform that does nothing but copies the same data to an new
-// topic.
-func Example_identityTransform() {
-	// Make sure to register your callback and perform other setup in main
-	redpanda.OnRecordWritten(identityTransform)
+func Example_renameJsonFields() {
+	redpanda.OnRecordWritten(myTransform)
 }
 
-// This will be called for each record in the source topic.
-//
-// The output records returned will be written to the destination topic.
-func identityTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
-	return []redpanda.Record{e.Record()}, nil
+type (
+	Foo struct {
+		A string
+		B int
+		C bool
+	}
+	Bar struct {
+		X string
+		Y int
+		Z bool
+	}
+)
+
+// myTransform writes Bar structs into the output topic, where the input topic
+// contains Foo structs.
+func myTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+	var foo Foo
+	err := json.Unmarshal(e.Record().Value, &foo)
+	if err != nil {
+		return nil, err
+	}
+	bar := Bar{
+		X: foo.A,
+		Y: foo.B,
+		Z: foo.C,
+	}
+	v, err := json.Marshal(&bar)
+	return []redpanda.Record{{Key: e.Record().Key, Value: v}}, err
 }

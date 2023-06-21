@@ -15,20 +15,21 @@
 package redpanda_test
 
 import (
+	"encoding/json"
+
 	"github.com/rockwotj/redpanda/src/go/sdk"
 )
 
-// This example shows the basic usage of the package:
-// This is a transform that does nothing but copies the same data to an new
-// topic.
-func Example_identityTransform() {
-	// Make sure to register your callback and perform other setup in main
-	redpanda.OnRecordWritten(identityTransform)
+// This example shows a filter that outputs only valid JSON into the
+// output topic.
+func Example_validationFilter() {
+	redpanda.OnRecordWritten(filterValidJson)
 }
 
-// This will be called for each record in the source topic.
-//
-// The output records returned will be written to the destination topic.
-func identityTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
-	return []redpanda.Record{e.Record()}, nil
+func filterValidJson(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+	v := []redpanda.Record{}
+	if json.Valid(e.Record().Value) {
+		v = append(v, e.Record())
+	}
+	return v, nil
 }
