@@ -175,6 +175,17 @@ func (s *Serde[T]) MustAppendEncode(b []byte, v T) []byte {
 	return b
 }
 
+// Extract the ID from the header of a schema registry encoded value.
+//
+// Returns ErrBadHeader if the array is missing the leading magic byte
+// or is too small.
+func ExtractID(b []byte) (int, error) {
+	if b == nil || len(b) < 5 || b[0] != 0 {
+		return 0, ErrBadHeader
+	}
+	return int(binary.BigEndian.Uint32(b[1:5])), nil
+}
+
 // Decode decodes b into v. If DecodeFn option was not used, this returns
 // ErrNotRegistered.
 //
@@ -182,10 +193,10 @@ func (s *Serde[T]) MustAppendEncode(b []byte, v T) []byte {
 // full decode function for any top-level ID, regardless of how many other
 // schemas are referenced in top-level ID.
 func (s *Serde[T]) Decode(b []byte, v T) error {
-	if b == nil || len(b) < 5 || b[0] != 0 {
-		return ErrBadHeader
+	id, err := ExtractID(b)
+	if err != nil {
+		return err
 	}
-	id := int(binary.BigEndian.Uint32(b[1:5]))
 	if s.ids == nil {
 		return ErrNotRegistered
 	}
