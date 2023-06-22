@@ -17,72 +17,20 @@
           "nickname": "deploy_wasm",
           "produces": [
             "application/json"
-          ],
-          "parameters": [
-            {
-              "name": "namespace",
-              "in": "query",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "name": "input_topic",
-              "in": "query",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "name": "output_topic",
-              "in": "query",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "name": "function_name",
-              "in": "query",
-              "required": true,
-              "type": "string"
-            }
           ]
         }
       ]
     },
     {
-      "path": "/v1/wasm/deploy",
+      "path": "/v1/wasm/delete",
       "operations": [
         {
-          "method": "DELETE",
-          "summary": "Undeploy wasm",
+          "method": "POST",
+          "summary": "Delete wasm",
           "type": "void",
-          "nickname": "undeploy_wasm",
+          "nickname": "delete_wasm",
           "produces": [
             "application/json"
-          ],
-          "parameters": [
-            {
-              "name": "namespace",
-              "in": "query",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "name": "input_topic",
-              "in": "query",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "name": "output_topic",
-              "in": "query",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "name": "function_name",
-              "in": "query",
-              "required": true,
-              "type": "string"
-            }
           ]
         }
       ]

@@ -4859,7 +4859,7 @@ void admin_server::register_shadow_indexing_routes() {
 }
 
 namespace {
-static json::validator make_deploy_wasm_validator() {
+static json::validator make_wasm_transform_validator() {
     const std::string schema = R"(
 {
     "type": "object",
@@ -4906,7 +4906,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
         throw ss::httpd::bad_request_exception(
           fmt::format("JSON parse error: {}", doc.GetParseError()));
     }
-    auto validator = make_deploy_wasm_validator();
+    auto validator = make_wasm_transform_validator();
     apply_validator(validator, doc);
 
     model::ns ns(doc["namespace"].GetString());
@@ -4981,14 +4981,18 @@ admin_server::list_wasm(std::unique_ptr<ss::http::request>) {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::undeploy_wasm(std::unique_ptr<ss::http::request> req) {
+admin_server::delete_wasm(std::unique_ptr<ss::http::request> req) {
+    auto doc = parse_json_body(*req);
+    auto validator = make_wasm_transform_validator();
+    apply_validator(validator, doc);
+
     auto input_nt = model::topic_namespace(
-      model::ns(req->get_query_param("namespace")),
-      model::topic(req->get_query_param("input_topic")));
-    auto name = req->get_query_param("function_name");
+      model::ns(doc["namespace"].GetString()),
+      model::topic(doc["input_topic"].GetString()));
+    auto name = doc["function_name"].GetString();
     auto output_nt = model::topic_namespace(
-      model::ns(req->get_query_param("namespace")),
-      model::topic(req->get_query_param("output_topic")));
+      model::ns(doc["namespace"].GetString()),
+      model::topic(doc["output_topic"].GetString()));
     co_await _wasm_service.local().undeploy_transform(
       {.function_name = name, .input = input_nt, .output = output_nt});
     co_return ss::json::json_void();
@@ -5005,8 +5009,8 @@ void admin_server::register_wasm_routes() {
     register_route<user>(ss::httpd::wasm_json::list_wasm, [this](auto req) {
         return list_wasm(std::move(req));
     });
-    register_route<user>(ss::httpd::wasm_json::undeploy_wasm, [this](auto req) {
-        return undeploy_wasm(std::move(req));
+    register_route<user>(ss::httpd::wasm_json::delete_wasm, [this](auto req) {
+        return delete_wasm(std::move(req));
     });
 }
 

@@ -10,7 +10,9 @@
 package admin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,6 +21,7 @@ import (
 const (
 	baseWasmEndpoint = "/v1/wasm/"
 	deploySuffix     = "deploy"
+	deleteSuffix     = "delete"
 	listSuffix       = "list"
 )
 
@@ -33,24 +36,32 @@ func generatePathQuery(suffix string, params url.Values) string {
 	return baseWasmEndpoint + suffix + "?" + params.Encode()
 }
 
-// Deploy a wasm transform to a cluster
-func (a *AdminAPI) DeployWasmTransform(ctx context.Context, inputTopic string, outputTopic string, functionName string, file io.Reader) error {
-	params := url.Values{
-		"namespace":     {"kafka"},
-		"input_topic":   {inputTopic},
-		"output_topic":  {outputTopic},
-		"function_name": {functionName},
-	}
-	return a.sendToLeader(ctx, http.MethodPost, generatePathQuery(deploySuffix, params), file, nil)
-}
-
 // These are the wasm functions available
 type ClusterWasmTransform struct {
-	Namespace    string `json:"ns"`
-	InputTopic   string `json:"input_topic"`
-	OutputTopic  string `json:"output_topic"`
-	FunctionName string `json:"function_name"`
-	Status       string `json:"status"`
+	Namespace    string            `json:"ns"`
+	InputTopic   string            `json:"input_topic"`
+	OutputTopic  string            `json:"output_topic"`
+	FunctionName string            `json:"function_name"`
+	Status       string            `json:"status,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+}
+
+// Deploy a wasm transform to a cluster
+func (a *AdminAPI) DeployWasmTransform(ctx context.Context, inputTopic string, outputTopic string, functionName string, file io.Reader) error {
+	params := ClusterWasmTransform{
+		Namespace:    "kafka",
+		InputTopic:   inputTopic,
+		OutputTopic:  outputTopic,
+		FunctionName: functionName,
+	}
+	b, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	// The format of these bytes is a little akward, there is a json header on the wasm source
+	// that specifies the details.
+	body := io.MultiReader(bytes.NewReader(b), file)
+	return a.sendToLeader(ctx, http.MethodPost, generatePath(deploySuffix), body, nil)
 }
 
 // List wasm transforms in a cluster
@@ -62,11 +73,5 @@ func (a *AdminAPI) ListWasmTransforms(ctx context.Context) ([]ClusterWasmTransfo
 
 // Delete a wasm transforms in a cluster
 func (a *AdminAPI) DeleteWasmTransform(ctx context.Context, t ClusterWasmTransform) error {
-	params := url.Values{
-		"namespace":     {t.Namespace},
-		"input_topic":   {t.InputTopic},
-		"output_topic":  {t.OutputTopic},
-		"function_name": {t.FunctionName},
-	}
-	return a.sendToLeader(ctx, http.MethodDelete, generatePathQuery(deploySuffix, params), nil, nil)
+	return a.sendToLeader(ctx, http.MethodPost, generatePath(deleteSuffix), t, nil)
 }

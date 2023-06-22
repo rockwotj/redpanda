@@ -447,7 +447,7 @@ private:
     ss::future<ss::json::json_return_type>
       list_wasm(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      undeploy_wasm(std::unique_ptr<ss::http::request>);
+      delete_wasm(std::unique_ptr<ss::http::request>);
 
     /// Self test routes
     ss::future<ss::json::json_return_type>
