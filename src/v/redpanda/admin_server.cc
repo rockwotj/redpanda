@@ -49,6 +49,7 @@
 #include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "json/document.h"
+#include "json/encodings.h"
 #include "json/schema.h"
 #include "json/stringbuffer.h"
 #include "json/validator.h"
@@ -104,6 +105,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/exception.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
@@ -114,12 +116,14 @@
 #include <seastar/util/short_streams.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <fmt/core.h>
+#include <rapidjson/reader.h>
 
 #include <charconv>
 #include <chrono>
@@ -127,6 +131,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <netdb.h>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
@@ -4853,20 +4858,101 @@ void admin_server::register_shadow_indexing_routes() {
       });
 }
 
+namespace {
+static json::validator make_deploy_wasm_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "namespace": {
+            "type": "string",
+        },
+        "input_topic": {
+            "type": "string",
+        },
+        "output_topic": {
+            "type": "string",
+        },
+        "function_name": {
+            "type": "string",
+        },
+        "env": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            },
+        }
+    },
+    "required": ["namespace", "input_topic", "output_topic", "function_name"],
+    "additionalProperties": false
+}
+)";
+    return json::validator(schema);
+}
+
+} // namespace
+
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> rep) {
+    json::Document doc;
+    rapidjson::GenericStringStream<json::UTF8<>> s(req->content.data());
+    // Parse the JSON document, and stop when we read the end of it, after the
+    // json object is where the wasm file is.
+    doc.ParseStream<
+      rapidjson::kParseDefaultFlags | rapidjson::kParseStopWhenDoneFlag>(s);
+    auto wasm_source = req->content.substr(s.Tell());
+    if (doc.HasParseError()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("JSON parse error: {}", doc.GetParseError()));
+    }
+    auto validator = make_deploy_wasm_validator();
+    apply_validator(validator, doc);
+
+    model::ns ns(doc["namespace"].GetString());
+    if (ns != model::kafka_namespace) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Invalid namespace: {}", ns));
+    }
     auto input_nt = model::topic_namespace(
-      model::ns(req->get_query_param("namespace")),
-      model::topic(req->get_query_param("input_topic")));
+      ns, model::topic(doc["input_topic"].GetString()));
+    if (!_metadata_cache.local().contains(input_nt)) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Topic does not exist: {}", input_nt));
+    }
     auto output_nt = model::topic_namespace(
-      model::ns(req->get_query_param("namespace")),
-      model::topic(req->get_query_param("output_topic")));
-    auto name = req->get_query_param("function_name");
+      ns, model::topic(doc["output_topic"].GetString()));
+    if (!_metadata_cache.local().contains(output_nt)) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Topic does not exist: {}", input_nt));
+    }
+    auto name = doc["function_name"].GetString();
+    for (const auto& t : _wasm_service.local().list_transforms()) {
+        if (t.function_name != name) continue;
+        if (t.input != input_nt || t.output != output_nt) {
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "A transform {} is already registered on different topics, "
+              "please delete that transform first",
+              name));
+        }
+    }
+    absl::flat_hash_map<ss::sstring, ss::sstring> env;
+    // Extract the environment, validating there are no internal environment
+    // variables set.
+    if (doc.HasMember("env")) {
+        for (const auto& m : doc["env"].GetObject()) {
+            std::string_view name = m.name.GetString();
+            if (name.starts_with("REDPANDA_")) {
+                throw ss::httpd::bad_request_exception(
+                  fmt::format("Invalid environment variable: {}", name));
+            }
+            env.insert_or_assign(ss::sstring(name), m.value.GetString());
+        }
+    }
     try {
         co_await _wasm_service.local().deploy_transform(
           {.function_name = name, .input = input_nt, .output = output_nt},
-          std::move(req->content));
+          std::move(wasm_source));
     } catch (const std::exception& ex) {
         vlog(logger.error, "Unknown issue deploying wasm {}", ex);
         throw ex;
