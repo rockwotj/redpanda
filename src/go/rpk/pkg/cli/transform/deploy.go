@@ -11,6 +11,7 @@ package transform
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -24,6 +25,7 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		inputTopic   string
 		outputTopic  string
 		functionName string
+		env          []string
 	)
 	cmd := &cobra.Command{
 		Use:   "deploy [WASM]",
@@ -48,9 +50,9 @@ rpk transform deploy transform.wasm --name myTransform
 			api, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
+			cfg, cfgErr := loadCfg(fs)
 			if functionName == "" {
-				cfg, err := loadCfg(fs)
-				out.MaybeDie(err, "unable to find the transform, are you in the same directory as the %q?", configFileName)
+				out.MaybeDie(cfgErr, "unable to find the transform, are you in the same directory as the %q?", configFileName)
 				functionName = cfg.Name
 			}
 			var path string
@@ -65,8 +67,7 @@ rpk transform deploy transform.wasm --name myTransform
 				out.Die("missing %q", path)
 			}
 			if inputTopic == "" {
-				cfg, err := loadCfg(fs)
-				if err == nil && cfg.InputTopic != "" {
+				if cfgErr == nil && cfg.InputTopic != "" {
 					inputTopic = cfg.InputTopic
 				} else {
 					inputTopic, err = out.Prompt("Select an input topic:")
@@ -74,13 +75,26 @@ rpk transform deploy transform.wasm --name myTransform
 				}
 			}
 			if outputTopic == "" {
-				cfg, err := loadCfg(fs)
-				if err == nil && cfg.OutputTopic != "" {
+				if cfgErr == nil && cfg.OutputTopic != "" {
 					outputTopic = cfg.OutputTopic
 				} else {
 					outputTopic, err = out.Prompt("Select an output topic:")
 					out.MaybeDie(err, "no output topic: %v", err)
 				}
+			}
+
+			envvars, err := splitEnvVars(env)
+			out.MaybeDie(err, "invalid environment variable: %v", err)
+			if cfgErr != nil {
+				m := map[string]string{}
+				// flags override the config file
+				for k, v := range cfg.Env {
+					m[k] = v
+				}
+				for k, v := range envvars {
+					m[k] = v
+				}
+				envvars = m
 			}
 
 			file, err := afero.ReadFile(fs, path)
@@ -106,7 +120,14 @@ rpk transform deploy transform.wasm --name myTransform
 				}
 			}
 
-			err = api.DeployWasmTransform(cmd.Context(), inputTopic, outputTopic, functionName, bytes.NewReader(file))
+			t := admin.ClusterWasmTransform{
+				Namespace:    "kafka",
+				InputTopic:   inputTopic,
+				OutputTopic:  outputTopic,
+				FunctionName: functionName,
+				Env:          envvars,
+			}
+			err = api.DeployWasmTransform(cmd.Context(), t, bytes.NewReader(file))
 			out.MaybeDie(err, "unable to deploy transfrom %q: %v", path, err)
 
 			fmt.Println("Deploy successful!")
@@ -128,5 +149,26 @@ rpk transform deploy transform.wasm --name myTransform
 	cmd.Flags().StringVarP(&inputTopic, "input-topic", "i", "", "The input topic to apply the transform to")
 	cmd.Flags().StringVarP(&outputTopic, "output-topic", "o", "", "The output topic to write the transform results to")
 	cmd.Flags().StringVar(&functionName, "name", "", "The name of the transform")
+	cmd.Flags().StringArrayVar(&env, "env-var", []string{}, "Specify an environment variable in the form of KEY=VALUE")
 	return cmd
+}
+
+func splitEnvVars(raw []string) (map[string]string, error) {
+	e := map[string]string{}
+	for _, r := range raw {
+		i := strings.IndexByte(r, '=')
+		if i == -1 {
+			return nil, fmt.Errorf("missing value for %q", r)
+		}
+		k := r[:i]
+		if k == "" {
+			return nil, fmt.Errorf("missing key for %q", r)
+		}
+		v := r[i+1:]
+		if v == "" {
+			return nil, fmt.Errorf("empty value for %q", r)
+		}
+		e[k] = v
+	}
+	return e, nil
 }

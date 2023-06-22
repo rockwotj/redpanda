@@ -544,10 +544,9 @@ public:
 
         auto wasmedge_wasi_module = create_module(wasi::preview1_module::name);
         std::vector<ss::sstring> args{_meta.function_name};
-        absl::flat_hash_map<ss::sstring, ss::sstring> env{
-          {"REDPANDA_INPUT_TOPIC", _meta.input.tp()},
-          {"REDPANDA_OUTPUT_TOPIC", _meta.output.tp()},
-        };
+        absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.env;
+        env.emplace("REDPANDA_INPUT_TOPIC", _meta.input.tp());
+        env.emplace("REDPANDA_OUTPUT_TOPIC", _meta.output.tp());
         auto wasi_module = std::make_unique<wasi::preview1_module>(args, env);
         register_wasi_module(wasi_module.get(), wasmedge_wasi_module);
 

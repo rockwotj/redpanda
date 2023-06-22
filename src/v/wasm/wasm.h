@@ -32,9 +32,9 @@
 
 namespace wasm {
 
-namespace wasmtime {
+namespace wasmedge {
 struct runtime;
-} // namespace wasmtime
+} // namespace wasmedge
 class probe;
 
 class engine {
@@ -74,6 +74,7 @@ struct transform {
         ss::sstring function_name;
         model::topic_namespace input;
         model::topic_namespace output;
+        absl::flat_hash_map<ss::sstring, ss::sstring> env;
     };
     metadata meta;
     std::unique_ptr<engine> engine;
@@ -109,7 +110,7 @@ private:
     ss::gate _gate;
     ssx::thread_worker* _worker;
 
-    std::unique_ptr<wasmtime::runtime, void (*)(wasmtime::runtime*)> _runtime;
+    std::unique_ptr<wasmedge::runtime, void (*)(wasmedge::runtime*)> _runtime;
     absl::flat_hash_map<
       model::topic_namespace,
       transform,

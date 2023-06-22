@@ -96,7 +96,7 @@ service::service(
   , _transforms()
   , _schema_registry(schema_registry) {
     if (ss::this_shard_id() == runtime_shard) {
-        _runtime = wasmtime::make_runtime();
+        _runtime = wasmedge::make_runtime();
     }
 }
 
@@ -162,7 +162,7 @@ service::deploy_transform(transform::metadata meta, ss::sstring source) {
     vlog(wasm_log.info, "Creating wasm engine: {}", meta.function_name);
     auto engine_factory = co_await _worker->submit(
       [this, meta, source = std::move(source)] {
-          return wasmtime::compile(_runtime.get(), meta, source);
+          return wasmedge::compile(_runtime.get(), meta, source);
       });
     vlog(wasm_log.info, "Created wasm engine: {}", meta.function_name);
     // TODO: Handle engines failing to start.
@@ -201,6 +201,12 @@ service::deploy_transform(transform::metadata meta, ss::sstring source) {
 ss::future<> service::undeploy_transform(const transform::metadata& meta) {
     return container().invoke_on_all([meta](service& s) {
         auto it = s._transforms.find(meta.input);
+        if (it == s._transforms.end()) {
+            return ss::now();
+        }
+        if (it->second.meta.function_name != meta.function_name) {
+            return ss::now();
+        }
         auto removed = std::move(it->second);
         s._transforms.erase(it);
         removed.probe->clear_metrics();

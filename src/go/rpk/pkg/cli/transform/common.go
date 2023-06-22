@@ -25,10 +25,11 @@ const (
 var AllWasmLangs = []string{"tinygo"}
 
 type WasmProjectConfig struct {
-	Name        string   `yaml:"name"`
-	InputTopic  string   `yaml:"input-topic"`
-	OutputTopic string   `yaml:"output-topic"`
-	Language    WasmLang `yaml:"language"`
+	Name        string            `yaml:"name"`
+	InputTopic  string            `yaml:"input-topic"`
+	OutputTopic string            `yaml:"output-topic"`
+	Language    WasmLang          `yaml:"language"`
+	Env         map[string]string `yaml:"env,omitempty"`
 }
 
 var configFileName = "transform.yaml"

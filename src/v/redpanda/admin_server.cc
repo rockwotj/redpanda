@@ -4864,26 +4864,26 @@ static json::validator make_wasm_transform_validator() {
 {
     "type": "object",
     "properties": {
-        "namespace": {
-            "type": "string",
+        "ns": {
+            "type": "string"
         },
         "input_topic": {
-            "type": "string",
+            "type": "string"
         },
         "output_topic": {
-            "type": "string",
+            "type": "string"
         },
         "function_name": {
-            "type": "string",
+            "type": "string"
         },
         "env": {
             "type": "object",
             "additionalProperties": {
                 "type": "string"
-            },
+            }
         }
     },
-    "required": ["namespace", "input_topic", "output_topic", "function_name"],
+    "required": ["ns", "input_topic", "output_topic", "function_name"],
     "additionalProperties": false
 }
 )";
@@ -4909,7 +4909,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
     auto validator = make_wasm_transform_validator();
     apply_validator(validator, doc);
 
-    model::ns ns(doc["namespace"].GetString());
+    model::ns ns(doc["ns"].GetString());
     if (ns != model::kafka_namespace) {
         throw ss::httpd::bad_request_exception(
           fmt::format("Invalid namespace: {}", ns));
@@ -4918,17 +4918,19 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
       ns, model::topic(doc["input_topic"].GetString()));
     if (!_metadata_cache.local().contains(input_nt)) {
         throw ss::httpd::bad_request_exception(
-          fmt::format("Topic does not exist: {}", input_nt));
+          fmt::format("Topic does not exist: {}", input_nt.tp));
     }
     auto output_nt = model::topic_namespace(
       ns, model::topic(doc["output_topic"].GetString()));
     if (!_metadata_cache.local().contains(output_nt)) {
         throw ss::httpd::bad_request_exception(
-          fmt::format("Topic does not exist: {}", input_nt));
+          fmt::format("Topic does not exist: {}", output_nt.tp));
     }
     auto name = doc["function_name"].GetString();
     for (const auto& t : _wasm_service.local().list_transforms()) {
-        if (t.function_name != name) continue;
+        if (t.function_name != name) {
+            continue;
+        }
         if (t.input != input_nt || t.output != output_nt) {
             throw ss::httpd::bad_request_exception(fmt::format(
               "A transform {} is already registered on different topics, "
@@ -4951,7 +4953,10 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
     }
     try {
         co_await _wasm_service.local().deploy_transform(
-          {.function_name = name, .input = input_nt, .output = output_nt},
+          {.function_name = name,
+           .input = input_nt,
+           .output = output_nt,
+           .env = env},
           std::move(wasm_source));
     } catch (const std::exception& ex) {
         vlog(logger.error, "Unknown issue deploying wasm {}", ex);
@@ -4986,13 +4991,12 @@ admin_server::delete_wasm(std::unique_ptr<ss::http::request> req) {
     auto validator = make_wasm_transform_validator();
     apply_validator(validator, doc);
 
+    auto ns = model::ns(doc["ns"].GetString());
     auto input_nt = model::topic_namespace(
-      model::ns(doc["namespace"].GetString()),
-      model::topic(doc["input_topic"].GetString()));
+      ns, model::topic(doc["input_topic"].GetString()));
     auto name = doc["function_name"].GetString();
     auto output_nt = model::topic_namespace(
-      model::ns(doc["namespace"].GetString()),
-      model::topic(doc["output_topic"].GetString()));
+      ns, model::topic(doc["output_topic"].GetString()));
     co_await _wasm_service.local().undeploy_transform(
       {.function_name = name, .input = input_nt, .output = output_nt});
     co_return ss::json::json_void();

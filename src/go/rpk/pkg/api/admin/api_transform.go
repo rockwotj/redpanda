@@ -42,19 +42,12 @@ type ClusterWasmTransform struct {
 	InputTopic   string            `json:"input_topic"`
 	OutputTopic  string            `json:"output_topic"`
 	FunctionName string            `json:"function_name"`
-	Status       string            `json:"status,omitempty"`
 	Env          map[string]string `json:"env,omitempty"`
 }
 
 // Deploy a wasm transform to a cluster
-func (a *AdminAPI) DeployWasmTransform(ctx context.Context, inputTopic string, outputTopic string, functionName string, file io.Reader) error {
-	params := ClusterWasmTransform{
-		Namespace:    "kafka",
-		InputTopic:   inputTopic,
-		OutputTopic:  outputTopic,
-		FunctionName: functionName,
-	}
-	b, err := json.Marshal(params)
+func (a *AdminAPI) DeployWasmTransform(ctx context.Context, t ClusterWasmTransform, file io.Reader) error {
+	b, err := json.Marshal(t)
 	if err != nil {
 		return err
 	}
