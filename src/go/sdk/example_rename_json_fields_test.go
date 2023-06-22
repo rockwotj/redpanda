@@ -20,16 +20,19 @@ import (
 	"github.com/rockwotj/redpanda/src/go/sdk"
 )
 
+// This example shows a transform that renames fields in a JSON object.
 func Example_renameJsonFields() {
 	redpanda.OnRecordWritten(myTransform)
 }
 
 type (
+	// The input topic uses keys A, B and C
 	Foo struct {
 		A string
 		B int
 		C bool
 	}
+	// The output wants records with keys X, Y and Z
 	Bar struct {
 		X string
 		Y int
