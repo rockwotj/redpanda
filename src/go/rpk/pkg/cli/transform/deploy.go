@@ -28,7 +28,19 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy [WASM]",
 		Short: "Deploy a transform",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Deploy a transform.
+
+When run in the same directory as a transform.yaml it will read the configuration file,
+then look for a .wasm file with the same name as your project. If the input and output
+topics are specified in the configuration file, those will be used, otherwise the topics
+can be specified on the command line using the --input-topic and --output-topic flags.
+
+Wasm files can also be deployed directly without a transform.yaml file by specifying it
+like so:
+
+rpk transform deploy transform.wasm --name myTransform
+		`,
+		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)

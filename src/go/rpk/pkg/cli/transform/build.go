@@ -85,7 +85,7 @@ var (
 				"arm64": "e42e393e073b4955eb3b25f630dfd0d013328e8d7664bc9efe97c76b833cf811",
 			},
 			"darwin": map[string]string{
-				"amd64": "",
+				"amd64": "923130c6d524d98a9521336acb486d596a1ee28861c9c28a91fdcc9902349425",
 				"arm64": "11714ef300a4f236b211753d4c58bf60c3400a163f599af023b1ea52835f12fe",
 			},
 		},
@@ -108,7 +108,7 @@ var (
 						"arm64": "5a1642783a57d233b5050ace12a57801652878d8f9b8c7d9fc1be4cf84c649c1",
 					},
 					"darwin": map[string]string{
-						"amd64": "",
+						"amd64": "a233945f05c85edbafa4ce39db002f284aad9e143278b8626aa1dbc4a0fcfe97",
 						"arm64": "daa18a3e6fec1f6d5b45c3e66d4e153ca7948212a5bf53e0b565bc7341102734",
 					},
 				},
@@ -138,7 +138,14 @@ func newBuildCommand(fs afero.Fs, execFn func(string, []string) error) *cobra.Co
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build a transform",
-		Args:  cobra.NoArgs,
+		Long: `Build a transform.
+
+This command looks in the current working directory for a transform.yaml file.
+
+Then depending on the language, will install the appropriate build plugin then 
+build a .wasm file.
+`,
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := loadCfg(fs)
 			out.MaybeDie(err, "unable to find the transform, are you in the same directory as the %q?", configFileName)

@@ -35,7 +35,7 @@ func execTemplate(filename string, source string, data interface{}) (string, err
 // You can generate the sha via `go get`ting @branch
 const wasmGoModFile = `module {{.}}
 
-go 1.18
+go 1.20
 `
 
 func WasmGoModule(name string) (string, error) {

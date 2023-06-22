@@ -26,8 +26,8 @@ var AllWasmLangs = []string{"tinygo"}
 
 type WasmProjectConfig struct {
 	Name        string   `yaml:"name"`
-	InputTopic  string   `yaml:"input,omitempty"`
-	OutputTopic string   `yaml:"output,omitempty"`
+	InputTopic  string   `yaml:"input-topic"`
+	OutputTopic string   `yaml:"output-topic"`
 	Language    WasmLang `yaml:"language"`
 }
 
