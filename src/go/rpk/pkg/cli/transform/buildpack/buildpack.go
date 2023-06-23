@@ -36,7 +36,7 @@ var (
 			},
 			"darwin": {
 				"amd64": "112ef510771b05adf8159c97c0c25f7530a1f43774f756cfc051c004e28372d4",
-				"arm64": "1c8ce9f66ff8df7054185ce6ff0aa2c05af0ea22a2615c7f2a91b5bfcf7171af",
+				"arm64": "4a48b2b9beee24d37bdbcc0bc23010c5846ca33f31e7f6f554a6795633bfbe31",
 			},
 		},
 		modifyArgs: func(c *cobra.Command, p project.Config, args []string) []string {
