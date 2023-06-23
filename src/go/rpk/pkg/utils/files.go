@@ -13,8 +13,10 @@ import (
 	"bufio"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,6 +75,29 @@ func CopyFile(fs afero.Fs, src string, dst string) error {
 	}
 	err = afero.WriteFile(fs, dst, input, 0o644)
 	return err
+}
+
+func ReadLink(afs afero.Fs, path string) (string, error) {
+	l, ok := afs.(afero.Symlinker)
+	if !ok {
+		return "", errors.New("filesystem does not support symlinks")
+	}
+	s, _, err := l.LstatIfPossible(path)
+	if err != nil {
+		return "", err
+	}
+	if s.Mode()&fs.ModeSymlink != 0 {
+		return l.ReadlinkIfPossible(path)
+	}
+	return path, nil
+}
+
+func Symlink(fs afero.Fs, src, dst string) error {
+	l, ok := fs.(afero.Linker)
+	if !ok {
+		return errors.New("filesystem does not support symlinks")
+	}
+	return l.SymlinkIfPossible(src, dst)
 }
 
 func WriteFileLines(fs afero.Fs, lines []string, path string) error {

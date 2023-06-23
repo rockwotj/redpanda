@@ -8,7 +8,6 @@ require (
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/aws/aws-sdk-go v1.44.259
 	github.com/beevik/ntp v1.0.0
-	github.com/cespare/xxhash v1.1.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/docker/docker v23.0.6+incompatible
 	github.com/docker/go-connections v0.4.0
@@ -45,6 +44,12 @@ require (
 	k8s.io/api v0.27.1
 	k8s.io/apimachinery v0.27.1
 	k8s.io/client-go v0.27.1
+)
+
+require (
+	github.com/mattn/go-runewidth v0.0.14 // indirect
+	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
+	github.com/rivo/uniseg v0.2.0 // indirect
 )
 
 require (
@@ -92,6 +97,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.17 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/schollz/progressbar/v3 v3.13.1
 	github.com/tklauser/numcpus v0.6.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect

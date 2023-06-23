@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -50,9 +51,9 @@ rpk transform deploy transform.wasm --name myTransform
 			api, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
-			cfg, cfgErr := loadCfg(fs)
+			cfg, cfgErr := project.LoadCfg(fs)
 			if functionName == "" {
-				out.MaybeDie(cfgErr, "unable to find the transform, are you in the same directory as the %q?", configFileName)
+				out.MaybeDie(cfgErr, "unable to find the transform, are you in the same directory as the %q?", project.ConfigFileName)
 				functionName = cfg.Name
 			}
 			var path string

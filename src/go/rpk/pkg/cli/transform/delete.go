@@ -13,6 +13,7 @@ import (
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -35,7 +36,7 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				functionName = args[0]
 			}
 			if functionName == "" {
-				cfg, err := loadCfg(fs)
+				cfg, err := project.LoadCfg(fs)
 				if err == nil {
 					functionName = cfg.Name
 				}

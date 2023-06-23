@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package transform
+package project
 
 import (
 	"os"
@@ -24,7 +24,7 @@ const (
 
 var AllWasmLangs = []string{"tinygo"}
 
-type WasmProjectConfig struct {
+type Config struct {
 	Name        string            `yaml:"name"`
 	InputTopic  string            `yaml:"input-topic"`
 	OutputTopic string            `yaml:"output-topic"`
@@ -32,23 +32,23 @@ type WasmProjectConfig struct {
 	Env         map[string]string `yaml:"env,omitempty"`
 }
 
-var configFileName = "transform.yaml"
+var ConfigFileName = "transform.yaml"
 
-func marshalConfig(c WasmProjectConfig) ([]byte, error) {
+func MarshalConfig(c Config) ([]byte, error) {
 	return yaml.Marshal(c)
 }
 
-func saveCfg(fs afero.Fs, c WasmProjectConfig) error {
+func SaveCfg(fs afero.Fs, c Config) error {
 	b, err := yaml.Marshal(&c)
 	if err != nil {
 		return err
 	}
-	return afero.WriteFile(fs, configFileName, b, os.FileMode(0o644))
+	return afero.WriteFile(fs, ConfigFileName, b, os.FileMode(0o644))
 }
 
-func loadCfg(fs afero.Fs) (WasmProjectConfig, error) {
-	b, err := afero.ReadFile(fs, configFileName)
-	var c WasmProjectConfig
+func LoadCfg(fs afero.Fs) (Config, error) {
+	b, err := afero.ReadFile(fs, ConfigFileName)
+	var c Config
 	if err != nil {
 		return c, err
 	}

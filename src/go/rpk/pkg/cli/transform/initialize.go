@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/template"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -27,7 +28,7 @@ import (
 type transformProject struct {
 	Name string
 	Path string
-	Lang WasmLang
+	Lang project.WasmLang
 }
 
 func newInitializeCommand(fs afero.Fs, cfg *config.Params) *cobra.Command {
@@ -73,7 +74,7 @@ Will initialize a transform project in the foobar directory.
 					out.Die("please remove file %q to initialize a transform there", path)
 				}
 			}
-			c := filepath.Join(path, configFileName)
+			c := filepath.Join(path, project.ConfigFileName)
 			ok, err := afero.Exists(fs, c)
 			out.MaybeDie(err, "unable to determine if %q exists: %v", c, err)
 			if ok {
@@ -88,16 +89,16 @@ Will initialize a transform project in the foobar directory.
 				name, err = out.PromptWithSuggestion(suggestion, "name this transform:")
 				out.MaybeDie(err, "unable to determine project name: %v", err)
 			}
-			var lang WasmLang
+			var lang project.WasmLang
 			if langVal == "" {
-				langVal, err := out.Pick(AllWasmLangs, "select a language:")
+				langVal, err := out.Pick(project.AllWasmLangs, "select a language:")
 				out.MaybeDie(err, "unable to determine transform language: %v", err)
-				lang = WasmLang(langVal)
+				lang = project.WasmLang(langVal)
 			} else {
 				needle := strings.ToLower(langVal)
-				for _, v := range AllWasmLangs {
+				for _, v := range project.AllWasmLangs {
 					if strings.ToLower(v) == needle {
-						lang = WasmLang(v)
+						lang = project.WasmLang(v)
 						break
 					}
 				}
@@ -136,8 +137,8 @@ type genFile struct {
 
 func generateManifest(p transformProject) (map[string][]genFile, error) {
 	switch p.Lang {
-	case WasmLangTinygo:
-		rpConfig, err := marshalConfig(WasmProjectConfig{Name: p.Name, Language: p.Lang})
+	case project.WasmLangTinygo:
+		rpConfig, err := project.MarshalConfig(project.Config{Name: p.Name, Language: p.Lang})
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +149,7 @@ func generateManifest(p transformProject) (map[string][]genFile, error) {
 		return map[string][]genFile{
 			p.Path: {
 				genFile{name: "transform.go", content: template.WasmGoMain()},
-				genFile{name: configFileName, content: string(rpConfig)},
+				genFile{name: project.ConfigFileName, content: string(rpConfig)},
 				genFile{name: "go.mod", content: goMod},
 				genFile{name: "README.md", content: template.WasmGoReadme()},
 			},
@@ -184,7 +185,7 @@ func executeGenerate(fs afero.Fs, p transformProject) error {
 
 func installDeps(ctx context.Context, p transformProject) error {
 	switch p.Lang {
-	case WasmLangTinygo:
+	case project.WasmLangTinygo:
 		{
 			g, err := exec.LookPath("go")
 			out.MaybeDie(err, "go is not available on $PATH, please download and install it: https://go.dev/doc/install")
