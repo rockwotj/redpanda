@@ -174,7 +174,7 @@ func (bp *Buildpack) Download(ctx context.Context, fs afero.Fs) error {
 		if err := cl.Get(ctx, bp.Url(), nil, w); err != nil {
 			return fmt.Errorf("unable to download buildpack: %v", err)
 		}
-		return nil
+		return w.Close()
 	})
 	g.Go(func() error {
 		hasher := sha256.New()

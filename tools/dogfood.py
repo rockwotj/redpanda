@@ -30,7 +30,7 @@ def release_rpk(args):
     os.chdir(build_dir)
     for (goos, goarch) in [("linux", "amd64"), ("darwin", "arm64"), ("linux", "arm64"), ("darwin", "amd64")]:
         subprocess.check_call(["task", "rpk:build", f"GOOS={goos}", f"GOARCH={goarch}"])
-        subprocess.check_call(["zip", "-r", f"rpk-{goos}-{goarch}", "{goos}/{goarch}"])
+        subprocess.check_call(["zip", "-r", f"rpk-{goos}-{goarch}", f"{goos}/{goarch}"])
     subprocess.check_call(["gh", "release", "create",
                            "--repo", "rockwotj/redpanda",
                            f"wasmdev-{latest_release + 1}",
