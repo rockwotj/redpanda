@@ -35,8 +35,8 @@ var (
 				"arm64": "2ccd368944fc5d6b08ebba3978f0232238ca78c529fd9c5ff4202200890076e2",
 			},
 			"darwin": {
-				"amd64": "112ef510771b05adf8159c97c0c25f7530a1f43774f756cfc051c004e28372d4",
-				"arm64": "96ad416896e872e01a4edb16fdeb1095124881cc600911c0164bf2b17ae3b558",
+				"amd64": "d92e42b6184aa4c1e147920beeb38d28fb7d72c0c36d0897aa40e79f6295f3a1",
+				"arm64": "5e60c5034995ec819e2963f4e3374c3f97a728378c3f689e42529628aad47ad8",
 			},
 		},
 		modifyArgs: func(c *cobra.Command, p project.Config, args []string) []string {
@@ -171,10 +171,11 @@ func (bp *Buildpack) Download(ctx context.Context, fs afero.Fs) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(-1)
 	g.Go(func() error {
-		if err := cl.Get(ctx, bp.Url(), nil, w); err != nil {
-			return fmt.Errorf("unable to download buildpack: %v", err)
+		err := cl.Get(ctx, bp.Url(), nil, w)
+		if err != nil {
+			err = fmt.Errorf("unable to download buildpack: %v", err)
 		}
-		return w.Close()
+		return w.CloseWithError(err)
 	})
 	g.Go(func() error {
 		hasher := sha256.New()
