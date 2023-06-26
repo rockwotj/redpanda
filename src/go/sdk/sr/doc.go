@@ -13,13 +13,6 @@
 // limitations under the License.
 
 /*
-Package redpanda is the SDK for Redpanda's inline Data Transforms, based on WebAssembly.
-
-This library provides a framework for transforming records written within Redpanda from
-an input to an output topic.
-
-Schema registry users can interact with schema registry using a [built-in client].
-
-[built-in client]: https://pkg.go.dev/github.com/rockwotj/redpanda/src/go/sdk/sr
+Package sr is a schema registry client for Redpanda for usage within inline Data Transforms.
 */
-package redpanda
+package sr
