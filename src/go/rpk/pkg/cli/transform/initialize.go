@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/buildpack"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/template"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -111,7 +112,7 @@ Will initialize a transform project in the foobar directory.
 			out.MaybeDie(err, "unable to generate all manifest files: %v", err)
 			ok, err = out.Confirm("install dependencies?")
 			if ok && err == nil {
-				installDeps(cmd.Context(), p)
+				installDeps(cmd.Context(), fs, p)
 			}
 			fmt.Println("deploy your transform using:")
 			if cwd != path {
@@ -183,10 +184,12 @@ func executeGenerate(fs afero.Fs, p transformProject) error {
 	return nil
 }
 
-func installDeps(ctx context.Context, p transformProject) error {
+func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 	switch p.Lang {
 	case project.WasmLangTinygo:
 		{
+			_, err := installBuildpack(ctx, buildpack.Tinygo, fs)
+			out.MaybeDie(err, "unable to install tinygo buildpack: %v", err)
 			g, err := exec.LookPath("go")
 			out.MaybeDie(err, "go is not available on $PATH, please download and install it: https://go.dev/doc/install")
 			c := exec.CommandContext(ctx, g, "mod", "tidy")
@@ -196,6 +199,7 @@ func installDeps(ctx context.Context, p transformProject) error {
 			c.Dir = p.Path
 			out.MaybeDieErr(c.Run())
 			fmt.Println("go modules are tidy 🧹")
+
 		}
 	}
 	return fmt.Errorf("Unknown language %q", p.Lang)

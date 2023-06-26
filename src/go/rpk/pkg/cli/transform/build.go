@@ -56,11 +56,11 @@ func installBuildpack(ctx context.Context, p buildpack.Buildpack, fs afero.Fs) (
 	if ok {
 		return p.BinPath()
 	}
-	fmt.Printf("latest %s build plugin not found, downloading now...\n", p.Name)
+	fmt.Printf("latest %s buildpack not found, downloading now...\n", p.Name)
 	err = p.Download(ctx, fs)
 	if err != nil {
 		return "", err
 	}
-	fmt.Printf("latest %s build plugin download complete\n", p.Name)
+	fmt.Printf("latest %s buildpack download complete\n", p.Name)
 	return p.BinPath()
 }
