@@ -15,6 +15,7 @@
 #include "cluster/controller_snapshot.h"
 #include "cluster/logger.h"
 #include "cluster/members_manager.h"
+#include "cluster/plugin_backend.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -91,6 +92,7 @@ ss::future<std::optional<iobuf>> controller_stm::maybe_make_join_snapshot() {
     co_await std::get<bootstrap_backend&>(_state).fill_snapshot(snapshot);
     co_await std::get<feature_backend&>(_state).fill_snapshot(snapshot);
     co_await std::get<config_manager&>(_state).fill_snapshot(snapshot);
+    co_await std::get<plugin_backend&>(_state).fill_snapshot(snapshot);
     apply_mtx_holder.return_all();
 
     co_return serde::to_iobuf(controller_join_snapshot{
@@ -174,6 +176,7 @@ ss::future<> controller_stm::apply_snapshot(
           std::get<config_manager&>(_state).apply_snapshot(offset, snapshot),
           std::get<topic_updates_dispatcher&>(_state).apply_snapshot(
             offset, snapshot),
+          std::get<plugin_backend&>(_state).apply_snapshot(offset, snapshot),
           std::get<security_manager&>(_state).apply_snapshot(offset, snapshot));
     } catch (const seastar::abort_requested_exception&) {
     } catch (const seastar::gate_closed_exception&) {

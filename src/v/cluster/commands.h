@@ -124,6 +124,10 @@ static constexpr int8_t cluster_config_status_cmd_type = 1;
 static constexpr int8_t feature_update_cmd_type = 0;
 static constexpr int8_t feature_update_license_update_cmd_type = 1;
 
+// plugin command types
+static constexpr int8_t transform_update_cmd_type = 0;
+static constexpr int8_t transform_remove_cmd_type = 1;
+
 // cluster bootstrap commands
 static constexpr int8_t bootstrap_cluster_cmd_type = 0;
 
@@ -335,6 +339,20 @@ using feature_update_license_update_cmd = controller_command<
   int8_t, // unused
   feature_update_license_update_cmd_type,
   model::record_batch_type::feature_update,
+  serde_opts::serde_only>;
+
+using transform_update_cmd = controller_command<
+  transform_id,
+  transform_metadata,
+  transform_update_cmd_type,
+  model::record_batch_type::plugin_update,
+  serde_opts::serde_only>;
+
+using transform_remove_cmd = controller_command<
+  transform_name,
+  int8_t, // unused
+  transform_remove_cmd_type,
+  model::record_batch_type::plugin_update,
   serde_opts::serde_only>;
 
 // Cluster bootstrap

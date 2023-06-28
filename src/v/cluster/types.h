@@ -30,6 +30,7 @@
 #include "serde/serde.h"
 #include "storage/ntp_config.h"
 #include "tristate.h"
+#include "utils/named_type.h"
 #include "utils/to_string.h"
 #include "v8_engine/data_policy.h"
 
@@ -42,6 +43,7 @@
 #include <absl/hash/hash.h>
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 
@@ -3900,6 +3902,59 @@ struct metrics_reporter_cluster_info
       = default;
 
     auto serde_fields() { return std::tie(uuid, creation_timestamp); }
+};
+
+/**
+ * An ID for a transform, these get allocated globally, to allow for users to
+ * re-use names of transforms.
+ */
+using transform_id = named_type<int64_t, struct transform_id_tag>;
+/**
+ * The name of a transform, which is the user defined.
+ *
+ * Generally you should only use names when surfacing information to a user,
+ * otherwise the ID should be used, especially if the information is persisted.
+ */
+using transform_name = named_type<ss::sstring, struct transform_name_tag>;
+/**
+ * Metadata for a WASM powered data transforms.
+ */
+struct transform_metadata
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    transform_name name;
+    model::topic_namespace input_topic;
+    // Right now we force there is only one.
+    std::vector<model::topic_namespace> output_topics;
+    absl::flat_hash_map<ss::sstring, ss::sstring> environment;
+    // The offset of the commmitted WASM source.
+    model::offset source_ptr;
+
+    friend bool operator==(const transform_metadata&, const transform_metadata&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(name, input_topic, output_topics, environment);
+    }
+};
+
+/**
+ * A holder for all the WASM plugin metadata that exists within the cluster.
+ *
+ * Currently, this is only for data transforms, but other WASM functionality may
+ * exist in the future.
+ */
+struct cluster_plugins
+  : serde::
+      envelope<cluster_plugins, serde::version<0>, serde::compat_version<0>> {
+    absl::flat_hash_map<transform_id, transform_metadata> transforms;
+
+    friend bool operator==(const cluster_plugins&, const cluster_plugins&)
+      = default;
+
+    auto serde_fields() { return std::tie(transforms); }
 };
 
 template<typename V>

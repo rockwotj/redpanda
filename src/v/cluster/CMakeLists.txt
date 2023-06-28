@@ -143,6 +143,9 @@ v_cc_library(
     partition_balancer_backend.cc
     partition_balancer_state.cc
     partition_balancer_rpc_handler.cc
+    plugin_backend.cc
+    plugin_frontend.cc
+    plugin_table.cc
     node_status_backend.cc
     node_status_rpc_handler.cc
     self_test_backend.cc

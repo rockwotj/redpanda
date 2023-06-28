@@ -15,6 +15,7 @@
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/node_status_table.h"
+#include "cluster/plugin_frontend.h"
 #include "cluster/scheduling/leader_balancer.h"
 #include "model/fundamental.h"
 #include "raft/fwd.h"
@@ -63,6 +64,9 @@ public:
     ss::sharded<topic_table>& get_topics_state() { return _tp_state; }
     ss::sharded<partition_leaders_table>& get_partition_leaders() {
         return _partition_leaders;
+    }
+    ss::sharded<plugin_frontend>& get_plugin_frontend() {
+        return _plugin_frontend;
     }
 
     ss::sharded<security::credential_store>& get_credential_store() {
@@ -231,6 +235,11 @@ private:
     ss::sharded<feature_manager> _feature_manager;        // single instance
     ss::sharded<feature_backend> _feature_backend;        // instance per core
     ss::sharded<features::feature_table>& _feature_table; // instance per core
+
+    ss::sharded<plugin_frontend> _plugin_frontend; // instance per core
+    ss::sharded<plugin_table> _plugin_table;       // instance per core
+    ss::sharded<plugin_backend> _plugin_backend;   // single instance
+
     std::unique_ptr<leader_balancer> _leader_balancer;
     ss::sharded<partition_balancer_backend> _partition_balancer;
     ss::gate _gate;

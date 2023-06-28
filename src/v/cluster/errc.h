@@ -68,6 +68,10 @@ enum class errc : int16_t {
     no_partition_assignments,
     failed_to_create_partition,
     partition_operation_failed,
+    transform_does_not_exist,
+    transform_invalid_update,
+    transform_invalid_create,
+    transform_invalid_environment,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -195,6 +199,16 @@ struct errc_category final : public std::error_category {
         case errc::partition_operation_failed:
             return "Generic failure occurred during partition operation "
                    "execution";
+        case errc::transform_does_not_exist:
+            return "Transform does not exist";
+        case errc::transform_invalid_update:
+            return "Invalid update to transform, name or topic configuration "
+                   "cannot change";
+        case errc::transform_invalid_create:
+            return "Invalid transform, missing name, output topics or "
+                   "using reserved environment variables";
+        case errc::transform_invalid_environment:
+            return "Invalid transform environment";
         }
         return "cluster::errc::unknown";
     }
