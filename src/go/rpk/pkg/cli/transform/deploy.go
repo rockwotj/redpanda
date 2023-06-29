@@ -10,24 +10,79 @@ package transform
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/registry"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
+type FlagsConfig struct {
+	inputTopic   string
+	outputTopic  string
+	functionName string
+	env          []string
+}
+
+func (fc FlagsConfig) Apply(cfg *project.Config, fromRegistry bool) (err error) {
+	if fc.functionName != "" {
+		cfg.Name = fc.functionName
+	}
+	if cfg.Name == "" {
+		return fmt.Errorf("missing transform name")
+	}
+	envvars, err := splitEnvVars(fc.env)
+	if err != nil {
+		return fmt.Errorf("invalid environment variable: %v", err)
+	}
+	m := map[string]string{}
+	// flags override the config file
+	if cfg.Env != nil {
+		for k, v := range cfg.Env {
+			m[k] = v
+		}
+	}
+	for k, v := range envvars {
+		m[k] = v
+	}
+	cfg.Env = m
+	if fromRegistry {
+		for k, v := range cfg.Env {
+			if v == "<required>" {
+				return fmt.Errorf("missing required environment variable %q", k)
+			}
+		}
+	}
+
+	if fc.inputTopic != "" {
+		cfg.InputTopic = fc.inputTopic
+	} else if cfg.InputTopic == "" {
+		cfg.InputTopic, err = out.Prompt("Select an input topic:")
+		if err != nil {
+			return fmt.Errorf("no input topic %v", err)
+		}
+	}
+	if fc.outputTopic != "" {
+		cfg.OutputTopic = fc.outputTopic
+	} else if cfg.OutputTopic == "" {
+		cfg.OutputTopic, err = out.Prompt("Select an output topic:")
+		if err != nil {
+			return fmt.Errorf("no output topic %v", err)
+		}
+	}
+	return nil
+}
+
 func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var (
-		inputTopic   string
-		outputTopic  string
-		functionName string
-		env          []string
-	)
+	var fc FlagsConfig
+
 	cmd := &cobra.Command{
 		Use:   "deploy [WASM]",
 		Short: "Deploy a transform",
@@ -51,85 +106,57 @@ rpk transform deploy transform.wasm --name myTransform
 			api, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
-			cfg, cfgErr := project.LoadCfg(fs)
-			if functionName == "" {
-				out.MaybeDie(cfgErr, "unable to find the transform, are you in the same directory as the %q?", project.ConfigFileName)
-				functionName = cfg.Name
-			}
-			var path string
+			arg := ""
 			if len(args) == 1 {
-				path = args[0]
+				arg = args[0]
+			}
+
+			var (
+				cfg  project.Config
+				wasm io.Reader
+			)
+
+			if strings.HasPrefix(arg, "@") {
+				reg, id, v, err := registry.ParseRegistryString(arg)
+				out.MaybeDie(err, "invalid specifier: %v", err)
+				cfg, wasm, err = registry.DownloadTransform(cmd.Context(), reg, id, v)
+				out.MaybeDie(err, "%v", err)
 			} else {
-				path = fmt.Sprintf("%s.wasm", functionName)
+				cfg, wasm, err = localDeploy(fc, fs, arg)
+				out.MaybeDie(err, "%v", err)
 			}
-			ok, err := afero.Exists(fs, path)
-			out.MaybeDie(err, "missing %q: %v", path, err)
-			if !ok {
-				out.Die("missing %q", path)
-			}
-			if inputTopic == "" {
-				if cfgErr == nil && cfg.InputTopic != "" {
-					inputTopic = cfg.InputTopic
-				} else {
-					inputTopic, err = out.Prompt("Select an input topic:")
-					out.MaybeDie(err, "no input topic: %v", err)
-				}
-			}
-			if outputTopic == "" {
-				if cfgErr == nil && cfg.OutputTopic != "" {
-					outputTopic = cfg.OutputTopic
-				} else {
-					outputTopic, err = out.Prompt("Select an output topic:")
-					out.MaybeDie(err, "no output topic: %v", err)
-				}
-			}
-
-			envvars, err := splitEnvVars(env)
-			out.MaybeDie(err, "invalid environment variable: %v", err)
-			if cfgErr != nil {
-				m := map[string]string{}
-				// flags override the config file
-				for k, v := range cfg.Env {
-					m[k] = v
-				}
-				for k, v := range envvars {
-					m[k] = v
-				}
-				envvars = m
-			}
-
-			file, err := afero.ReadFile(fs, path)
-			out.MaybeDie(err, "missing %q: %v did you run `rpk transform build`", path, err)
+			err = fc.Apply(&cfg, strings.HasPrefix(arg, "@"))
+			out.MaybeDie(err, "%v", err)
 
 			transforms, err := api.ListWasmTransforms(cmd.Context())
 			out.MaybeDie(err, "unable to list existing transforms: %v", err)
 
 			// Validate that this transform is unique in name and topics that it uses
 			for _, t := range transforms {
-				if t.FunctionName == functionName && t.InputTopic == inputTopic && t.OutputTopic == outputTopic {
+				if t.FunctionName == cfg.Name && t.InputTopic == cfg.InputTopic && t.OutputTopic == cfg.OutputTopic {
 					// We're redeploying!
 					break
 				}
-				if t.FunctionName == functionName {
-					out.Die("a transform named %q from %q into %q already exists", functionName, t.InputTopic, t.OutputTopic)
+				if t.FunctionName == cfg.Name {
+					out.Die("a transform named %q from %q into %q already exists", cfg.Name, t.InputTopic, t.OutputTopic)
 				}
-				if t.InputTopic == inputTopic || t.OutputTopic == inputTopic {
+				if t.InputTopic == cfg.InputTopic || t.OutputTopic == cfg.InputTopic {
 					out.Die("topic %q is already attached to a transform", t.InputTopic)
 				}
-				if t.OutputTopic == outputTopic || t.InputTopic == outputTopic {
+				if t.OutputTopic == cfg.OutputTopic || t.InputTopic == cfg.OutputTopic {
 					out.Die("topic %q is already attached to a transform", t.OutputTopic)
 				}
 			}
 
 			t := admin.ClusterWasmTransform{
 				Namespace:    "kafka",
-				InputTopic:   inputTopic,
-				OutputTopic:  outputTopic,
-				FunctionName: functionName,
-				Env:          envvars,
+				InputTopic:   cfg.InputTopic,
+				OutputTopic:  cfg.OutputTopic,
+				FunctionName: cfg.Name,
+				Env:          cfg.Env,
 			}
-			err = api.DeployWasmTransform(cmd.Context(), t, bytes.NewReader(file))
-			out.MaybeDie(err, "unable to deploy transfrom %q: %v", path, err)
+			err = api.DeployWasmTransform(cmd.Context(), t, wasm)
+			out.MaybeDie(err, "unable to deploy transfrom %s: %v", cfg.Name, err)
 
 			fmt.Println("Deploy successful!")
 
@@ -147,11 +174,41 @@ rpk transform deploy transform.wasm --name myTransform
 			// }
 		},
 	}
-	cmd.Flags().StringVarP(&inputTopic, "input-topic", "i", "", "The input topic to apply the transform to")
-	cmd.Flags().StringVarP(&outputTopic, "output-topic", "o", "", "The output topic to write the transform results to")
-	cmd.Flags().StringVar(&functionName, "name", "", "The name of the transform")
-	cmd.Flags().StringArrayVar(&env, "env-var", []string{}, "Specify an environment variable in the form of KEY=VALUE")
+	cmd.Flags().StringVarP(&fc.inputTopic, "input-topic", "i", "", "The input topic to apply the transform to")
+	cmd.Flags().StringVarP(&fc.outputTopic, "output-topic", "o", "", "The output topic to write the transform results to")
+	cmd.Flags().StringVar(&fc.functionName, "name", "", "The name of the transform")
+	cmd.Flags().StringArrayVar(&fc.env, "env-var", []string{}, "Specify an environment variable in the form of KEY=VALUE")
 	return cmd
+}
+
+func localDeploy(fc FlagsConfig, fs afero.Fs, arg string) (project.Config, io.Reader, error) {
+	cfg, cfgErr := project.LoadCfg(fs)
+	if fc.functionName != "" {
+		cfg.Name = fc.functionName
+	}
+	var path string
+	if arg != "" {
+		path = arg
+	} else if cfg.Name != "" {
+		path = fmt.Sprintf("%s.wasm", cfg.Name)
+	} else if cfgErr != nil {
+		return cfg, nil, fmt.Errorf("unable to find the transform, are you in the same directory as the %q?", project.ConfigFileName)
+	} else {
+		return cfg, nil, errors.New("missing transfrom name")
+	}
+	ok, err := afero.Exists(fs, path)
+	if err != nil {
+		return cfg, nil, fmt.Errorf("missing %q: %v", path, err)
+	}
+	if !ok {
+		return cfg, nil, fmt.Errorf("missing %q", path)
+	}
+	file, err := afero.ReadFile(fs, path)
+	if err != nil {
+		return cfg, nil, fmt.Errorf("missing %q: %v did you run `rpk transform build`", path, err)
+	}
+	return cfg, bytes.NewReader(file), err
+
 }
 
 func splitEnvVars(raw []string) (map[string]string, error) {

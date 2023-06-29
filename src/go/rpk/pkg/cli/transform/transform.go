@@ -10,6 +10,7 @@
 package transform
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/registry"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -29,6 +30,7 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 		newDeployCommand(fs, p),
 		newListCommand(fs, p),
 		newDeleteCommand(fs, p),
+		registry.NewCommand(fs, p),
 	)
 	return cmd
 }

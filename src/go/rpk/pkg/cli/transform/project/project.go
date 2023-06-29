@@ -46,13 +46,15 @@ func SaveCfg(fs afero.Fs, c Config) error {
 	}
 	return afero.WriteFile(fs, ConfigFileName, b, os.FileMode(0o644))
 }
+func UnmarshalConfig(b []byte) (c Config, err error) {
+	err = yaml.Unmarshal(b, &c)
+	return c, err
+}
 
 func LoadCfg(fs afero.Fs) (Config, error) {
 	b, err := afero.ReadFile(fs, ConfigFileName)
-	var c Config
 	if err != nil {
-		return c, err
+		return Config{}, err
 	}
-	err = yaml.Unmarshal(b, &c)
-	return c, err
+	return UnmarshalConfig(b)
 }
