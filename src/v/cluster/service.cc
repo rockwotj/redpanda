@@ -21,11 +21,13 @@
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
+#include "cluster/plugin_frontend.h"
 #include "cluster/security_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/timeout_clock.h"
+#include "plugin_frontend.h"
 #include "rpc/connection_cache.h"
 #include "rpc/errc.h"
 #include "vlog.h"
@@ -33,12 +35,14 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/coroutine/switch_to.hh>
 
 namespace cluster {
 service::service(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
   ss::sharded<topics_frontend>& tf,
+  ss::sharded<plugin_frontend>* pf,
   ss::sharded<members_manager>& mm,
   ss::sharded<metadata_cache>& cache,
   ss::sharded<security_frontend>& sf,
@@ -53,6 +57,7 @@ service::service(
   ss::sharded<partition_manager>& partition_manager)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
+  , _plugin_frontend(pf)
   , _members_manager(mm)
   , _md_cache(cache)
   , _security_frontend(sf)
@@ -783,4 +788,19 @@ service::do_get_partition_state(partition_state_request req) {
       });
 }
 
+ss::future<upsert_plugin_response>
+service::upsert_plugin(upsert_plugin_request&& req, rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    auto ec = co_await _plugin_frontend->local().upsert_transform(
+      std::move(req.transform), model::timeout_clock::now() + req.timeout);
+    co_return upsert_plugin_response{.ec = ec};
+}
+
+ss::future<remove_plugin_response>
+service::remove_plugin(remove_plugin_request&& req, rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    auto ec = co_await _plugin_frontend->local().remove_transform(
+      std::move(req.name), model::timeout_clock::now() + req.timeout);
+    co_return upsert_plugin_response{.ec = ec};
+}
 } // namespace cluster

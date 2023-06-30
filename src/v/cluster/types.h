@@ -3941,6 +3941,73 @@ struct transform_metadata
 };
 
 /**
+ * Create/update a (WASM) plugin.
+ */
+struct upsert_plugin_request
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    transform_metadata transform;
+    model::timeout_clock::duration timeout{};
+
+    friend bool
+    operator==(const upsert_plugin_request&, const upsert_plugin_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(transform, timeout); }
+};
+struct upsert_plugin_response
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    errc ec;
+
+    friend bool
+    operator==(const upsert_plugin_response&, const upsert_plugin_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
+/**
+ * Remove a (WASM) plugin.
+ */
+struct remove_plugin_request
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    transform_name name;
+    model::timeout_clock::duration timeout{};
+
+    friend bool
+    operator==(const remove_plugin_request&, const remove_plugin_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(name, timeout); }
+};
+struct remove_plugin_response
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    errc ec;
+
+    friend bool
+    operator==(const remove_plugin_response&, const remove_plugin_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
+/**
  * A holder for all the WASM plugin metadata that exists within the cluster.
  *
  * Currently, this is only for data transforms, but other WASM functionality may

@@ -17,10 +17,14 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/service.h"
 #include "cluster/types.h"
+#include "commands.h"
+#include "errc.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "outcome.h"
 #include "raft/types.h"
+#include "types.h"
 #include "vassert.h"
 
 #include <seastar/core/future.hh>
@@ -31,6 +35,36 @@
 #include <variant>
 
 namespace cluster {
+
+namespace {
+errc map_errc(std::error_code ec) {
+    if (ec == errc::success) {
+        return errc::success;
+    }
+    if (ec.category() == raft::error_category()) {
+        switch (raft::errc(ec.value())) {
+        case raft::errc::timeout:
+            return errc::timeout;
+        case raft::errc::not_leader:
+            return errc::not_leader_controller;
+        default:
+            return errc::replication_error;
+        }
+    }
+    if (ec.category() == rpc::error_category()) {
+        switch (rpc::errc(ec.value())) {
+        case rpc::errc::client_request_timeout:
+            return errc::timeout;
+        default:
+            return errc::replication_error;
+        }
+    }
+    if (ec.category() == error_category()) {
+        return errc(ec.value());
+    }
+    return errc::replication_error;
+}
+} // namespace
 
 plugin_frontend::plugin_frontend(
   model::node_id s,
@@ -48,20 +82,20 @@ plugin_frontend::plugin_frontend(
   , _abort_source(a)
   , _controller(c) {}
 
-ss::future<std::error_code> plugin_frontend::upsert_transform(
+ss::future<errc> plugin_frontend::upsert_transform(
   transform_metadata meta, model::timeout_clock::time_point timeout) {
     // The ID is looked up later.
     transform_cmd c{transform_update_cmd{transform_id(-1), std::move(meta)}};
     return do_mutation(std::move(c), timeout);
 }
 
-ss::future<std::error_code> plugin_frontend::remove_transform(
+ss::future<errc> plugin_frontend::remove_transform(
   transform_name name, model::timeout_clock::time_point timeout) {
     transform_cmd c{transform_remove_cmd{std::move(name), 0}};
     return do_mutation(std::move(c), timeout);
 }
 
-ss::future<std::error_code> plugin_frontend::do_mutation(
+ss::future<errc> plugin_frontend::do_mutation(
   transform_cmd cmd, model::timeout_clock::time_point timeout) {
     auto cluster_leader = _leaders->get_leader(model::controller_ntp);
     if (!cluster_leader) {
@@ -69,7 +103,9 @@ ss::future<std::error_code> plugin_frontend::do_mutation(
     }
     if (*cluster_leader != _self) {
         co_return co_await dispatch_mutation_to_remote(
-          *cluster_leader, std::move(cmd), timeout);
+          *cluster_leader,
+          std::move(cmd),
+          timeout - model::timeout_clock::now());
     }
     if (ss::this_shard_id() != controller_stm_shard) {
         co_return co_await container().invoke_on(
@@ -84,9 +120,9 @@ ss::future<std::error_code> plugin_frontend::do_mutation(
     if (!result) {
         co_return errc::not_leader_controller;
     }
-    std::error_code ec = co_await do_local_mutation(
+    errc ec = co_await do_local_mutation(
       std::move(cmd), result.value().last_offset, timeout);
-    if (ec) {
+    if (ec != errc::success) {
         co_return ec;
     }
     // This is an optimization to reduce metadata propagation lag, we can
@@ -95,18 +131,63 @@ ss::future<std::error_code> plugin_frontend::do_mutation(
     co_return errc::success;
 }
 
-ss::future<std::error_code> plugin_frontend::dispatch_mutation_to_remote(
-  model::node_id, transform_cmd, model::timeout_clock::time_point) {
-    co_return errc::success;
+ss::future<errc> plugin_frontend::dispatch_mutation_to_remote(
+  model::node_id cluster_leader,
+  transform_cmd cmd,
+  model::timeout_clock::duration timeout) {
+    struct error_holder {
+        errc ec;
+    };
+    auto to_result = [](auto r) -> result<error_holder> {
+        if (r.has_error()) {
+            return result<error_holder>(r.error());
+        }
+        return result<error_holder>(error_holder{.ec = r.value().ec});
+    };
+    return _connections
+      ->with_node_client<controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        cluster_leader,
+        timeout,
+        [timeout, cmd = std::move(cmd), to_result](
+          controller_client_protocol client) mutable {
+            return ss::visit(
+              std::move(cmd),
+              [client, timeout, to_result](transform_update_cmd cmd) mutable {
+                  return client
+                    .upsert_plugin(
+                      upsert_plugin_request{
+                        .transform = std::move(cmd.value), .timeout = timeout},
+                      rpc::client_opts(timeout))
+                    .then(&rpc::get_ctx_data<upsert_plugin_response>)
+                    .then(to_result);
+              },
+              [client, timeout, to_result](transform_remove_cmd cmd) mutable {
+                  return client
+                    .remove_plugin(
+                      remove_plugin_request{
+                        .name = std::move(cmd.key), .timeout = timeout},
+                      rpc::client_opts(timeout))
+                    .then(&rpc::get_ctx_data<remove_plugin_response>)
+                    .then(to_result);
+              });
+        })
+      .then([](result<error_holder> r) {
+          if (r.has_error()) {
+              return map_errc(r.error());
+          }
+          return r.value().ec;
+      });
 }
-ss::future<std::error_code> plugin_frontend::do_local_mutation(
+ss::future<errc> plugin_frontend::do_local_mutation(
   transform_cmd cmd,
   model::offset offset,
   model::timeout_clock::time_point timeout) {
     assign_id(&cmd, offset);
     auto ec = validate_mutation(cmd);
-    if (ec) {
-        return ss::make_ready_future<std::error_code>(ec);
+    if (ec != errc::success) {
+        return ss::make_ready_future<errc>(ec);
     }
     bool throttled = std::visit(
       [this](const auto& cmd) {
@@ -115,14 +196,14 @@ ss::future<std::error_code> plugin_frontend::do_local_mutation(
       },
       cmd);
     if (throttled) {
-        return ss::make_ready_future<std::error_code>(
-          errc::throttling_quota_exceeded);
+        return ss::make_ready_future<errc>(errc::throttling_quota_exceeded);
     }
     auto b = std::visit(
       [](auto cmd) { return serde_serialize_cmd(std::move(cmd)); },
       std::move(cmd));
-    return _controller->replicate_and_wait(
-      std::move(b), timeout, *_abort_source);
+    return _controller
+      ->replicate_and_wait(std::move(b), timeout, *_abort_source)
+      .then(&map_errc);
 }
 
 void plugin_frontend::assign_id(
@@ -141,7 +222,7 @@ void plugin_frontend::assign_id(
     }
 }
 
-std::error_code plugin_frontend::validate_mutation(const transform_cmd& cmd) {
+errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
     return ss::visit(
       cmd,
       [this](const transform_update_cmd& cmd) {
