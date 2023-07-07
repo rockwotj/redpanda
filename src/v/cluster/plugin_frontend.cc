@@ -15,6 +15,7 @@
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/plugin_table.h"
 #include "cluster/service.h"
 #include "cluster/types.h"
 #include "commands.h"
@@ -25,8 +26,10 @@
 #include "outcome.h"
 #include "raft/types.h"
 #include "types.h"
+#include "utils/utf8.h"
 #include "vassert.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/util/variant_utils.hh>
@@ -35,7 +38,7 @@
 #include <variant>
 
 namespace cluster {
-
+using mutation_result = plugin_frontend::mutation_result;
 namespace {
 errc map_errc(std::error_code ec) {
     if (ec == errc::success) {
@@ -86,20 +89,20 @@ ss::future<errc> plugin_frontend::upsert_transform(
   transform_metadata meta, model::timeout_clock::time_point timeout) {
     // The ID is looked up later.
     transform_cmd c{transform_update_cmd{transform_id(-1), std::move(meta)}};
-    return do_mutation(std::move(c), timeout);
+    return do_mutation(std::move(c), timeout).then([](auto r) { return r.ec; });
 }
 
-ss::future<errc> plugin_frontend::remove_transform(
+ss::future<mutation_result> plugin_frontend::remove_transform(
   transform_name name, model::timeout_clock::time_point timeout) {
     transform_cmd c{transform_remove_cmd{std::move(name), 0}};
     return do_mutation(std::move(c), timeout);
 }
 
-ss::future<errc> plugin_frontend::do_mutation(
+ss::future<mutation_result> plugin_frontend::do_mutation(
   transform_cmd cmd, model::timeout_clock::time_point timeout) {
     auto cluster_leader = _leaders->get_leader(model::controller_ntp);
     if (!cluster_leader) {
-        co_return errc::no_leader_controller;
+        co_return mutation_result{.ec = errc::no_leader_controller};
     }
     if (*cluster_leader != _self) {
         co_return co_await dispatch_mutation_to_remote(
@@ -118,76 +121,82 @@ ss::future<errc> plugin_frontend::do_mutation(
     // Make sure we're up to date
     auto result = co_await _controller->quorum_write_empty_batch(timeout);
     if (!result) {
-        co_return errc::not_leader_controller;
+        co_return mutation_result{.ec = errc::not_leader_controller};
     }
-    errc ec = co_await do_local_mutation(
+    mutation_result r = co_await do_local_mutation(
       std::move(cmd), result.value().last_offset, timeout);
-    if (ec != errc::success) {
-        co_return ec;
+    if (r.ec != errc::success) {
+        co_return r;
     }
     // This is an optimization to reduce metadata propagation lag, we can
     // safely ignore the result as it doesn't effect correctness.
     co_await _controller->insert_linearizable_barrier(timeout).discard_result();
-    co_return errc::success;
+    co_return r;
 }
 
-ss::future<errc> plugin_frontend::dispatch_mutation_to_remote(
+ss::future<mutation_result> plugin_frontend::dispatch_mutation_to_remote(
   model::node_id cluster_leader,
   transform_cmd cmd,
   model::timeout_clock::duration timeout) {
-    struct error_holder {
-        errc ec;
-    };
-    auto to_result = [](auto r) -> result<error_holder> {
-        if (r.has_error()) {
-            return result<error_holder>(r.error());
-        }
-        return result<error_holder>(error_holder{.ec = r.value().ec});
-    };
     return _connections
       ->with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
         cluster_leader,
         timeout,
-        [timeout, cmd = std::move(cmd), to_result](
-          controller_client_protocol client) mutable {
+        [timeout,
+         cmd = std::move(cmd)](controller_client_protocol client) mutable {
             return ss::visit(
               std::move(cmd),
-              [client, timeout, to_result](transform_update_cmd cmd) mutable {
+              [client, timeout](transform_update_cmd cmd) mutable {
+                  auto key = cmd.value.source_key;
                   return client
                     .upsert_plugin(
                       upsert_plugin_request{
                         .transform = std::move(cmd.value), .timeout = timeout},
                       rpc::client_opts(timeout))
                     .then(&rpc::get_ctx_data<upsert_plugin_response>)
-                    .then(to_result);
+                    .then([key](auto r) {
+                        if (r.has_error()) {
+                            return result<mutation_result>(r.error());
+                        }
+                        return result<mutation_result>(mutation_result{
+                          .source_key = key, .ec = r.value().ec});
+                    });
               },
-              [client, timeout, to_result](transform_remove_cmd cmd) mutable {
+              [client, timeout](transform_remove_cmd cmd) mutable {
                   return client
                     .remove_plugin(
                       remove_plugin_request{
                         .name = std::move(cmd.key), .timeout = timeout},
                       rpc::client_opts(timeout))
                     .then(&rpc::get_ctx_data<remove_plugin_response>)
-                    .then(to_result);
+                    .then([](auto r) {
+                        if (r.has_error()) {
+                            return result<mutation_result>(r.error());
+                        }
+                        return result<mutation_result>(mutation_result{
+                          .source_key = r.value().source_key,
+                          .ec = r.value().ec});
+                    });
               });
         })
-      .then([](result<error_holder> r) {
+      .then([](result<mutation_result> r) {
           if (r.has_error()) {
-              return map_errc(r.error());
+              return mutation_result{.ec = map_errc(r.error())};
           }
-          return r.value().ec;
+          return r.value();
       });
 }
-ss::future<errc> plugin_frontend::do_local_mutation(
+ss::future<mutation_result> plugin_frontend::do_local_mutation(
   transform_cmd cmd,
   model::offset offset,
   model::timeout_clock::time_point timeout) {
     assign_id(&cmd, offset);
     auto ec = validate_mutation(cmd);
     if (ec != errc::success) {
-        return ss::make_ready_future<errc>(ec);
+        return ss::make_ready_future<mutation_result>(
+          mutation_result{.ec = ec});
     }
     bool throttled = std::visit(
       [this](const auto& cmd) {
@@ -196,14 +205,25 @@ ss::future<errc> plugin_frontend::do_local_mutation(
       },
       cmd);
     if (throttled) {
-        return ss::make_ready_future<errc>(errc::throttling_quota_exceeded);
+        return ss::make_ready_future<mutation_result>(
+          mutation_result{.ec = errc::throttling_quota_exceeded});
     }
+    auto key = ss::visit(
+      cmd,
+      [](const transform_update_cmd& cmd) { return cmd.value.source_key; },
+      [this](const transform_remove_cmd& cmd) {
+          // This is safe because we've validated the mutation above.
+          return _table->find_by_name(cmd.key)->source_key;
+      });
     auto b = std::visit(
       [](auto cmd) { return serde_serialize_cmd(std::move(cmd)); },
       std::move(cmd));
     return _controller
       ->replicate_and_wait(std::move(b), timeout, *_abort_source)
-      .then(&map_errc);
+      .then([key](std::error_code ec) {
+          return ss::make_ready_future<mutation_result>(
+            mutation_result{.source_key = key, .ec = map_errc(ec)});
+      });
 }
 
 void plugin_frontend::assign_id(
@@ -247,6 +267,12 @@ errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
               if (v.size() > max_value_size) {
                   return errc::transform_invalid_environment;
               }
+              if (!is_valid_utf8(k)) {
+                  return errc::transform_invalid_create;
+              }
+              if (!is_valid_utf8(v)) {
+                  return errc::transform_invalid_create;
+              }
           }
 
           auto existing = _table->find_by_id(cmd.key);
@@ -269,6 +295,16 @@ errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
           if (cmd.value.name().empty()) {
               return errc::transform_invalid_create;
           }
+          constexpr static size_t max_name_size = 128;
+          if (cmd.value.name().size() < max_name_size) {
+              return errc::transform_invalid_create;
+          }
+          if (!is_valid_utf8(cmd.value.name())) {
+              return errc::transform_invalid_create;
+          }
+          if (cmd.value.input_topic.ns != model::kafka_namespace) {
+              return errc::transform_invalid_create;
+          }
           auto input_topic = _topics->get_topic_metadata(cmd.value.input_topic);
           if (!input_topic) {
               return errc::topic_not_exists;
@@ -288,7 +324,15 @@ errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
           if (cmd.value.output_topics.size() > max_output_topics) {
               return errc::transform_invalid_create;
           }
+          absl::flat_hash_set<model::topic_namespace> uniq(
+            cmd.value.output_topics.begin(), cmd.value.output_topics.end());
+          if (uniq.size() != cmd.value.output_topics.size()) {
+              return errc::transform_invalid_create;
+          }
           for (const auto& out_name : cmd.value.output_topics) {
+              if (out_name.ns != model::kafka_namespace) {
+                  return errc::transform_invalid_create;
+              }
               auto output_topic = _topics->get_topic_metadata(out_name);
               if (!output_topic) {
                   return errc::topic_not_exists;
@@ -305,7 +349,11 @@ errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
                   // copartitioning is required
                   return errc::transform_invalid_create;
               }
+              if (would_cause_cycle(cmd.value.input_topic, out_name)) {
+                  return errc::transform_invalid_create;
+              }
           }
+
           return errc::success;
       },
       [this](const transform_remove_cmd& cmd) {
@@ -315,6 +363,30 @@ errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
           }
           return errc::success;
       });
+}
+
+bool plugin_frontend::would_cause_cycle(
+  model::topic_namespace_view input, model::topic_namespace output) {
+    model::topic_namespace_eq eq;
+    // Does output ever lead to input, breadth first search.
+    ss::circular_buffer<model::topic_namespace> queue;
+    queue.push_back(std::move(output));
+    // TODO: should we bound this loop and if you exceed it then we just say
+    // you've chained too many functions together?
+    while (!queue.empty()) {
+        auto tp_ns = queue.front();
+        queue.pop_front();
+        if (eq(input, tp_ns)) {
+            return true;
+        }
+        auto metas = _table->find_by_input_topic(tp_ns);
+        for (const auto& [id, meta] : metas) {
+            for (const auto& output_topic : meta.output_topics) {
+                queue.push_back(output_topic);
+            }
+        }
+    }
+    return false;
 }
 
 plugin_frontend::notification_id plugin_frontend::register_for_updates(
@@ -328,6 +400,11 @@ void plugin_frontend::unregister_for_updates(notification_id id) {
 std::optional<transform_metadata>
 plugin_frontend::lookup_transform(transform_id id) const {
     return _table->find_by_id(id);
+}
+absl::flat_hash_map<transform_id, transform_metadata>
+plugin_frontend::lookup_transforms_by_input_topic(
+  model::topic_namespace_view tp_ns) const {
+    return _table->find_by_input_topic(tp_ns);
 }
 
 absl::flat_hash_map<transform_id, transform_metadata>

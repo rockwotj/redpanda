@@ -24,6 +24,7 @@
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record.h"
 #include "raft/types.h"
@@ -69,8 +70,8 @@ ss::future<> group_manager::start() {
       });
 
     _unmanage_notify_handle = _pm.local().register_unmanage_notification(
-      _tp_ns.ns, _tp_ns.tp, [this](model::partition_id p_id) {
-          detach_partition(model::ntp(_tp_ns.ns, _tp_ns.tp, p_id));
+      _tp_ns.ns, _tp_ns.tp, [this](model::topic_partition tp) {
+          detach_partition(model::ntp(_tp_ns.ns, std::move(tp)));
       });
 
     /*

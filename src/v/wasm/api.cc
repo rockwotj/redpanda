@@ -7,13 +7,15 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#pragma once
-
 #include "wasm/api.h"
 
-namespace wasm::wasmtime {
+#include "wasm/schema_registry.h"
+#include "wasm/wasmedge.h"
 
-std::unique_ptr<runtime>
-create_runtime(ssx::thread_worker*, std::unique_ptr<schema_registry>);
-
-} // namespace wasm::wasmtime
+namespace wasm {
+std::unique_ptr<runtime> runtime::create_default(
+  ssx::thread_worker* t, pandaproxy::schema_registry::api* schema_reg) {
+    return wasmedge::create_runtime(
+      t, wasm::schema_registry::make_default(schema_reg));
+}
+} // namespace wasm

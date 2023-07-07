@@ -99,7 +99,6 @@ server::server(
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
-  ss::sharded<wasm::service>& wasm_service,
   std::optional<qdc_monitor::config> qdc_config,
   ssx::thread_worker& tw,
   const std::unique_ptr<pandaproxy::schema_registry::api>& sr) noexcept
@@ -129,7 +128,6 @@ server::server(
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _tx_registry_frontend(tx_registry_frontend)
-  , _wasm_service(wasm_service)
   , _mtls_principal_mapper(
       config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind())
   , _gssapi_principal_mapper(

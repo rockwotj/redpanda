@@ -9,6 +9,7 @@
  */
 
 #include "test_utils/fixture.h"
+#include "wasm/errc.h"
 #include "wasm/tests/wasm_fixture.h"
 
 #include <seastar/testing/thread_test_case.hh>

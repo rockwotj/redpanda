@@ -9,11 +9,17 @@
  */
 #pragma once
 
-#include "wasm/api.h"
+#ifdef __clang__
+#define V_NULLABLE _Nullable
+#define V_NONNULL _Nonnull
+#else
+#define V_NULLABLE 
+#define V_NONNULL 
+#endif
 
-namespace wasm::wasmtime {
-
-std::unique_ptr<runtime>
-create_runtime(ssx::thread_worker*, std::unique_ptr<schema_registry>);
-
-} // namespace wasm::wasmtime
+template<typename T, auto fn>
+struct deleter {
+    void operator()(T* ptr) { fn(ptr); }
+};
+template<typename T, auto fn>
+using handle = std::unique_ptr<T, deleter<T, fn>>;

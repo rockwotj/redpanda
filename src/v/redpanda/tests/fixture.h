@@ -152,7 +152,6 @@ public:
             std::ref(app.controller->get_api()),
             std::ref(app.tx_gateway_frontend),
             std::ref(app.tx_registry_frontend),
-            std::ref(app.wasm_service),
             std::nullopt,
             std::ref(*app.thread_worker),
             std::ref(app.schema_registry()))

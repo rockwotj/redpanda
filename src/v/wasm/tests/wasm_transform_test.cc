@@ -18,9 +18,7 @@
 FIXTURE_TEST(test_wasm_transforms_work, wasm_test_fixture) {
     load_wasm("identity.wasm");
     auto batch = make_tiny_batch();
-    auto result_batches = transform(batch);
-    BOOST_CHECK_EQUAL(result_batches.size(), 1);
-    const auto& result_batch = result_batches.front();
-    BOOST_CHECK_EQUAL(result_batch.copy_records(), batch.copy_records());
-    BOOST_CHECK_EQUAL(result_batch, batch);
+    auto transformed = transform(batch);
+    BOOST_CHECK_EQUAL(transformed.copy_records(), batch.copy_records());
+    BOOST_CHECK_EQUAL(transformed, batch);
 }

@@ -2,11 +2,10 @@
 
 #include "bytes/iobuf.h"
 #include "model/record.h"
-#include "pandaproxy/schema_registry/seq_writer.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "utils/named_type.h"
 #include "wasm/ffi.h"
+#include "wasm/schema_registry.h"
 
 #include <seastar/util/noncopyable_function.hh>
 
@@ -58,9 +57,7 @@ struct wasm_call_params {
  */
 class redpanda_module {
 public:
-    redpanda_module(
-      /*nullable=*/pandaproxy::schema_registry::sharded_store*,
-      /*nullable=*/pandaproxy::schema_registry::seq_writer*);
+    redpanda_module(schema_registry*);
     redpanda_module(const redpanda_module&) = delete;
     redpanda_module& operator=(const redpanda_module&) = delete;
     redpanda_module(redpanda_module&&) = default;
@@ -124,7 +121,6 @@ private:
       iobuf_const_parser parser, expected_record_metadata);
 
     std::optional<transform_context> _call_ctx;
-    pandaproxy::schema_registry::sharded_store* _schema_registry_store;
-    pandaproxy::schema_registry::seq_writer* _seq_writer;
+    schema_registry* _sr;
 };
 } // namespace wasm

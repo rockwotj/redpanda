@@ -9,12 +9,13 @@
  */
 #pragma once
 
+#include "cluster/types.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
 #include "model/timeout_clock.h"
 #include "ssx/thread_worker.h"
+#include "wasm/api.h"
 #include "wasm/probe.h"
-#include "wasm/wasm.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/util/file.hh>
@@ -34,13 +35,15 @@ public:
 
     void load_wasm(const std::string& path);
     model::record_batch make_tiny_batch();
-    ss::circular_buffer<model::record_batch>
-    transform(const model::record_batch&);
+    model::record_batch transform(const model::record_batch&);
 
-    wasm::transform::metadata meta() const { return _meta; };
+    cluster::transform_metadata meta() const { return _meta; };
 
 private:
     ssx::thread_worker _worker;
-    ss::sharded<wasm::service> _service;
-    wasm::transform::metadata _meta;
+    std::unique_ptr<wasm::runtime> _runtime;
+    std::unique_ptr<wasm::factory> _factory;
+    std::unique_ptr<wasm::engine> _engine;
+    wasm::probe _probe;
+    cluster::transform_metadata _meta;
 };

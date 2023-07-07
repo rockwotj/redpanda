@@ -3926,17 +3926,22 @@ struct transform_metadata
       serde::compat_version<0>> {
     transform_name name;
     model::topic_namespace input_topic;
-    // Right now we force there is only one.
+    // Right now we force there is only one,
     std::vector<model::topic_namespace> output_topics;
     absl::flat_hash_map<ss::sstring, ss::sstring> environment;
+    // Each committed WASM source has a different name, which is tracked here
+    // (mostly for best-effort cleanup).
+    uuid_t source_key;
     // The offset of the commmitted WASM source.
     model::offset source_ptr;
+
+    bool paused{false};
 
     friend bool operator==(const transform_metadata&, const transform_metadata&)
       = default;
 
     auto serde_fields() {
-        return std::tie(name, input_topic, output_topics, environment);
+        return std::tie(name, input_topic, output_topics, environment, paused);
     }
 };
 
@@ -3998,6 +4003,7 @@ struct remove_plugin_response
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
+    uuid_t source_key;
     errc ec;
 
     friend bool

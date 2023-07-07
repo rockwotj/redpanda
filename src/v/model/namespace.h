@@ -76,4 +76,12 @@ inline const model::ntp tx_registry_ntp(
 inline const model::topic_partition schema_registry_internal_tp{
   model::topic{"_schemas"}, model::partition_id{0}};
 
+inline const model::topic wasm_plugin_internal_topic("_wasm_modules");
+
+inline const model::topic_namespace
+  wasm_plugin_internal_nt(model::kafka_namespace, wasm_plugin_internal_topic);
+
+inline const model::topic_partition wasm_plugin_internal_tp{
+  wasm_plugin_internal_topic, model::partition_id(0)};
+
 } // namespace model

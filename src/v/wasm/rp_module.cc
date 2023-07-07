@@ -109,11 +109,8 @@ void write_encoded_schema_subject(
 
 } // namespace
 
-redpanda_module::redpanda_module(
-  pandaproxy::schema_registry::sharded_store* s,
-  pandaproxy::schema_registry::seq_writer* w)
-  : _schema_registry_store(s)
-  , _seq_writer(w) {}
+redpanda_module::redpanda_module(schema_registry* sr)
+  : _sr(sr) {}
 
 model::record_batch redpanda_module::for_each_record(
   const model::record_batch* input,
@@ -292,12 +289,11 @@ int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
 
 ss::future<int32_t> redpanda_module::get_schema_definition_len(
   pandaproxy::schema_registry::schema_id schema_id, uint32_t* size_out) {
-    if (!_schema_registry_store) {
+    if (!_sr->is_enabled()) {
         co_return -1;
     }
     try {
-        auto schema = co_await _schema_registry_store->get_schema_definition(
-          schema_id);
+        auto schema = co_await _sr->get_schema_definition(schema_id);
         ffi::sizer sizer;
         write_encoded_schema_def(schema, &sizer);
         *size_out = sizer.total();
@@ -310,12 +306,11 @@ ss::future<int32_t> redpanda_module::get_schema_definition_len(
 
 ss::future<int32_t> redpanda_module::get_schema_definition(
   pandaproxy::schema_registry::schema_id schema_id, ffi::array<uint8_t> buf) {
-    if (!_schema_registry_store) {
+    if (!_sr->is_enabled()) {
         co_return -1;
     }
     try {
-        auto schema = co_await _schema_registry_store->get_schema_definition(
-          schema_id);
+        auto schema = co_await _sr->get_schema_definition(schema_id);
         ffi::writer writer(buf);
         write_encoded_schema_def(schema, &writer);
         co_return writer.total();
@@ -328,7 +323,7 @@ ss::future<int32_t> redpanda_module::get_subject_schema_len(
   pandaproxy::schema_registry::subject sub,
   pandaproxy::schema_registry::schema_version version,
   uint32_t* size_out) {
-    if (!_schema_registry_store) {
+    if (!_sr->is_enabled()) {
         co_return -1;
     }
 
@@ -337,8 +332,7 @@ ss::future<int32_t> redpanda_module::get_subject_schema_len(
         std::optional<schema_version> v = version == invalid_schema_version
                                             ? std::nullopt
                                             : std::make_optional(version);
-        auto schema = co_await _schema_registry_store->get_subject_schema(
-          sub, v, include_deleted::no);
+        auto schema = co_await _sr->get_subject_schema(sub, v);
         ffi::sizer sizer;
         write_encoded_schema_subject(schema, &sizer);
         *size_out = sizer.total();
@@ -353,7 +347,7 @@ ss::future<int32_t> redpanda_module::get_subject_schema(
   pandaproxy::schema_registry::subject sub,
   pandaproxy::schema_registry::schema_version version,
   ffi::array<uint8_t> buf) {
-    if (!_schema_registry_store) {
+    if (!_sr->is_enabled()) {
         co_return -1;
     }
     using namespace pandaproxy::schema_registry;
@@ -361,8 +355,7 @@ ss::future<int32_t> redpanda_module::get_subject_schema(
         std::optional<schema_version> v = version == invalid_schema_version
                                             ? std::nullopt
                                             : std::make_optional(version);
-        auto schema = co_await _schema_registry_store->get_subject_schema(
-          sub, v, include_deleted::no);
+        auto schema = co_await _sr->get_subject_schema(sub, v);
         ffi::writer writer(buf);
         write_encoded_schema_subject(schema, &writer);
         co_return writer.total();
@@ -376,25 +369,16 @@ ss::future<int32_t> redpanda_module::create_subject_schema(
   pandaproxy::schema_registry::subject sub,
   ffi::array<uint8_t> buf,
   pandaproxy::schema_registry::schema_id* out_schema_id) {
-    if (!_seq_writer || !_schema_registry_store) {
+    if (!_sr->is_enabled()) {
         co_return -1;
     }
 
     ffi::reader r(buf);
     using namespace pandaproxy::schema_registry;
-    canonical_schema parsed;
     try {
         auto unparsed = read_encoded_schema_def(&r);
-        co_await _seq_writer->read_sync();
-        parsed = co_await _schema_registry_store->make_canonical_schema(
+        *out_schema_id = co_await _sr->create_schema(
           unparsed_schema(sub, unparsed));
-    } catch (const std::exception& ex) {
-        vlog(log.warn, "error parsing subject schema: {}", ex);
-        co_return -2;
-    }
-    try {
-        *out_schema_id = co_await _seq_writer->write_subject_version(
-          {.schema = std::move(parsed)});
     } catch (const std::exception& ex) {
         vlog(log.warn, "error registering subject schema: {}", ex);
         co_return -2;

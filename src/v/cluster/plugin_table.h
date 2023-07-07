@@ -16,6 +16,7 @@
 #include "utils/absl_sstring_hash.h"
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/indexed_by.hpp>
 #include <boost/multi_index/member.hpp>
@@ -30,6 +31,11 @@ class plugin_table {
     using underlying_t = absl::flat_hash_map<transform_id, transform_metadata>;
     using name_index_t = absl::
       flat_hash_map<ss::sstring, transform_id, sstring_hash, sstring_eq>;
+    using topic_index_t = absl::flat_hash_map<
+      model::topic_namespace,
+      absl::flat_hash_set<transform_id>,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>;
 
 public:
     plugin_table() = default;
@@ -45,13 +51,16 @@ public:
     // Snapshot (copy) of all the transforms
     underlying_t all_transforms() const;
 
-    // Name lookups
+    // Lookups
     std::optional<transform_metadata> find_by_name(std::string_view) const;
     std::optional<transform_metadata> find_by_name(const transform_name&) const;
     std::optional<transform_id> find_id_by_name(std::string_view) const;
     std::optional<transform_id> find_id_by_name(const transform_name&) const;
-    // ID lookups
     std::optional<transform_metadata> find_by_id(transform_id) const;
+    // All the transforms that use this topic as input
+    underlying_t find_by_input_topic(model::topic_namespace_view) const;
+    // All the transforms that output to this topic
+    underlying_t find_by_output_topic(model::topic_namespace_view) const;
 
     // Create or update transform metadata.
     void upsert_transform(transform_id id, transform_metadata);
@@ -66,8 +75,12 @@ public:
 
 private:
     void run_callbacks(transform_id);
+    underlying_t
+    find_by_topic(const topic_index_t*, model::topic_namespace_view) const;
 
     name_index_t _name_index;
+    topic_index_t _input_index;
+    topic_index_t _output_index;
     underlying_t _underlying;
     absl::flat_hash_map<notification_id, notification_callback> _callbacks;
     notification_id _latest_id{0};

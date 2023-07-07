@@ -28,9 +28,8 @@
 FIXTURE_TEST(test_wasi_works, wasm_test_fixture) {
     load_wasm("wasi.wasm");
     auto batch = make_tiny_batch();
-    auto result_batches = transform(batch);
-    BOOST_CHECK_EQUAL(result_batches.size(), 1);
-    const auto& result_records = result_batches.front().copy_records();
+    auto result = transform(batch);
+    const auto& result_records = result.copy_records();
     BOOST_CHECK_EQUAL(result_records.size(), 1);
     iobuf_const_parser parser(result_records.front().value());
     const auto& value = parser.read_string(parser.bytes_left());
@@ -42,7 +41,7 @@ FIXTURE_TEST(test_wasi_works, wasm_test_fixture) {
         std::string_view v{arg.GetString(), arg.GetStringLength()};
         program_args.emplace_back(v);
     }
-    std::vector<std::string> expected_args{meta().function_name};
+    std::vector<std::string> expected_args{meta().name()};
     BOOST_CHECK_EQUAL(program_args, expected_args);
 
     std::vector<std::string> environment_variables;
@@ -54,8 +53,9 @@ FIXTURE_TEST(test_wasi_works, wasm_test_fixture) {
     // The order here doesn't matter, so sort the values.
     std::sort(environment_variables.begin(), environment_variables.end());
     std::vector<std::string> expected_env{
-      ss::format("REDPANDA_INPUT_TOPIC={}", meta().input.tp()),
-      ss::format("REDPANDA_OUTPUT_TOPIC={}", meta().output.tp()),
+      ss::format("REDPANDA_INPUT_TOPIC={}", meta().input_topic.tp()),
+      ss::format(
+        "REDPANDA_OUTPUT_TOPIC={}", meta().output_topics.begin()->tp()),
     };
     BOOST_CHECK_EQUAL(environment_variables, expected_env);
 

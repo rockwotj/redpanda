@@ -30,7 +30,6 @@
 #include "security/mtls.h"
 #include "ssx/fwd.h"
 #include "utils/ema.h"
-#include "wasm/wasm.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/scheduling.hh>
@@ -64,7 +63,6 @@ public:
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cluster::tx_registry_frontend>&,
-      ss::sharded<wasm::service>&,
       std::optional<qdc_monitor::config>,
       ssx::thread_worker&,
       const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
@@ -162,8 +160,6 @@ public:
 
     latency_probe& latency_probe() { return _probe; }
 
-    wasm::service& wasm_service() { return _wasm_service.local(); }
-
     ssx::thread_worker& thread_worker() { return _thread_worker; }
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
@@ -214,7 +210,6 @@ private:
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
-    ss::sharded<wasm::service>& _wasm_service;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;

@@ -10,9 +10,10 @@
 
 #include "wasm/wasmedge.h"
 
+#include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
+#include "cluster/types.h"
 #include "model/record.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
 #include "reflection/type_traits.h"
 #include "seastarx.h"
 #include "storage/parser_utils.h"
@@ -21,10 +22,11 @@
 #include "vlog.h"
 #include "wasm/errc.h"
 #include "wasm/ffi.h"
+#include "wasm/logger.h"
 #include "wasm/probe.h"
 #include "wasm/rp_module.h"
+#include "wasm/schema_registry.h"
 #include "wasm/wasi.h"
-#include "wasm/wasm.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -40,6 +42,7 @@
 #include <boost/type_traits/function_traits.hpp>
 #include <wasmedge/wasmedge.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -77,16 +80,7 @@ using WasmEdgeFuncType
   = handle<WasmEdge_FunctionTypeContext, &WasmEdge_FunctionTypeDelete>;
 } // namespace
 
-struct runtime {
-    WasmEdgeConfig config_ctx{WasmEdge_ConfigureCreate()};
-};
-void delete_runtime(runtime* rt) { delete rt; }
 namespace {
-
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
-static ss::logger wasmedge_log("wasmedge");
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-thread_local bool is_executing = false;
 
 class memory : public ffi::memory {
 public:
@@ -178,7 +172,7 @@ struct host_function<module_func> {
 
         if (!func_type_ctx) {
             vlog(
-              wasmedge_log.warn,
+              wasm_log.warn,
               "Failed to register host function: {}",
               function_name);
             throw wasm::wasm_exception(
@@ -220,7 +214,7 @@ struct host_function<module_func> {
 
                 } catch (...) {
                     vlog(
-                      wasmedge_log.warn,
+                      wasm_log.warn,
                       "Error executing engine function: {}",
                       std::current_exception());
                     // TODO: When do we fail vs terminate?
@@ -233,7 +227,7 @@ struct host_function<module_func> {
 
         if (!func) {
             vlog(
-              wasmedge_log.warn,
+              wasm_log.warn,
               "Failed to register host function: {}",
               function_name);
             throw wasm::wasm_exception(
@@ -355,7 +349,7 @@ public:
     ss::future<model::record_batch>
     transform(const model::record_batch* batch, probe* probe) override {
         vlog(
-          wasmedge_log.info,
+          wasm_log.trace,
           "Transforming batch: {}",
           batch->header().record_count);
         if (batch->compressed()) {
@@ -380,10 +374,7 @@ public:
 private:
     void initialize_wasi() {
         vlog(
-          wasmedge_log.info,
-          "Initializing wasm function {}",
-          _user_module_name);
-        is_executing = true;
+          wasm_log.debug, "Initializing wasm function {}", _user_module_name);
 
         std::array<WasmEdge_Value, 0> params = {};
         std::array<WasmEdge_Value, 0> returns = {};
@@ -396,10 +387,9 @@ private:
           params.size(),
           returns.data(),
           returns.size());
-        is_executing = false;
         if (!WasmEdge_ResultOK(result)) {
             vlog(
-              wasmedge_log.info,
+              wasm_log.warn,
               "Wasm function {} failed to init: {}",
               _user_module_name,
               WasmEdge_ResultGetMessage(result));
@@ -411,8 +401,7 @@ private:
                 WasmEdge_ResultGetMessage(result)),
               errc::user_code_failure);
         }
-        vlog(
-          wasmedge_log.info, "Wasm function {} initialized", _user_module_name);
+        vlog(wasm_log.debug, "Wasm function {} initialized", _user_module_name);
     }
 
     model::record_batch
@@ -430,7 +419,6 @@ private:
                 WasmEdge_ValueGenI32(params.current_record_offset)};
               std::array returns = {WasmEdge_ValueGenI32(-1)};
               try {
-                  is_executing = true;
                   result = WasmEdge_VMExecute(
                     _vm_ctx.get(),
                     WasmEdge_StringWrap(
@@ -440,12 +428,12 @@ private:
                     args.size(),
                     returns.data(),
                     returns.size());
-                  is_executing = false;
               } catch (...) {
-                  is_executing = false;
                   probe->transform_error();
-                  wasmedge_log.warn(
-                    "transform failed! {}", std::current_exception());
+                  vlog(
+                    wasm_log.warn,
+                    "transform failed! {}",
+                    std::current_exception());
                   throw wasm_exception(
                     ss::format(
                       "transform execution {} failed: {}",
@@ -455,8 +443,10 @@ private:
               }
               if (!WasmEdge_ResultOK(result)) {
                   probe->transform_error();
-                  wasmedge_log.warn(
-                    "transform failed! {}", WasmEdge_ResultGetMessage(result));
+                  vlog(
+                    wasm_log.warn,
+                    "transform failed! {}",
+                    WasmEdge_ResultGetMessage(result));
                   throw wasm_exception(
                     ss::format(
                       "transform execution {} failed", _user_module_name),
@@ -520,41 +510,46 @@ WasmEdgeModule create_module(std::string_view name) {
     return WasmEdgeModule(WasmEdge_ModuleInstanceCreate(wrapped));
 }
 
-class wasmedge_engine_factory : public engine::factory {
+class wasmedge_engine_factory : public factory {
 public:
     wasmedge_engine_factory(
-      runtime* rt, transform::metadata meta, ss::sstring user_module_source)
-      : _rt(rt)
-      , _user_module_source(std::move(user_module_source))
+      WasmEdge_ConfigureContext* config_ctx,
+      ssx::thread_worker* t,
+      cluster::transform_metadata meta,
+      iobuf wasm_module,
+      schema_registry* sr)
+      : _config_ctx(config_ctx)
+      , _worker(t)
+      , _sr(sr)
+      , _wasm_module(std::move(wasm_module))
       , _meta(std::move(meta)) {}
 
-    std::unique_ptr<engine> make_engine(
-      pandaproxy::schema_registry::sharded_store* schema_registry_store,
-      pandaproxy::schema_registry::seq_writer* schema_registry_writer) final {
+    ss::future<std::unique_ptr<engine>> make_engine() final {
         WasmEdge_Result result;
+
         auto store_ctx = WasmEdgeStore(WasmEdge_StoreCreate());
 
         auto vm_ctx = WasmEdgeVM(
-          WasmEdge_VMCreate(_rt->config_ctx.get(), store_ctx.get()));
+          WasmEdge_VMCreate(_config_ctx, store_ctx.get()));
 
         auto wasmedge_rp_module = create_module(redpanda_module::name);
-        auto rp_module = std::make_unique<redpanda_module>(
-          schema_registry_store, schema_registry_writer);
+        auto rp_module = std::make_unique<redpanda_module>(_sr);
         register_rp_module(rp_module.get(), wasmedge_rp_module);
 
         auto wasmedge_wasi_module = create_module(wasi::preview1_module::name);
-        std::vector<ss::sstring> args{_meta.function_name};
-        absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.env;
-        env.emplace("REDPANDA_INPUT_TOPIC", _meta.input.tp());
-        env.emplace("REDPANDA_OUTPUT_TOPIC", _meta.output.tp());
+        std::vector<ss::sstring> args{_meta.name()};
+        absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.environment;
+        env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
+        env.emplace("REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
         auto wasi_module = std::make_unique<wasi::preview1_module>(args, env);
         register_wasi_module(wasi_module.get(), wasmedge_wasi_module);
 
+        (void)_worker;
         result = WasmEdge_VMRegisterModuleFromImport(
           vm_ctx.get(), wasmedge_rp_module.get());
         if (!WasmEdge_ResultOK(result)) {
             vlog(
-              wasmedge_log.warn,
+              wasm_log.warn,
               "Failed to load module: {}",
               WasmEdge_ResultGetMessage(result));
             throw wasm_exception(
@@ -567,7 +562,7 @@ public:
           vm_ctx.get(), wasmedge_wasi_module.get());
         if (!WasmEdge_ResultOK(result)) {
             vlog(
-              wasmedge_log.warn,
+              wasm_log.warn,
               "Failed to load module: {}",
               WasmEdge_ResultGetMessage(result));
             throw wasm_exception(
@@ -576,21 +571,16 @@ public:
               errc::load_failure);
         }
 
-        auto loader_ctx = WasmEdgeLoader(
-          WasmEdge_LoaderCreate(_rt->config_ctx.get()));
+        auto loader_ctx = WasmEdgeLoader(WasmEdge_LoaderCreate(_config_ctx));
 
         WasmEdge_ASTModuleContext* module_ctx_ptr = nullptr;
+        bytes b = iobuf_to_bytes(_wasm_module);
         result = WasmEdge_LoaderParseFromBuffer(
-          loader_ctx.get(),
-          &module_ctx_ptr,
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-          reinterpret_cast<const uint8_t*>(_user_module_source.data()),
-          _user_module_source.size());
+          loader_ctx.get(), &module_ctx_ptr, b.data(), b.size());
         auto module_ctx = WasmEdgeASTModule(module_ctx_ptr);
-
         if (!WasmEdge_ResultOK(result)) {
             vlog(
-              wasmedge_log.warn,
+              wasm_log.warn,
               "Failed to load module: {}",
               WasmEdge_ResultGetMessage(result));
             throw wasm_exception(
@@ -604,7 +594,7 @@ public:
 
         if (!WasmEdge_ResultOK(result)) {
             vlog(
-              wasmedge_log.warn,
+              wasm_log.warn,
               "Failed to load module: {}",
               WasmEdge_ResultGetMessage(result));
             throw wasm_exception(
@@ -616,7 +606,7 @@ public:
         result = WasmEdge_VMValidate(vm_ctx.get());
         if (!WasmEdge_ResultOK(result)) {
             vlog(
-              wasmedge_log.warn,
+              wasm_log.warn,
               "Failed to create engine: {}",
               WasmEdge_ResultGetMessage(result));
             throw wasm_exception(
@@ -629,7 +619,7 @@ public:
         result = WasmEdge_VMInstantiate(vm_ctx.get());
         if (!WasmEdge_ResultOK(result)) {
             vlog(
-              wasmedge_log.warn,
+              wasm_log.warn,
               "Failed to create engine: {}",
               WasmEdge_ResultGetMessage(result));
             throw wasm_exception(
@@ -643,8 +633,8 @@ public:
         modules.push_back(std::move(wasmedge_rp_module));
         modules.push_back(std::move(wasmedge_wasi_module));
 
-        return std::make_unique<wasmedge_engine>(
-          _meta.function_name,
+        co_return std::make_unique<wasmedge_engine>(
+          _meta.name(),
           std::move(modules),
           std::move(store_ctx),
           std::move(vm_ctx),
@@ -653,23 +643,43 @@ public:
     }
 
 private:
-    runtime* _rt;
-    ss::sstring _user_module_source;
-    transform::metadata _meta;
+    WasmEdge_ConfigureContext* _config_ctx;
+    ssx::thread_worker* _worker;
+    schema_registry* _sr;
+
+    iobuf _wasm_module;
+    cluster::transform_metadata _meta;
+};
+
+class wasmedge_runtime : public runtime {
+public:
+    wasmedge_runtime(ssx::thread_worker* t, std::unique_ptr<schema_registry> sr)
+      : _config_ctx(WasmEdge_ConfigureCreate())
+      , _worker(t)
+      , _sr(std::move(sr)) {}
+
+    ss::future<std::unique_ptr<factory>>
+    make_factory(cluster::transform_metadata meta, iobuf buf) final {
+        // TODO: see if compiling works here
+        co_return std::make_unique<wasmedge_engine_factory>(
+          _config_ctx.get(),
+          _worker,
+          std::move(meta),
+          std::move(buf),
+          _sr.get());
+    }
+
+private:
+    WasmEdgeConfig _config_ctx;
+    ssx::thread_worker* _worker;
+    std::unique_ptr<schema_registry> _sr;
 };
 
 } // namespace
 
-std::unique_ptr<runtime, decltype(&delete_runtime)> make_runtime() {
-    return {new runtime(), &delete_runtime};
+std::unique_ptr<runtime>
+create_runtime(ssx::thread_worker* t, std::unique_ptr<schema_registry> sr) {
+    return std::make_unique<wasmedge_runtime>(t, std::move(sr));
 }
 
-bool is_running() { return is_executing; }
-
-std::unique_ptr<engine::factory>
-compile(runtime* rt, transform::metadata meta, std::string_view wasm_source) {
-    // TODO: see if compiling works here
-    return std::make_unique<wasmedge_engine_factory>(
-      rt, std::move(meta), ss::sstring(wasm_source));
-}
 } // namespace wasm::wasmedge

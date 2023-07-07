@@ -270,6 +270,41 @@ struct topic_partition {
         return H::combine(std::move(h), tp.topic, tp.partition);
     }
 };
+struct topic_partition_hash {
+    using is_transparent = void;
+
+    size_t operator()(topic_partition_view v) const {
+        return absl::Hash<topic_partition_view>{}(v);
+    }
+
+    size_t operator()(const topic_partition& v) const {
+        return absl::Hash<topic_partition>{}(v);
+    }
+};
+
+struct topic_partition_eq {
+    using is_transparent = void;
+
+    bool operator()(topic_partition_view lhs, topic_partition_view rhs) const {
+        return lhs.partition == rhs.partition && lhs.topic == rhs.topic;
+    }
+
+    bool
+    operator()(const topic_partition& lhs, const topic_partition& rhs) const {
+        return lhs.partition == rhs.partition && lhs.topic == rhs.topic;
+    }
+
+    bool
+    operator()(const topic_partition& lhs, topic_partition_view rhs) const {
+        return lhs.partition == rhs.partition
+               && topic_view(lhs.topic) == rhs.topic;
+    }
+
+    bool
+    operator()(topic_partition_view lhs, const topic_partition& rhs) const {
+        return lhs.partition == rhs.partition && lhs.topic == rhs.topic;
+    }
+};
 
 struct ntp {
     ntp() = default;

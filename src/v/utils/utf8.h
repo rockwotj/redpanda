@@ -71,6 +71,10 @@ struct default_utf8_thrower {
         throw std::runtime_error("Cannot decode string as UTF8");
     }
 };
+struct default_utf8_checker {
+    bool is_valid = true;
+    [[gnu::cold]] void conversion_error() { is_valid = false; }
+};
 
 struct default_control_character_thrower {
     explicit default_control_character_thrower(
@@ -107,7 +111,7 @@ inline void validate_no_control(std::string_view s) {
 
 template<typename Thrower>
 requires ExceptionThrower<Thrower>
-inline void validate_utf8(std::string_view s, Thrower&& thrower) {
+inline void validate_utf8(std::string_view s, Thrower& thrower) {
     try {
         boost::locale::conv::utf_to_utf<char>(
           s.begin(), s.end(), boost::locale::conv::stop);
@@ -117,5 +121,12 @@ inline void validate_utf8(std::string_view s, Thrower&& thrower) {
 }
 
 inline void validate_utf8(std::string_view s) {
-    validate_utf8(s, default_utf8_thrower{});
+    default_utf8_thrower thrower;
+    validate_utf8(s, thrower);
+}
+
+inline bool is_valid_utf8(std::string_view s) {
+    default_utf8_checker checker;
+    validate_utf8(s, checker);
+    return checker.is_valid;
 }

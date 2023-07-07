@@ -14,6 +14,7 @@
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
@@ -57,13 +58,17 @@ public:
 
     using notification_id = plugin_table::notification_id;
     using notification_callback = plugin_table::notification_callback;
+    struct mutation_result {
+        uuid_t source_key;
+        errc ec;
+    };
 
     // Create or update a transform by name.
     ss::future<errc>
       upsert_transform(transform_metadata, model::timeout_clock::time_point);
 
     // Remove a transform by name.
-    ss::future<errc>
+    ss::future<mutation_result>
       remove_transform(transform_name, model::timeout_clock::time_point);
 
     // Register for updates going forward.
@@ -80,6 +85,10 @@ public:
     // updates.
     std::optional<transform_metadata> lookup_transform(transform_id) const;
 
+    // Lookup transforms for input topics.
+    absl::flat_hash_map<transform_id, transform_metadata>
+      lookup_transforms_by_input_topic(model::topic_namespace_view) const;
+
     // Get a snapshot of all the transforms that currently exist.
     absl::flat_hash_map<transform_id, transform_metadata>
     all_transforms() const;
@@ -87,12 +96,12 @@ public:
 private:
     // Perform a mutation request, check if this node is the cluster leader and
     // ensuring that the right core is used for local mutations.
-    ss::future<errc>
+    ss::future<mutation_result>
       do_mutation(transform_cmd, model::timeout_clock::time_point);
 
     // If this node is not the leader, dispatch this mutation to `node_id` as
     // the cluster's leader.
-    ss::future<errc> dispatch_mutation_to_remote(
+    ss::future<mutation_result> dispatch_mutation_to_remote(
       model::node_id, transform_cmd, model::timeout_clock::duration);
 
     // Performs (and validates) a mutation command to be inserted into the
@@ -100,7 +109,7 @@ private:
     //
     // This must take place on the controller shard on the cluster leader to
     // ensure consistency.
-    ss::future<errc> do_local_mutation(
+    ss::future<mutation_result> do_local_mutation(
       transform_cmd, model::offset, model::timeout_clock::time_point);
 
     // Ensures that the mutation is valid.
@@ -108,6 +117,9 @@ private:
     // This must take place on the controller shard on the cluster leader to
     // ensure consistency.
     errc validate_mutation(const transform_cmd&);
+
+    // Would adding this input->output transform cause a cycle?
+    bool would_cause_cycle(model::topic_namespace_view, model::topic_namespace);
 
     // If this command is a upsert, then the ID is assigned.
     //

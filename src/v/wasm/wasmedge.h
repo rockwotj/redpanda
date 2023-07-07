@@ -9,24 +9,13 @@
  */
 #pragma once
 
-#include "wasm/wasm.h"
+#include "wasm/api.h"
 
 #include <memory>
-#include <wasm.h>
 
 namespace wasm::wasmedge {
 
-struct runtime;
-
-void delete_runtime(runtime*);
-std::unique_ptr<runtime, decltype(&delete_runtime)> make_runtime();
-
-/**
- * If this existing thread is running, used for signal handling.
- */
-bool is_running();
-
-std::unique_ptr<engine::factory>
-compile(runtime*, transform::metadata, std::string_view wasm_source);
+std::unique_ptr<runtime>
+create_runtime(ssx::thread_worker*, std::unique_ptr<schema_registry>);
 
 } // namespace wasm::wasmedge

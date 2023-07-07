@@ -10,20 +10,28 @@
 
 #include "wasm/wasmtime.h"
 
+#include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
+#include "cluster/metadata_cache.h"
+#include "cluster/types.h"
 #include "model/record.h"
 #include "seastarx.h"
 #include "storage/parser_utils.h"
 #include "units.h"
 #include "utils/mutex.h"
+#include "utils/pointer.h"
 #include "vlog.h"
+#include "wasm/api.h"
 #include "wasm/errc.h"
 #include "wasm/ffi.h"
+#include "wasm/logger.h"
 #include "wasm/probe.h"
 #include "wasm/rp_module.h"
+#include "wasm/schema_registry.h"
 #include "wasm/wasi.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/core/thread_cputime_clock.hh>
@@ -32,6 +40,7 @@
 #include <wasmedge/enum_types.h>
 #include <wasmtime/config.h>
 #include <wasmtime/error.h>
+#include <wasmtime/module.h>
 #include <wasmtime/store.h>
 
 #include <cstdint>
@@ -51,18 +60,13 @@ namespace wasm::wasmtime {
 
 namespace {
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
-static ss::logger wasmtime_log("wasmtime");
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-thread_local bool is_executing = false;
-
 void check_error(const wasmtime_error_t* error) {
     if (error) {
         wasm_name_t msg;
         wasmtime_error_message(error, &msg);
         std::string str(msg.data, msg.size);
         wasm_byte_vec_delete(&msg);
-        vlog(wasmtime_log.info, "ERR: {}", str);
+        vlog(wasm_log.warn, "ERR: {}", str);
         throw wasm_exception(std::move(str), errc::load_failure);
     }
 }
@@ -97,7 +101,7 @@ void check_trap(const wasm_trap_t* trap) {
             }
         }
         wasm_frame_vec_delete(&trace);
-        vlog(wasmtime_log.info, "TRAP: {}", sb.str());
+        vlog(wasm_log.warn, "TRAP: {}", sb.str());
         throw wasm_exception(sb.str(), errc::user_code_failure);
     }
 }
@@ -192,6 +196,7 @@ public:
                 memory_size),
               errc::user_code_failure);
         }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
         return wasmtime_memory_data(_ctx, _underlying) + guest_ptr;
     }
 
@@ -246,7 +251,7 @@ struct host_function<module_func> {
               if (!ok || extern_item.kind != WASMTIME_EXTERN_MEMORY)
                 [[unlikely]] {
                   constexpr std::string_view error = "Missing memory export";
-                  vlog(wasmtime_log.warn, "{}", error);
+                  vlog(wasm_log.warn, "{}", error);
                   return wasmtime_trap_new(error.data(), error.size());
               }
               memory mem(
@@ -271,10 +276,7 @@ struct host_function<module_func> {
                         std::move(host_result));
                   }
               } catch (const std::exception& e) {
-                  vlog(
-                    wasmtime_log.warn,
-                    "Failure executing host function: {}",
-                    e);
+                  vlog(wasm_log.warn, "Failure executing host function: {}", e);
                   std::string_view msg = e.what();
                   return wasmtime_trap_new(msg.data(), msg.size());
               }
@@ -358,9 +360,21 @@ void register_rp_module(redpanda_module* mod, wasmtime_linker_t* linker) {
 
 class wasmtime_engine : public engine {
 public:
-    static std::unique_ptr<wasmtime_engine>
-    make(std::string_view wasm_module_name, std::string_view wasm_source);
-
+    wasmtime_engine(
+      ss::sstring user_module_name,
+      handle<wasmtime_linker_t, wasmtime_linker_delete> l,
+      handle<wasmtime_store_t, wasmtime_store_delete> s,
+      std::shared_ptr<wasmtime_module_t> user_module,
+      std::unique_ptr<redpanda_module> rp_module,
+      std::unique_ptr<wasi::preview1_module> wasi_module,
+      wasmtime_instance_t instance)
+      : _user_module_name(std::move(user_module_name))
+      , _store(std::move(s))
+      , _user_module(std::move(user_module))
+      , _rp_module(std::move(rp_module))
+      , _wasi_module(std::move(wasi_module))
+      , _linker(std::move(l))
+      , _instance(instance) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
     wasmtime_engine(wasmtime_engine&&) = default;
@@ -377,7 +391,7 @@ public:
     ss::future<model::record_batch>
     transform(const model::record_batch* batch, probe* probe) override {
         vlog(
-          wasmtime_log.info,
+          wasm_log.info,
           "Transforming batch: {}",
           batch->header().record_count);
         if (batch->compressed()) {
@@ -395,25 +409,6 @@ public:
         }
     }
 
-    wasmtime_engine(
-      std::string_view user_module_name,
-      wasm_engine_t* e,
-      handle<wasmtime_linker_t, wasmtime_linker_delete> l,
-      handle<wasmtime_store_t, wasmtime_store_delete> s,
-      std::shared_ptr<wasmtime_module_t> user_module,
-      std::unique_ptr<redpanda_module> rp_module,
-      std::unique_ptr<wasi::preview1_module> wasi_module,
-      wasmtime_instance_t instance)
-      : engine()
-      , _user_module_name(user_module_name)
-      , _engine(e)
-      , _store(std::move(s))
-      , _user_module(std::move(user_module))
-      , _rp_module(std::move(rp_module))
-      , _wasi_module(std::move(wasi_module))
-      , _linker(std::move(l))
-      , _instance(instance) {}
-
 private:
     ss::future<> initialize_wasi() {
         auto* ctx = wasmtime_store_context(_store.get());
@@ -428,21 +423,15 @@ private:
             throw wasm_exception(
               "Missing wasi initialization function", errc::user_code_failure);
         }
-        vlog(
-          wasmtime_log.info,
-          "Initializing wasm function {}",
-          _user_module_name);
-        is_executing = true;
+        vlog(wasm_log.info, "Initializing wasm function {}", _user_module_name);
         wasm_trap_t* trap_ptr = nullptr;
         handle<wasmtime_error_t, wasmtime_error_delete> error{
           wasmtime_func_call(
             ctx, &start.of.func, nullptr, 0, nullptr, 0, &trap_ptr)};
         handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-        is_executing = false;
         check_error(error.get());
         check_trap(trap.get());
-        vlog(
-          wasmtime_log.info, "Wasm function {} initialized", _user_module_name);
+        vlog(wasm_log.info, "Wasm function {} initialized", _user_module_name);
         co_return;
     }
 
@@ -482,7 +471,6 @@ private:
                          .of = {.i32 = params.record_size}},
                         {.kind = WASMTIME_I32,
                          .of = {.i32 = params.current_record_offset}}};
-                      is_executing = true;
                       wasm_trap_t* trap_ptr = nullptr;
                       handle<wasmtime_error_t, wasmtime_error_delete> error{
                         wasmtime_func_call(
@@ -494,7 +482,6 @@ private:
                           /*results_size=*/1,
                           &trap_ptr)};
                       handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-                      is_executing = false;
                       check_error(error.get());
                       check_trap(trap.get());
                   } catch (...) {
@@ -521,7 +508,6 @@ private:
     }
 
     ss::sstring _user_module_name;
-    wasm_engine_t* _engine;
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
     std::shared_ptr<wasmtime_module_t> _user_module;
     std::unique_ptr<redpanda_module> _rp_module;
@@ -530,33 +516,32 @@ private:
     wasmtime_instance_t _instance;
 };
 
-class wasmtime_engine_factory : public engine::factory {
+class wasmtime_engine_factory : public factory {
 public:
     wasmtime_engine_factory(
       wasm_engine_t* engine,
+      cluster::transform_metadata meta,
       std::shared_ptr<wasmtime_module_t> mod,
-      transform::metadata meta)
+      schema_registry* sr)
       : _engine(engine)
       , _module(std::move(mod))
-      , _meta(std::move(meta)) {}
+      , _meta(std::move(meta))
+      , _sr(sr) {}
 
-    std::unique_ptr<engine> make_engine(
-      pandaproxy::schema_registry::sharded_store* schema_registry_store,
-      pandaproxy::schema_registry::seq_writer* schema_registry_writer) final {
+    ss::future<std::unique_ptr<engine>> make_engine() final {
         handle<wasmtime_store_t, wasmtime_store_delete> store{
           wasmtime_store_new(_engine, nullptr, nullptr)};
         auto* context = wasmtime_store_context(store.get());
         handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
           wasmtime_linker_new(_engine)};
 
-        auto rp_module = std::make_unique<redpanda_module>(
-          schema_registry_store, schema_registry_writer);
+        auto rp_module = std::make_unique<redpanda_module>(_sr);
         register_rp_module(rp_module.get(), linker.get());
 
-        std::vector<ss::sstring> args{_meta.function_name};
-        absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.env;
-        env.emplace("REDPANDA_INPUT_TOPIC", _meta.input.tp());
-        env.emplace("REDPANDA_OUTPUT_TOPIC", _meta.output.tp());
+        std::vector<ss::sstring> args{_meta.name()};
+        absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.environment;
+        env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
+        env.emplace("REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
         auto wasi_module = std::make_unique<wasi::preview1_module>(args, env);
         register_wasi_module(wasi_module.get(), linker.get());
 
@@ -569,9 +554,8 @@ public:
         check_error(error.get());
         check_trap(trap.get());
 
-        return std::make_unique<wasmtime_engine>(
-          _meta.function_name,
-          _engine,
+        co_return std::make_unique<wasmtime_engine>(
+          _meta.name(),
           std::move(linker),
           std::move(store),
           _module,
@@ -583,24 +567,46 @@ public:
 private:
     wasm_engine_t* _engine;
     std::shared_ptr<wasmtime_module_t> _module;
-    transform::metadata _meta;
+    cluster::transform_metadata _meta;
+    schema_registry* _sr;
 };
 
-} // namespace
-
-struct runtime {
+class wasmtime_runtime : public runtime {
 public:
-    explicit runtime(wasm_engine_t* e)
-      : _engine(e) {}
+    wasmtime_runtime(
+      handle<wasm_engine_t, &wasm_engine_delete> h,
+      ssx::thread_worker* V_NONNULL t,
+      std::unique_ptr<schema_registry> sr)
+      : _engine(std::move(h))
+      , _worker(t)
+      , _sr(std::move(sr)) {}
 
-    wasm_engine_t* get() const { return _engine.get(); }
+    ss::future<std::unique_ptr<factory>>
+    make_factory(cluster::transform_metadata meta, iobuf buf) override {
+        auto user_module = co_await _worker->submit([this, &buf]() {
+            bytes b = iobuf_to_bytes(buf);
+            wasmtime_module_t* user_module_ptr = nullptr;
+            handle<wasmtime_error_t, wasmtime_error_delete> error{
+              wasmtime_module_new(
+                _engine.get(), b.data(), b.size(), &user_module_ptr)};
+            std::shared_ptr<wasmtime_module_t> user_module{
+              user_module_ptr, wasmtime_module_delete};
+            check_error(error.get());
+            return user_module;
+        });
+        co_return std::make_unique<wasmtime_engine_factory>(
+          _engine.get(), std::move(meta), user_module, _sr.get());
+    }
 
 private:
-    handle<wasm_engine_t, wasm_engine_delete> _engine;
+    handle<wasm_engine_t, &wasm_engine_delete> _engine;
+    ssx::thread_worker* V_NONNULL _worker;
+    std::unique_ptr<schema_registry> _sr;
 };
+} // namespace
 
-void delete_runtime(runtime* rt) { delete rt; }
-std::unique_ptr<runtime, decltype(&delete_runtime)> make_runtime() {
+std::unique_ptr<runtime> create_runtime(
+  ssx::thread_worker* V_NONNULL t, std::unique_ptr<schema_registry> sr) {
     wasm_config_t* config = wasm_config_new();
 
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_NONE);
@@ -608,26 +614,14 @@ std::unique_ptr<runtime, decltype(&delete_runtime)> make_runtime() {
     wasmtime_config_consume_fuel_set(config, false);
     wasmtime_config_wasm_bulk_memory_set(config, true);
     wasmtime_config_parallel_compilation_set(config, false);
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     wasmtime_config_max_wasm_stack_set(config, 8_KiB);
     wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
 
-    return {new runtime(wasm_engine_new_with_config(config)), &delete_runtime};
+    handle<wasm_engine_t, &wasm_engine_delete> engine{
+      wasm_engine_new_with_config(config)};
+    return std::make_unique<wasmtime_runtime>(
+      std::move(engine), t, std::move(sr));
 }
 
-bool is_running() { return is_executing; }
-
-std::unique_ptr<engine::factory>
-compile(runtime* rt, transform::metadata meta, std::string_view wasm_source) {
-    wasmtime_module_t* user_module_ptr = nullptr;
-    handle<wasmtime_error_t, wasmtime_error_delete> error{wasmtime_module_new(
-      rt->get(),
-      reinterpret_cast<const uint8_t*>(wasm_source.data()),
-      wasm_source.size(),
-      &user_module_ptr)};
-    std::shared_ptr<wasmtime_module_t> user_module{
-      user_module_ptr, wasmtime_module_delete};
-    check_error(error.get());
-    return std::make_unique<wasmtime_engine_factory>(
-      rt->get(), user_module, std::move(meta));
-}
 } // namespace wasm::wasmtime

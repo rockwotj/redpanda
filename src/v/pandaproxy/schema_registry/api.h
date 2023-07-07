@@ -28,7 +28,7 @@ class controller;
 }
 
 namespace wasm {
-class service;
+class schema_registry;
 }
 
 namespace pandaproxy::schema_registry {
@@ -50,7 +50,7 @@ public:
 
 private:
     friend class schema_id_validator;
-    friend class wasm::service;
+    friend class wasm::schema_registry;
     model::node_id _node_id;
     ss::smp_service_group _sg;
     size_t _max_memory;

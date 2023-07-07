@@ -21,7 +21,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -45,7 +44,6 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <stdexcept>
 #include <string_view>
 
 namespace kafka {
@@ -236,45 +234,6 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
         .partition_index = ntp.tp.partition, .error_code = ec});
 }
 
-namespace {
-
-ss::future<> produce_wasm_function(
-  produce_ctx& octx, model::ntp ntp, model::record_batch batch) {
-    auto shard = octx.rctx.shards().shard_for(ntp);
-    if (!shard) {
-        throw std::runtime_error("Unexpected multi cluster setup for wasm!");
-    }
-    auto reader = reader_from_lcore_batch(std::move(batch));
-    auto& server = octx.rctx.connection()->server();
-    reader = server.wasm_service().wrap_batch_reader(
-      {ntp.ns, ntp.tp.topic}, std::move(reader));
-    auto transformed = co_await model::consume_reader_to_memory(
-      std::move(reader), model::no_timeout);
-    reader = model::make_foreign_memory_record_batch_reader(
-      std::move(transformed));
-    auto outcome = co_await octx.rctx.partition_manager().invoke_on(
-      *shard,
-      octx.ssg,
-      [reader = std::move(reader),
-       ntp = std::move(ntp)](cluster::partition_manager& mgr) mutable {
-          auto partition = mgr.get(ntp);
-          if (!partition || !partition->is_elected_leader()) {
-              throw std::runtime_error(ss::format(
-                "Expected partition to be the leader for wasm: {}", partition));
-          }
-          return partition->replicate(
-            std::move(reader),
-            raft::replicate_options(raft::consistency_level::quorum_ack));
-      });
-
-    // Assert this thing works
-    outcome.assume_value();
-
-    co_return;
-}
-
-} // namespace
-
 /**
  * \brief handle writing to a single topic partition.
  */
@@ -321,26 +280,6 @@ static partition_produce_stages produce_topic_partition(
     if (timestamp_type == model::timestamp_type::append_time) {
         batch.set_max_timestamp(
           model::timestamp_type::append_time, model::timestamp::now());
-    }
-
-    auto& wasm_service = octx.rctx.connection()->server().wasm_service();
-    auto wasm_transform_output = wasm_service.wasm_transform_output_topic(
-      model::topic_namespace_view(model::kafka_namespace, topic.name));
-    // STOPSHIP: Huge hack to get this working
-    ss::future<> wasm_transform_result = ss::now();
-    vlog(klog.info, "[WASM] Transforming topic to {}", wasm_transform_output);
-    if (wasm_transform_output.has_value()) {
-        wasm_transform_result
-          = produce_wasm_function(
-              octx,
-              model::ntp(
-                wasm_transform_output->ns,
-                wasm_transform_output->tp,
-                part.partition_index),
-              batch.copy())
-              .handle_exception([](const auto& ex) {
-                  vlog(klog.warn, "Failed to apply wasm transform: {}", ex);
-              });
     }
 
     const auto& hdr = batch.header();
@@ -470,10 +409,7 @@ static partition_produce_stages produce_topic_partition(
           });
     return partition_produce_stages{
       .dispatched = std::move(dispatch_f),
-      .produced
-      = std::move(wasm_transform_result).then([f = std::move(f)]() mutable {
-            return std::move(f);
-        }),
+      .produced = std::move(f),
     };
 }
 

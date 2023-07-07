@@ -50,7 +50,9 @@
 #include "ssx/metrics.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
+#include "transform/fwd.h"
 #include "utils/stop_signal.h"
+#include "wasm/fwd.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -122,7 +124,8 @@ public:
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
     ss::sharded<coproc::partition_manager> cp_partition_manager;
-    ss::sharded<wasm::service> wasm_service;
+    std::unique_ptr<wasm::runtime> wasm_runtime;
+    ss::sharded<transform::service> transform_service;
 
     ss::sharded<features::feature_table> feature_table;
 

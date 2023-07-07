@@ -88,11 +88,11 @@
 #include "security/scram_credential.h"
 #include "ssx/future-util.h"
 #include "ssx/metrics.h"
+#include "transform/api.h"
 #include "utils/fragmented_vector.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
 #include "vlog.h"
-#include "wasm/wasm.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
@@ -217,7 +217,7 @@ admin_server::admin_server(
   ss::sharded<cluster::topic_recovery_status_frontend>&
     topic_recovery_status_frontend,
   ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
-  ss::sharded<wasm::service>& wasm_service)
+  ss::sharded<transform::service>& transform_service)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -239,7 +239,7 @@ admin_server::admin_server(
   , _topic_recovery_service(topic_recovery_svc)
   , _topic_recovery_status_frontend(topic_recovery_status_frontend)
   , _tx_registry_frontend(tx_registry_frontend)
-  , _wasm_service(wasm_service)
+  , _transform_service(transform_service)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {}
 
@@ -4901,7 +4901,9 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
     // json object is where the wasm file is.
     doc.ParseStream<
       rapidjson::kParseDefaultFlags | rapidjson::kParseStopWhenDoneFlag>(s);
-    auto wasm_source = req->content.substr(s.Tell());
+    iobuf wasm_source;
+    auto rest_of_buffer = req->content.substr(s.Tell());
+    wasm_source.append(rest_of_buffer.data(), rest_of_buffer.size());
     if (doc.HasParseError()) {
         throw ss::httpd::bad_request_exception(
           fmt::format("JSON parse error: {}", doc.GetParseError()));
@@ -4910,34 +4912,11 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
     apply_validator(validator, doc);
 
     model::ns ns(doc["ns"].GetString());
-    if (ns != model::kafka_namespace) {
-        throw ss::httpd::bad_request_exception(
-          fmt::format("Invalid namespace: {}", ns));
-    }
     auto input_nt = model::topic_namespace(
       ns, model::topic(doc["input_topic"].GetString()));
-    if (!_metadata_cache.local().contains(input_nt)) {
-        throw ss::httpd::bad_request_exception(
-          fmt::format("Topic does not exist: {}", input_nt.tp));
-    }
     auto output_nt = model::topic_namespace(
       ns, model::topic(doc["output_topic"].GetString()));
-    if (!_metadata_cache.local().contains(output_nt)) {
-        throw ss::httpd::bad_request_exception(
-          fmt::format("Topic does not exist: {}", output_nt.tp));
-    }
-    auto name = doc["function_name"].GetString();
-    for (const auto& t : _wasm_service.local().list_transforms()) {
-        if (t.function_name != name) {
-            continue;
-        }
-        if (t.input != input_nt || t.output != output_nt) {
-            throw ss::httpd::bad_request_exception(fmt::format(
-              "A transform {} is already registered on different topics, "
-              "please delete that transform first",
-              name));
-        }
-    }
+    auto name = cluster::transform_name(doc["function_name"].GetString());
     absl::flat_hash_map<ss::sstring, ss::sstring> env;
     // Extract the environment, validating there are no internal environment
     // variables set.
@@ -4952,11 +4931,11 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
         }
     }
     try {
-        co_await _wasm_service.local().deploy_transform(
-          {.function_name = name,
-           .input = input_nt,
-           .output = output_nt,
-           .env = env},
+        co_await _transform_service.local().deploy_transform(
+          {.name = name,
+           .input_topic = input_nt,
+           .output_topics = {output_nt},
+           .environment = std::move(env)},
           std::move(wasm_source));
     } catch (const std::exception& ex) {
         vlog(logger.error, "Unknown issue deploying wasm {}", ex);
@@ -4970,15 +4949,15 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
 ss::future<ss::json::json_return_type>
 admin_server::list_wasm(std::unique_ptr<ss::http::request>) {
     using namespace ss::httpd::wasm_json;
-    auto topics = _wasm_service.local().list_transforms();
+    auto topics = _transform_service.local().list_transforms();
     std::vector<wasm_transform> output;
     output.reserve(topics.size());
     for (auto& topic : topics) {
         wasm_transform tp;
-        tp.ns = topic.input.ns();
-        tp.input_topic = topic.input.tp();
-        tp.output_topic = topic.output.tp();
-        tp.function_name = topic.function_name;
+        tp.ns = topic.input_topic.ns();
+        tp.input_topic = topic.input_topic.tp();
+        tp.output_topic = topic.output_topics.begin()->tp();
+        tp.function_name = topic.name();
         tp.status = "running";
         output.push_back(std::move(tp));
     }
@@ -4990,15 +4969,10 @@ admin_server::delete_wasm(std::unique_ptr<ss::http::request> req) {
     auto doc = parse_json_body(*req);
     auto validator = make_wasm_transform_validator();
     apply_validator(validator, doc);
-
-    auto ns = model::ns(doc["ns"].GetString());
-    auto input_nt = model::topic_namespace(
-      ns, model::topic(doc["input_topic"].GetString()));
+    // TODO: Just take the name here?
     auto name = doc["function_name"].GetString();
-    auto output_nt = model::topic_namespace(
-      ns, model::topic(doc["output_topic"].GetString()));
-    co_await _wasm_service.local().undeploy_transform(
-      {.function_name = name, .input = input_nt, .output = output_nt});
+    co_await _transform_service.local().delete_transform(
+      cluster::transform_name(name));
     co_return ss::json::json_void();
 }
 

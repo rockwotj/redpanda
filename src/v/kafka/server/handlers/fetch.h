@@ -19,7 +19,6 @@
 #include "model/metadata.h"
 #include "utils/hdr_hist.h"
 #include "utils/intrusive_list_helpers.h"
-#include "wasm/wasm.h"
 
 #include <seastar/core/smp.hh>
 

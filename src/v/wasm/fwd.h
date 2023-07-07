@@ -9,11 +9,10 @@
  */
 #pragma once
 
-#include "wasm/api.h"
-
-namespace wasm::wasmtime {
-
-std::unique_ptr<runtime>
-create_runtime(ssx::thread_worker*, std::unique_ptr<schema_registry>);
-
-} // namespace wasm::wasmtime
+namespace wasm {
+class probe;
+class engine;
+class factory;
+class runtime;
+class schema_registry;
+} // namespace wasm

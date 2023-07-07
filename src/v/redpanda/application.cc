@@ -90,12 +90,13 @@
 #include "storage/compaction_controller.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
+#include "transform/api.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
 #include "version.h"
 #include "vlog.h"
-#include "wasm/wasm.h"
+#include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/memory.hh>
@@ -856,7 +857,7 @@ void application::configure_admin_server() {
       std::ref(topic_recovery_service),
       std::ref(topic_recovery_status_frontend),
       std::ref(tx_registry_frontend),
-      std::ref(wasm_service))
+      std::ref(transform_service))
       .get();
 }
 
@@ -1028,9 +1029,26 @@ void application::wire_up_runtime_services(model::node_id node_id) {
     }
 
     // TODO: Flag guard this
-    syschecks::systemd_message("Creating wasm service").get();
-    construct_service(wasm_service, thread_worker.get(), _schema_registry.get())
+    syschecks::systemd_message("Creating wasm runtime").get();
+    wasm_runtime = wasm::runtime::create_default(
+      thread_worker.get(), _schema_registry.get());
+    syschecks::systemd_message("Creating transform service").get();
+
+    std::optional<kafka::client::configuration> transform_kafka_client_cfg;
+    set_local_kafka_client_config(transform_kafka_client_cfg, config::node());
+    construct_service(
+      transform_service,
+      wasm_runtime.get(),
+      node_id,
+      ss::sharded_parameter(
+        [this] { return &controller->get_plugin_frontend().local(); }),
+      ss::sharded_parameter(
+        [this] { return &controller->get_partition_leaders().local(); }),
+      ss::sharded_parameter(
+        [this] { return &controller->get_partition_manager().local(); }),
+      std::reference_wrapper(transform_kafka_client_cfg.value()))
       .get();
+    transform_service.invoke_on_all(&transform::service::start).get();
 
     construct_single_service(_monitor_unsafe_log_flag, std::ref(feature_table));
 
@@ -1639,7 +1657,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
         std::ref(tx_registry_frontend),
-        std::ref(wasm_service),
         qdc_config,
         std::ref(*thread_worker),
         std::ref(_schema_registry))

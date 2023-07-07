@@ -9,38 +9,52 @@
  */
 #include "wasm/tests/wasm_fixture.h"
 
+#include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/randoms.h"
 #include "model/timeout_clock.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/util/file.hh>
 
 wasm_test_fixture::wasm_test_fixture()
-  : _service()
-  , _meta(
-      "test_wasm_transform",
-      model::random_topic_namespace(),
-      model::random_topic_namespace()) {
+  // TODO: Use a non-default runtime so we can fake schema registry
+  : _runtime(wasm::runtime::create_default(&_worker, nullptr))
+  , _engine(nullptr)
+  , _meta(cluster::transform_metadata{
+      .name = cluster::transform_name(ss::sstring("test_wasm_transform")),
+      .input_topic = model::random_topic_namespace(),
+      .output_topics = {model::random_topic_namespace()},
+      .environment = {},
+      .source_ptr = model::offset(0)}) {
     _worker.start().get();
-    _service.start(&_worker, nullptr).get();
+    _probe.setup_metrics(_meta.name());
 }
 wasm_test_fixture::~wasm_test_fixture() {
-    _service.stop().get();
+    if (_engine) {
+        _engine->stop().get();
+    }
+    _probe.clear_metrics();
     _worker.stop().get();
 }
 
 void wasm_test_fixture::load_wasm(const std::string& path) {
-    auto wasm_file = ss::util::read_entire_file_contiguous(path).get0();
-    _service.local().deploy_transform(_meta, wasm_file).get();
+    auto wasm_file = ss::util::read_entire_file(path).get0();
+    iobuf buf;
+    for (auto& chunk : wasm_file) {
+        buf.append(std::move(chunk));
+    }
+    _factory = _runtime->make_factory(_meta, std::move(buf)).get();
+    if (_engine) {
+        _engine->stop().get();
+    }
+    _engine = _factory->make_engine().get();
+    _engine->start().get();
 }
 
-ss::circular_buffer<model::record_batch>
-wasm_test_fixture::transform(const model::record_batch& batch) {
-    auto reader = _service.local().wrap_batch_reader(
-      _meta.output, model::make_memory_record_batch_reader(batch.copy()));
-    return model::consume_reader_to_memory(std::move(reader), model::no_timeout)
-      .get();
+model::record_batch wasm_test_fixture::transform(const model::record_batch& b) {
+    return _engine->transform(&b, &_probe).get();
 }
 model::record_batch wasm_test_fixture::make_tiny_batch() {
     return model::test::make_random_batch(model::test::record_batch_spec{

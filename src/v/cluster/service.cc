@@ -799,8 +799,9 @@ service::upsert_plugin(upsert_plugin_request&& req, rpc::streaming_context&) {
 ss::future<remove_plugin_response>
 service::remove_plugin(remove_plugin_request&& req, rpc::streaming_context&) {
     co_await ss::coroutine::switch_to(get_scheduling_group());
-    auto ec = co_await _plugin_frontend->local().remove_transform(
+    auto result = co_await _plugin_frontend->local().remove_transform(
       std::move(req.name), model::timeout_clock::now() + req.timeout);
-    co_return upsert_plugin_response{.ec = ec};
+    co_return remove_plugin_response{
+      .source_key = result.source_key, .ec = result.ec};
 }
 } // namespace cluster

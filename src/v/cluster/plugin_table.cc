@@ -63,6 +63,32 @@ plugin_table::find_by_id(transform_id id) const {
     }
     return it->second;
 }
+plugin_table::underlying_t plugin_table::find_by_topic(
+  const topic_index_t* index, model::topic_namespace_view tn) const {
+    auto it = index->find(tn);
+    if (it == index->end()) {
+        return {};
+    }
+    underlying_t output;
+    for (auto id : it->second) {
+        auto meta = find_by_id(id);
+        vassert(
+          meta.has_value(),
+          "inconsistent topic index for {} expected id {}",
+          tn,
+          id);
+        output.emplace(id, *meta);
+    }
+    return output;
+}
+plugin_table::underlying_t
+plugin_table::find_by_input_topic(model::topic_namespace_view tn) const {
+    return find_by_topic(&_input_index, tn);
+}
+plugin_table::underlying_t
+plugin_table::find_by_output_topic(model::topic_namespace_view tn) const {
+    return find_by_topic(&_output_index, tn);
+}
 
 void plugin_table::upsert_transform(transform_id id, transform_metadata meta) {
     auto it = _name_index.find(meta.name());
@@ -78,22 +104,56 @@ void plugin_table::upsert_transform(transform_id id, transform_metadata meta) {
     } else {
         _name_index.emplace(meta.name(), id);
     }
+    // Topics cannot change over the lifetime of a transform, so we don't need
+    // to worry about updates specially here, additionally duplicates are
+    // allowed, the plugin_frontend asserts that there are no loops in
+    // transforms.
+    _input_index[meta.input_topic].emplace(id);
+    for (const auto& output_topic : meta.output_topics) {
+        _output_index[output_topic].emplace(id);
+    }
     _underlying.insert_or_assign(id, std::move(meta));
     run_callbacks(id);
 }
 
 void plugin_table::remove_transform(const transform_name& name) {
-    auto it = _name_index.find(std::string_view(name()));
-    if (it == _name_index.end()) {
+    auto name_it = _name_index.find(std::string_view(name()));
+    if (name_it == _name_index.end()) {
         return;
     }
-    transform_id id = it->second;
+    auto id = name_it->second;
+    auto it = _underlying.find(id);
     vassert(
-      _underlying.erase(id),
+      it != _underlying.end(),
       "inconsistency: name index index had a record with name: {} id: {}",
       name,
       id);
-    _name_index.erase(it);
+    const auto& meta = it->second;
+    // Delete input topic index entries
+    [this, &meta, id]() {
+        auto input_it = _input_index.find(meta.input_topic);
+        vassert(
+          input_it != _input_index.end() && input_it->second.erase(id) > 0,
+          "inconsistency: missing transform input index entry: {} id: {}",
+          meta.input_topic,
+          id);
+        if (input_it->second.empty()) {
+            _input_index.erase(input_it);
+        }
+    }();
+    for (const auto& output_topic : it->second.output_topics) {
+        auto output_it = _output_index.find(output_topic);
+        vassert(
+          output_it != _output_index.end() && output_it->second.erase(id) > 0,
+          "inconsistency: missing transform output index entry: {} id: {}",
+          output_topic,
+          id);
+        if (output_it->second.empty()) {
+            _output_index.erase(output_it);
+        }
+    }
+    _name_index.erase(name_it);
+    _underlying.erase(it);
     run_callbacks(id);
 }
 void plugin_table::reset_transforms(plugin_table::underlying_t snap) {

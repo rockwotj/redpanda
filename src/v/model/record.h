@@ -75,6 +75,12 @@ private:
 
 class record_header {
 public:
+    record_header(iobuf k, iobuf v)
+      : _key_size(int32_t(k.size_bytes()))
+      , _key(std::move(k))
+      , _val_size(int32_t(v.size_bytes()))
+      , _value(std::move(v)) {}
+
     record_header(int32_t k_len, iobuf k, int32_t v_len, iobuf v)
       : _key_size(k_len)
       , _key(std::move(k))

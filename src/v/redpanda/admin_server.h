@@ -20,8 +20,8 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
+#include "transform/fwd.h"
 #include "utils/request_auth.h"
-#include "wasm/wasm.h"
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sstring.hh>
@@ -74,7 +74,7 @@ public:
       ss::sharded<cloud_storage::topic_recovery_service>&,
       ss::sharded<cluster::topic_recovery_status_frontend>&,
       ss::sharded<cluster::tx_registry_frontend>&,
-      ss::sharded<wasm::service>&);
+      ss::sharded<transform::service>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -517,7 +517,7 @@ private:
     ss::sharded<cluster::topic_recovery_status_frontend>&
       _topic_recovery_status_frontend;
     ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
-    ss::sharded<wasm::service>& _wasm_service;
+    ss::sharded<transform::service>& _transform_service;
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;
     ss::timer<> _blocked_reactor_notify_reset_timer;
