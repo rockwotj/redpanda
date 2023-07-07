@@ -16,6 +16,7 @@
 #include "ssx/future-util.h"
 #include "transform/logger.h"
 #include "transform/transform_stm.h"
+#include "vlog.h"
 #include "wasm/api.h"
 #include "wasm/errc.h"
 
@@ -48,6 +49,7 @@ manager::~manager() = default;
 
 ss::future<> manager::start() { return ss::now(); }
 ss::future<> manager::stop() {
+    vlog(tlog.info, "Stopping transform manager...");
     co_await _queue.shutdown();
     // Now shutdown all the stms
     std::vector<ss::future<>> futures;
@@ -58,6 +60,7 @@ ss::future<> manager::stop() {
     co_await ss::when_all(futures.begin(), futures.end());
     _stms_by_id.clear();
     _stms_by_ntp.clear();
+    vlog(tlog.info, "Stopped transform manager.");
 }
 
 void manager::on_leadership_change(model::ntp ntp, ntp_leader leader_status) {
@@ -77,6 +80,11 @@ void manager::on_plugin_error(
 
 ss::future<>
 manager::handle_leadership_change(model::ntp ntp, ntp_leader leader_status) {
+    vlog(
+      tlog.debug,
+      "handling leadership status change to leader={} for: {}",
+      leader_status,
+      ntp);
     auto it = _stms_by_ntp.find(ntp);
     if (it == _stms_by_ntp.end()) {
         // We aren't the leader and we don't have an stm running, good to
@@ -106,6 +114,7 @@ manager::handle_leadership_change(model::ntp ntp, ntp_leader leader_status) {
 }
 
 ss::future<> manager::handle_plugin_change(cluster::transform_id id) {
+    vlog(tlog.debug, "handling update to plugin: {}", id);
     auto transform = _registry->lookup_by_id(id);
     auto it = _stms_by_id.find(id);
     // If we have an existing stm we need to restart it with the updates
@@ -118,7 +127,7 @@ ss::future<> manager::handle_plugin_change(cluster::transform_id id) {
     }
     // If there is no transform we're good to go, everything is shutdown if
     // needed.
-    if (!transform) {
+    if (!transform || transform->paused) {
         co_return;
     }
     // Otherwise, start a stm for every partition we're a leader of.
@@ -136,6 +145,7 @@ ss::future<> manager::handle_plugin_change(cluster::transform_id id) {
 
 ss::future<> manager::handle_plugin_error(
   cluster::transform_id id, cluster::transform_metadata meta) {
+    vlog(tlog.debug, "handling plugin error: {}", id);
     _registry->report_error(id, meta);
     auto it = _stms_by_id.find(id);
     if (it == _stms_by_id.end()) {
@@ -189,6 +199,13 @@ ss::future<> manager::start_stm(
           = std::chrono::seconds(2);
         auto binary = co_await _registry->fetch_binary(
           meta.source_ptr, fetch_binary_timeout);
+        if (!binary) {
+            vlog(
+              tlog.warn, "missing source binary, offset={}", meta.source_ptr);
+            // enqueue a task to mark the plugin as failed
+            on_plugin_error(id, meta);
+            co_return;
+        }
         // TODO: we should be sharing factories across the entire process, maybe
         // we need some sort of cache?
         auto factory = co_await _runtime->make_factory(
@@ -226,6 +243,7 @@ ss::future<> manager::start_stm(
     vassert(
       inserted, "invalid transform::stm management for id={} ntp={}", id, ntp);
     co_await it->second->start();
+    vlog(tlog.info, "started transform {} on {}", id, ntp);
 }
 
 } // namespace transform

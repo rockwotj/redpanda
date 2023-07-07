@@ -3941,7 +3941,14 @@ struct transform_metadata
       = default;
 
     auto serde_fields() {
-        return std::tie(name, input_topic, output_topics, environment, paused);
+        return std::tie(
+          name,
+          input_topic,
+          output_topics,
+          environment,
+          source_key,
+          source_ptr,
+          paused);
     }
 };
 

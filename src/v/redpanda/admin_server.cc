@@ -948,6 +948,12 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::base_exception(
               fmt::format("Too many requests: {}", ec.message()),
               ss::http::reply::status_type::too_many_requests);
+        case cluster::errc::transform_does_not_exist:
+        case cluster::errc::transform_invalid_create:
+        case cluster::errc::transform_invalid_environment:
+        case cluster::errc::transform_invalid_update:
+            throw ss::httpd::bad_request_exception(
+              ss::format("{}", ec.message()));
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
@@ -4922,25 +4928,16 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_wasm(
     // variables set.
     if (doc.HasMember("env")) {
         for (const auto& m : doc["env"].GetObject()) {
-            std::string_view name = m.name.GetString();
-            if (name.starts_with("REDPANDA_")) {
-                throw ss::httpd::bad_request_exception(
-                  fmt::format("Invalid environment variable: {}", name));
-            }
-            env.insert_or_assign(ss::sstring(name), m.value.GetString());
+            env.insert_or_assign(m.name.GetString(), m.value.GetString());
         }
     }
-    try {
-        co_await _transform_service.local().deploy_transform(
-          {.name = name,
-           .input_topic = input_nt,
-           .output_topics = {output_nt},
-           .environment = std::move(env)},
-          std::move(wasm_source));
-    } catch (const std::exception& ex) {
-        vlog(logger.error, "Unknown issue deploying wasm {}", ex);
-        throw ex;
-    }
+    cluster::errc ec = co_await _transform_service.local().deploy_transform(
+      {.name = name,
+       .input_topic = input_nt,
+       .output_topics = {output_nt},
+       .environment = std::move(env)},
+      std::move(wasm_source));
+    co_await throw_on_error(*req, ec, model::controller_ntp);
     rep->set_status(ss::http::reply::status_type::ok);
     rep->write_body("json", ss::json::json_void().to_json());
     co_return std::move(rep);
@@ -4971,8 +4968,9 @@ admin_server::delete_wasm(std::unique_ptr<ss::http::request> req) {
     apply_validator(validator, doc);
     // TODO: Just take the name here?
     auto name = doc["function_name"].GetString();
-    co_await _transform_service.local().delete_transform(
+    auto ec = co_await _transform_service.local().delete_transform(
       cluster::transform_name(name));
+    co_await throw_on_error(*req, ec, model::controller_ntp);
     co_return ss::json::json_void();
 }
 

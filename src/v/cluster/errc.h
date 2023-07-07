@@ -205,8 +205,7 @@ struct errc_category final : public std::error_category {
             return "Invalid update to transform, name or topic configuration "
                    "cannot change";
         case errc::transform_invalid_create:
-            return "Invalid transform, missing name, output topics or "
-                   "using reserved environment variables";
+            return "Invalid create transform configuration";
         case errc::transform_invalid_environment:
             return "Invalid transform environment";
         }

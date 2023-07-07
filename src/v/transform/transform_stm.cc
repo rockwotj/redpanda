@@ -38,13 +38,16 @@ namespace transform {
 
 namespace {
 struct queue_consumer {
-    ss::queue<model::record_batch>* q;
+    ss::queue<model::record_batch>* queue;
+    model::offset latest_offset;
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-        co_await q->push_eventually(std::move(b));
+        latest_offset = model::next_offset(b.last_offset());
+        vlog(tlog.trace, "read upto input offset {}", b.last_offset());
+        co_await queue->push_eventually(std::move(b));
         co_return ss::stop_iteration::no;
     }
-    void end_of_stream() {}
+    model::offset end_of_stream() { return latest_offset; }
 };
 } // namespace
 
@@ -105,17 +108,26 @@ ss::future<> stm::run_transform() {
 ss::future<> stm::run_consumer() {
     try {
         auto offset = co_await _source->load_latest_offset();
+        vlog(
+          tlog.trace, "starting {} at {} offset {}", _meta.name, _ntp, offset);
         while (true) {
-            auto reader = co_await _source->read_batch(
-              model::next_offset(offset));
-            if (!reader) {
+            auto reader = co_await _source->read_batch(offset);
+            auto latest_offset = co_await std::move(reader)->consume(
+              queue_consumer{.queue = &_input_queue, .latest_offset = offset},
+              model::no_timeout);
+            if (latest_offset == offset) {
                 constexpr auto delay = std::chrono::seconds(1);
                 // TODO: Add jitter or use notifications on when to read.
                 co_await ss::sleep(delay);
                 continue;
             }
-            co_await std::move(reader)->consume(
-              queue_consumer{&_input_queue}, model::no_timeout);
+            offset = latest_offset;
+            vlog(
+              tlog.trace,
+              "{} consumed {} upto offset {}",
+              _meta.name,
+              _ntp,
+              offset);
         }
     } catch (const ss::abort_requested_exception&) {
     } catch (const std::exception& ex) {
@@ -129,11 +141,14 @@ ss::future<> stm::run_all_producers() {
       [this](size_t idx) { return run_producer(idx); });
 }
 ss::future<> stm::run_producer(size_t idx) {
+    const auto& tp_ns = _meta.output_topics[idx];
+    const auto& ntp = model::ntp(tp_ns.ns, tp_ns.tp, _ntp.tp.partition);
     auto& queue = _output_queues[idx];
     auto& sink = _sinks[idx];
     try {
         while (true) {
             auto batch = co_await queue.pop_eventually();
+            vlog(tlog.trace, "writing {} output to {}", _meta.name, tp_ns);
             co_await sink->write(std::move(batch));
         }
     } catch (const ss::abort_requested_exception&) {

@@ -14,6 +14,7 @@
 #include "cluster/commands.h"
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
+#include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/plugin_table.h"
 #include "cluster/service.h"
@@ -198,13 +199,13 @@ ss::future<mutation_result> plugin_frontend::do_local_mutation(
         return ss::make_ready_future<mutation_result>(
           mutation_result{.ec = ec});
     }
-    bool throttled = std::visit(
+    bool ok = std::visit(
       [this](const auto& cmd) {
           using T = std::decay_t<decltype(cmd)>;
           return _controller->throttle<T>();
       },
       cmd);
-    if (throttled) {
+    if (!ok) {
         return ss::make_ready_future<mutation_result>(
           mutation_result{.ec = errc::throttling_quota_exceeded});
     }
@@ -268,10 +269,10 @@ errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
                   return errc::transform_invalid_environment;
               }
               if (!is_valid_utf8(k)) {
-                  return errc::transform_invalid_create;
+                  return errc::transform_invalid_environment;
               }
               if (!is_valid_utf8(v)) {
-                  return errc::transform_invalid_create;
+                  return errc::transform_invalid_environment;
               }
           }
 
@@ -296,7 +297,7 @@ errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
               return errc::transform_invalid_create;
           }
           constexpr static size_t max_name_size = 128;
-          if (cmd.value.name().size() < max_name_size) {
+          if (cmd.value.name().size() > max_name_size) {
               return errc::transform_invalid_create;
           }
           if (!is_valid_utf8(cmd.value.name())) {
@@ -380,9 +381,9 @@ bool plugin_frontend::would_cause_cycle(
             return true;
         }
         auto metas = _table->find_by_input_topic(tp_ns);
-        for (const auto& [id, meta] : metas) {
-            for (const auto& output_topic : meta.output_topics) {
-                queue.push_back(output_topic);
+        for (auto& [id, meta] : metas) {
+            for (auto& output_topic : meta.output_topics) {
+                queue.push_back(std::move(output_topic));
             }
         }
     }

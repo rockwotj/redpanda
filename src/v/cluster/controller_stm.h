@@ -59,6 +59,7 @@ public:
         return _metrics_reporter_cluster_info;
     }
 
+    // Return true if the cmd is allowed to proceed.
     template<typename Cmd>
     requires ControllerCommand<Cmd>
     bool throttle() {

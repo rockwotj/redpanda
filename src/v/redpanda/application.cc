@@ -1040,15 +1040,11 @@ void application::wire_up_runtime_services(model::node_id node_id) {
       transform_service,
       wasm_runtime.get(),
       node_id,
-      ss::sharded_parameter(
-        [this] { return &controller->get_plugin_frontend().local(); }),
-      ss::sharded_parameter(
-        [this] { return &controller->get_partition_leaders().local(); }),
-      ss::sharded_parameter(
-        [this] { return &controller->get_partition_manager().local(); }),
+      &controller->get_plugin_frontend(),
+      &raft_group_manager,
+      &controller->get_partition_manager(),
       std::reference_wrapper(transform_kafka_client_cfg.value()))
       .get();
-    transform_service.invoke_on_all(&transform::service::start).get();
 
     construct_single_service(_monitor_unsafe_log_flag, std::ref(feature_table));
 
@@ -2081,6 +2077,15 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
 
     start_kafka(node_id, app_signal);
     controller->set_ready().get();
+
+    // Transforms need to be started here because it talks to the kafka API on
+    // start. The schema registry works around this by lazily waiting for the
+    // first request to come in, which must never happen before the kafka api is
+    // ready (the race window is probably very small).
+    if (transform_service.local_is_initialized()) {
+        transform_service.invoke_on_all(&transform::service::start).get();
+    }
+
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
     _monitor_unsafe_log_flag->start().get();
 

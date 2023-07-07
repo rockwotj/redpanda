@@ -19,10 +19,13 @@
 #include "kafka/client/client.h"
 #include "kafka/client/fwd.h"
 #include "model/metadata.h"
+#include "raft/fwd.h"
+#include "raft/group_manager.h"
 #include "utils/uuid.h"
 #include "wasm/api.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 
 #include <memory>
 
@@ -41,9 +44,9 @@ public:
     service(
       wasm::runtime* rt,
       model::node_id self,
-      cluster::plugin_frontend* plugins,
-      cluster::partition_leaders_table* leaders,
-      cluster::partition_manager* partition_manager,
+      ss::sharded<cluster::plugin_frontend>* plugins,
+      ss::sharded<raft::group_manager>* leaders,
+      ss::sharded<cluster::partition_manager>* partition_manager,
       const kafka::client::configuration&);
     service(const service&) = delete;
     service& operator=(const service&) = delete;
@@ -92,9 +95,10 @@ private:
 
     wasm::runtime* _runtime;
     model::node_id _self;
-    cluster::plugin_frontend* _plugins;
-    cluster::partition_leaders_table* _leaders;
-    cluster::partition_manager* _partition_manager;
+    // Only the local version is accessed for all sharded services.
+    ss::sharded<cluster::plugin_frontend>* _plugins;
+    ss::sharded<raft::group_manager>* _leaders;
+    ss::sharded<cluster::partition_manager>* _partition_manager;
     std::unique_ptr<kafka::client::client> _client;
     std::unique_ptr<manager> _manager;
     ss::gate _gate;

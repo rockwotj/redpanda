@@ -11,6 +11,7 @@
 #include "plugin_backend.h"
 
 #include "cluster/commands.h"
+#include "cluster/logger.h"
 
 #include <seastar/core/future.hh>
 

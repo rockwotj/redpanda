@@ -28,6 +28,7 @@
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "raft/group_manager.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
 #include "transform/io.h"
@@ -36,6 +37,7 @@
 #include "utils/uuid.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 
 #include <__concepts/same_as.h>
@@ -259,7 +261,13 @@ public:
     }
     ss::future<std::optional<model::record_batch_reader>>
     read_batch(model::offset offset) override {
-        auto resp = co_await _client->fetch_partition(_ntp.tp, offset, 1, 1ms);
+        constexpr auto fetch_size_bytes = 64_KiB;
+        constexpr auto fetch_timeout = 1s;
+        auto resp = co_await _client->fetch_partition(
+          _ntp.tp, offset, fetch_size_bytes, fetch_timeout);
+        if (resp.data.error_code == kafka::error_code::offset_out_of_range) {
+            co_return std::nullopt;
+        }
         check_error_code(resp.data);
         if (resp.data.topics.size() != 1) {
             throw std::runtime_error("unexpected topic count");
@@ -269,6 +277,9 @@ public:
             throw std::runtime_error("unexpected partition count");
         }
         auto& p = partitions[0];
+        if (p.error_code == kafka::error_code::offset_out_of_range) {
+            co_return std::nullopt;
+        }
         check_error_code(p);
         if (!p.records) {
             co_return std::nullopt;
@@ -287,9 +298,9 @@ private:
 service::service(
   wasm::runtime* rt,
   model::node_id self,
-  cluster::plugin_frontend* plugins,
-  cluster::partition_leaders_table* leaders,
-  cluster::partition_manager* partition_manager,
+  ss::sharded<cluster::plugin_frontend>* plugins,
+  ss::sharded<raft::group_manager>* leaders,
+  ss::sharded<cluster::partition_manager>* partition_manager,
   const kafka::client::configuration&)
   : _runtime(rt)
   , _self(self)
@@ -298,7 +309,11 @@ service::service(
   , _partition_manager(partition_manager)
   , _client(std::make_unique<kafka::client::client>(config::to_yaml(
       kafka::client::configuration(), config::redact_secrets::no)))
-  , _manager(nullptr) {
+  , _manager(nullptr) {}
+
+service::~service() = default;
+
+ss::future<> service::start() {
     std::unique_ptr<source::factory> source_factory
       = std::make_unique<kafka_client_source::factory>(_client.get());
     std::unique_ptr<sink::factory> sink_factory
@@ -306,41 +321,54 @@ service::service(
     _manager = std::make_unique<manager>(
       _runtime,
       std::make_unique<plugin_registry_adapter>(
-        plugins, _client.get(), partition_manager, &_gate),
+        &_plugins->local(),
+        _client.get(),
+        &_partition_manager->local(),
+        &_gate),
       std::move(source_factory),
       std::move(sink_factory));
-}
 
-service::~service() = default;
-
-ss::future<> service::start() {
     co_await _client->connect();
-    co_await create_internal_source_topic();
+    if (ss::this_shard_id() == 0) {
+        co_await create_internal_source_topic();
+    }
     co_await _manager->start();
     register_notifications();
 }
 void service::register_notifications() {
-    _plugin_notification_id = _plugins->register_for_updates(
+    _plugin_notification_id = _plugins->local().register_for_updates(
       [this](cluster::transform_id id) { _manager->on_plugin_change(id); });
-    _leader_notification_id = _leaders->register_leadership_change_notification(
-      [this](
-        model::ntp ntp, model::term_id, std::optional<model::node_id> leader) {
-          if (ntp.ns != model::kafka_namespace) {
-              return;
-          }
-          bool node_is_leader = leader.has_value() && leader == _self;
-          if (!node_is_leader) {
-              _manager->on_leadership_change(std::move(ntp), ntp_leader::no);
-              return;
-          }
-          auto partition = _partition_manager->get(ntp);
-          ntp_leader is_leader = partition && partition->is_elected_leader()
-                                   ? ntp_leader::yes
-                                   : ntp_leader::no;
-          _manager->on_leadership_change(std::move(ntp), is_leader);
-      });
+    _leader_notification_id
+      = _leaders->local().register_leadership_notification(
+        [this](
+          raft::group_id group_id,
+          model::term_id,
+          std::optional<model::node_id> leader) {
+            auto partition = _partition_manager->local().partition_for(
+              group_id);
+            if (!partition) {
+                vlog(
+                  tlog.debug,
+                  "got leadership notification for unknown partition: {}",
+                  group_id);
+                return;
+            }
+            bool node_is_leader = leader.has_value() && leader == _self;
+            if (!node_is_leader) {
+                _manager->on_leadership_change(
+                  partition->ntp(), ntp_leader::no);
+                return;
+            }
+            if (partition->ntp().ns != model::kafka_namespace) {
+                return;
+            }
+            ntp_leader is_leader = partition && partition->is_elected_leader()
+                                     ? ntp_leader::yes
+                                     : ntp_leader::no;
+            _manager->on_leadership_change(partition->ntp(), is_leader);
+        });
     _partition_unmanage_notification_id
-      = _partition_manager->register_unmanage_notification(
+      = _partition_manager->local().register_unmanage_notification(
         model::kafka_namespace, [this](model::topic_partition tp) {
             _manager->on_leadership_change(
               model::ntp(model::kafka_namespace, std::move(tp)),
@@ -349,7 +377,7 @@ void service::register_notifications() {
     // NOTE: this will also trigger notifications for existing partitions, which
     // will effectively bootstrap the transform manager.
     _partition_manage_notification_id
-      = _partition_manager->register_manage_notification(
+      = _partition_manager->local().register_manage_notification(
         model::kafka_namespace,
         [this](const ss::lw_shared_ptr<cluster::partition>& p) {
             ntp_leader is_leader = p->is_leader() ? ntp_leader::yes
@@ -367,12 +395,12 @@ ss::future<> service::stop() {
     co_await _client->stop();
 }
 void service::unregister_notifications() {
-    _plugins->unregister_for_updates(_plugin_notification_id);
-    _leaders->unregister_leadership_change_notification(
+    _plugins->local().unregister_for_updates(_plugin_notification_id);
+    _leaders->local().unregister_leadership_notification(
       _leader_notification_id);
-    _partition_manager->unregister_manage_notification(
+    _partition_manager->local().unregister_manage_notification(
       _partition_manage_notification_id);
-    _partition_manager->unregister_unmanage_notification(
+    _partition_manager->local().unregister_unmanage_notification(
       _partition_unmanage_notification_id);
 }
 
@@ -382,9 +410,10 @@ service::deploy_transform(cluster::transform_metadata meta, iobuf buf) {
     auto name = meta.name;
     co_await validate_source(meta, buf.share(0, buf.size_bytes()));
     auto [key, offset] = co_await write_source(name, std::move(buf));
+    vlog(tlog.debug, "wrote wasm source at key={} offset={}", key, offset);
     meta.source_key = key;
     meta.source_ptr = offset;
-    auto errc = co_await _plugins->upsert_transform(
+    auto errc = co_await _plugins->local().upsert_transform(
       std::move(meta), model::no_timeout);
     if (errc != cluster::errc::success) {
         // TODO: This is a best effort cleanup, we should also have some sort of
@@ -397,7 +426,8 @@ service::deploy_transform(cluster::transform_metadata meta, iobuf buf) {
 ss::future<cluster::errc>
 service::delete_transform(cluster::transform_name name) {
     auto _ = _gate.hold();
-    auto result = co_await _plugins->remove_transform(name, model::no_timeout);
+    auto result = co_await _plugins->local().remove_transform(
+      name, model::no_timeout);
     if (
       result.ec != cluster::errc::success
       && result.ec != cluster::errc::transform_does_not_exist) {
@@ -411,7 +441,7 @@ service::delete_transform(cluster::transform_name name) {
 }
 
 std::vector<cluster::transform_metadata> service::list_transforms() {
-    auto transforms = _plugins->all_transforms();
+    auto transforms = _plugins->local().all_transforms();
     std::vector<cluster::transform_metadata> output;
     output.reserve(transforms.size());
     for (auto& [_, v] : transforms) {
