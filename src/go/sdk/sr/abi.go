@@ -35,5 +35,5 @@ func getSchemaSubjectLen(subject unsafe.Pointer, subjectLen int32, version int32
 //go:wasmimport redpanda get_subject_schema
 func getSchemaSubject(subject unsafe.Pointer, subjectLen int32, version int32, buf unsafe.Pointer, len int32) int32
 
-//go:wasmimport redpanda create_schema_subject
+//go:wasmimport redpanda create_subject_schema
 func createSubjectSchema(subject unsafe.Pointer, subjectLen int32, buf unsafe.Pointer, len int32, schemaIdOut unsafe.Pointer) int32
