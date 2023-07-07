@@ -156,6 +156,14 @@ rpk transform deploy transform.wasm --name myTransform
 				Env:          cfg.Env,
 			}
 			err = api.DeployWasmTransform(cmd.Context(), t, wasm)
+			if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
+				if he.Response.StatusCode == 400 {
+					body, bodyErr := he.DecodeGenericErrorBody()
+					if bodyErr == nil {
+						out.Die("unable to deploy transform %s: %s", cfg.Name, body.Message)
+					}
+				}
+			}
 			out.MaybeDie(err, "unable to deploy transfrom %s: %v", cfg.Name, err)
 
 			fmt.Println("Deploy successful!")
