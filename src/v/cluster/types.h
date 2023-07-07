@@ -3940,6 +3940,8 @@ struct transform_metadata
     friend bool operator==(const transform_metadata&, const transform_metadata&)
       = default;
 
+    friend std::ostream& operator<<(std::ostream&, const transform_metadata&);
+
     auto serde_fields() {
         return std::tie(
           name,
@@ -4883,6 +4885,20 @@ std::ostream& operator<<(std::ostream& o, const absl::flat_hash_map<K, V>& r) {
             o << ", ";
         }
         o << "{" << k << " -> " << v << "}";
+        first = false;
+    }
+    o << "}";
+    return o;
+}
+template<typename K>
+std::ostream& operator<<(std::ostream& o, const absl::flat_hash_set<K>& r) {
+    o << "{";
+    bool first = true;
+    for (const auto& k : r) {
+        if (!first) {
+            o << ", ";
+        }
+        o << k;
         first = false;
     }
     o << "}";

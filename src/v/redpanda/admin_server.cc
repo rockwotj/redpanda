@@ -952,6 +952,7 @@ ss::future<> admin_server::throw_on_error(
         case cluster::errc::transform_invalid_create:
         case cluster::errc::transform_invalid_environment:
         case cluster::errc::transform_invalid_update:
+        case cluster::errc::topic_not_exists:
             throw ss::httpd::bad_request_exception(
               ss::format("{}", ec.message()));
         default:

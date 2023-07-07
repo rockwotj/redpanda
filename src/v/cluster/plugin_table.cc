@@ -10,7 +10,9 @@
  */
 #include "plugin_table.h"
 
+#include "cluster/logger.h"
 #include "cluster/types.h"
+#include "model/metadata.h"
 #include "vassert.h"
 
 #include <algorithm>
@@ -21,6 +23,7 @@
 #include <vector>
 
 namespace cluster {
+
 absl::flat_hash_map<transform_id, transform_metadata>
 plugin_table::all_transforms() const {
     return _underlying;
@@ -109,6 +112,7 @@ void plugin_table::upsert_transform(transform_id id, transform_metadata meta) {
     // allowed, the plugin_frontend asserts that there are no loops in
     // transforms.
     _input_index[meta.input_topic].emplace(id);
+
     for (const auto& output_topic : meta.output_topics) {
         _output_index[output_topic].emplace(id);
     }
@@ -158,6 +162,8 @@ void plugin_table::remove_transform(const transform_name& name) {
 }
 void plugin_table::reset_transforms(plugin_table::underlying_t snap) {
     name_index_t snap_name_index;
+    topic_index_t snap_input_index;
+    topic_index_t snap_output_index;
 
     // Perform a map diff to figure out which transforms need change callbacks
     // fired.
@@ -187,6 +193,11 @@ void plugin_table::reset_transforms(plugin_table::underlying_t snap) {
               v.name,
               it.first->first));
         }
+        // build topic indexes
+        snap_input_index[v.input_topic].emplace(k);
+        for (const auto& output_topic : v.output_topics) {
+            snap_output_index[output_topic].emplace(k);
+        }
     }
 
     // Do the actual swap
@@ -194,6 +205,10 @@ void plugin_table::reset_transforms(plugin_table::underlying_t snap) {
     _underlying = std::move(snap);
     _name_index.clear();
     _name_index = std::move(snap_name_index);
+    _input_index.clear();
+    _input_index = std::move(snap_input_index);
+    _output_index.clear();
+    _output_index = std::move(snap_output_index);
 
     for (transform_id deleted : all_deletes) {
         run_callbacks(deleted);

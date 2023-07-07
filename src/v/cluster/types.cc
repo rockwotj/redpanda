@@ -1116,6 +1116,21 @@ std::ostream& operator<<(std::ostream& o, const nt_revision& ntr) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const transform_metadata& meta) {
+    fmt::print(
+      o,
+      "{{name: \"{}\", input: {}, outputs: {}, paused: {}, "
+      "source_key: {}, source_ptr: {} }}",
+      meta.name,
+      meta.input_topic,
+      meta.output_topics,
+      meta.paused,
+      // skip env becuase of pii
+      meta.source_key,
+      meta.source_ptr);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {

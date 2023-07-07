@@ -47,7 +47,7 @@ public:
     // Shutdown the queue, waiting for the currently executing task to finish.
     ss::future<> shutdown() {
         _as.request_abort();
-        return _tail.finally([] {});
+        return std::exchange(_tail, ss::now()).finally([] {});
     }
 
 private:

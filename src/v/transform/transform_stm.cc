@@ -32,6 +32,7 @@
 #include <chrono>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace transform {
@@ -64,6 +65,7 @@ stm::stm(
   , _meta(std::move(meta))
   , _engine(std::move(engine))
   , _error_callback(std::move(cb))
+  , _running(false)
   , _task(ss::now())
   , _input_queue(1) {
     _source = source_factory->create(_ntp);
@@ -83,6 +85,7 @@ ss::future<> stm::start() {
         vlog(tlog.warn, "error starting stm: {}", ex);
         _error_callback(_id, _meta);
     }
+    _running = true;
     _task = ss::when_all_succeed(
               run_consumer(), run_transform(), run_all_producers())
               .discard_result();
@@ -94,7 +97,7 @@ ss::future<> stm::run_transform() {
     // auto _ = ss::defer([&probe] { probe.clear_metrics(); });
     // probe.setup_metrics(_meta.name());
     try {
-        while (true) {
+        while (_running) {
             auto batch = co_await _input_queue.pop_eventually();
             auto transformed = co_await _engine->transform(&batch, &probe);
             co_await _output_queues[0].push_eventually(std::move(transformed));
@@ -110,7 +113,7 @@ ss::future<> stm::run_consumer() {
         auto offset = co_await _source->load_latest_offset();
         vlog(
           tlog.trace, "starting {} at {} offset {}", _meta.name, _ntp, offset);
-        while (true) {
+        while (_running) {
             auto reader = co_await _source->read_batch(offset);
             auto latest_offset = co_await std::move(reader)->consume(
               queue_consumer{.queue = &_input_queue, .latest_offset = offset},
@@ -146,7 +149,7 @@ ss::future<> stm::run_producer(size_t idx) {
     auto& queue = _output_queues[idx];
     auto& sink = _sinks[idx];
     try {
-        while (true) {
+        while (_running) {
             auto batch = co_await queue.pop_eventually();
             vlog(tlog.trace, "writing {} output to {}", _meta.name, tp_ns);
             co_await sink->write(std::move(batch));
@@ -158,6 +161,7 @@ ss::future<> stm::run_producer(size_t idx) {
     }
 }
 ss::future<> stm::stop() {
+    _running = false;
     auto ex = std::make_exception_ptr(ss::abort_requested_exception());
     _input_queue.abort(ex);
     for (auto& output_queue : _output_queues) {

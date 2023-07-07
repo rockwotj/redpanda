@@ -62,6 +62,7 @@ private:
     std::vector<std::unique_ptr<sink>> _sinks;
     error_callback _error_callback;
 
+    bool _running;
     ss::future<> _task;
     ss::queue<model::record_batch> _input_queue;
     std::vector<ss::queue<model::record_batch>> _output_queues;
