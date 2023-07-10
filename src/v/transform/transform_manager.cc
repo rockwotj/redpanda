@@ -177,6 +177,11 @@ ss::future<> manager::do_attempt_start_stm(
     }
     constexpr size_t max_attempts = 3;
     if (++attempts > max_attempts) {
+        vlog(
+          tlog.warn,
+          "failed to create transform {}, marking as failed",
+          transform->name);
+        on_plugin_error(id, *transform);
         co_return;
     }
     auto leaders = _registry->get_leader_partitions(
@@ -229,8 +234,7 @@ ss::future<> manager::start_stm(
         // enqueue a task to mark the plugin as failed
         on_plugin_error(id, meta);
     } catch (const std::exception& ex) {
-        vlog(
-          tlog.warn, "unable to create transform::stm: {} {}", ex, "failing");
+        vlog(tlog.warn, "unable to create transform::stm: {}", ex);
         // requeue a task to start the stm
         attempt_start_stm(ntp, id, attempts);
     }
