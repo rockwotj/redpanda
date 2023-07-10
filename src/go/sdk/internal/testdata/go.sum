@@ -4,5 +4,7 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230621211213-7a8d12bb9bbb h1:y0rHwxgJgh+/KSwuNoCsNxKtLmr5HEQLl5b+y6sCO0E=
 github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230621211213-7a8d12bb9bbb/go.mod h1:23S80kD79G/N+gmtq/fGD7NqOFoh3zJhVmFW9I7pwUo=
+github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230707151711-f253f4e46a3c h1:HcQhVeZ0yQ2JCFL71CgFDsaN3abdLRck4rjDHKoFZZc=
+github.com/rockwotj/redpanda/src/go/sdk v0.0.0-20230707151711-f253f4e46a3c/go.mod h1:23S80kD79G/N+gmtq/fGD7NqOFoh3zJhVmFW9I7pwUo=
 github.com/stretchr/testify v1.7.1 h1:5TQK59W5E3v0r2duFAb7P95B6hEeOyEnHRa8MjYSMTY=
 gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b h1:h8qDotaEPuJATrMmW04NCwg7v22aHH28wwpauUhK9Oo=

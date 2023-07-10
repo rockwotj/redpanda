@@ -16,6 +16,7 @@ func NewPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.AddCommand(
 		newBalancerStatusCommand(fs, p),
 		newMovementCancelCommand(fs, p),
+		newTransferLeadershipCommand(fs, p),
 	)
 	return cmd
 }
