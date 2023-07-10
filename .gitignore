@@ -254,3 +254,5 @@ usertasks.yml
 
 #asdf tool version file
 .tool-versions
+
+/data

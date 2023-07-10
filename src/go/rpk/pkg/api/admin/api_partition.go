@@ -50,6 +50,16 @@ func (a *AdminAPI) GetPartition(
 		&pa)
 }
 
+// TransferLeadership returns detailed partition information.
+func (a *AdminAPI) TransferLeadership(ctx context.Context, namespace, topic string, partition int, leaderID int) error {
+	return a.sendToLeader(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("/v1/partitions/%s/%s/%d/transfer_leadership?target=%d", namespace, topic, partition, leaderID),
+		nil,
+		nil)
+}
+
 // Reconfigurations returns the list of ongoing partition reconfigurations.
 func (a *AdminAPI) Reconfigurations(ctx context.Context) ([]Reconfiguration, error) {
 	var response []Reconfiguration

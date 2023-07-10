@@ -34,7 +34,7 @@ func newAddPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Run: func(cmd *cobra.Command, topics []string) {
 			if !force {
 				for _, t := range topics {
-					if t == "__consumer_offsets" || t == "_schemas" || t == "__transaction_state" || t == "coprocessor_internal_topic" {
+					if t == "__consumer_offsets" || t == "_schemas" || t == "__transaction_state" || t == "_wasm_source" {
 						out.Exit("Unable to change %s without the --force flag.", t)
 					}
 				}

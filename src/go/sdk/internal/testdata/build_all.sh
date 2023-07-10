@@ -12,7 +12,7 @@ PKGS=(
 for PKG in "${PKGS[@]}"
 do
   echo "Building $PKG..."
-  tinygo build -target wasi -opt=z \
+  ~/.local/rpk/buildpacks/tinygo/bin/tinygo -target wasi -opt=z \
     -panic print -scheduler none \
     -o "$PKG.wasm" ./$PKG
   echo "done ✔️"
