@@ -1,8 +1,12 @@
 #pragma once
 
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+
+#include <seastar/core/abort_source.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <memory>
 
@@ -18,7 +22,7 @@ public:
     factory& operator=(factory&&) = delete;
     virtual ~factory() = default;
 
-    virtual std::unique_ptr<T> create(model::ntp) = 0;
+    virtual std::optional<std::unique_ptr<T>> create(model::ntp) = 0;
 };
 
 /**
@@ -50,9 +54,14 @@ public:
     source& operator=(source&&) = delete;
     virtual ~source() = default;
 
+    virtual cluster::notification_id_type
+      register_on_write_notification(ss::noncopyable_function<void()>)
+      = 0;
+    virtual void unregister_on_write_notification(cluster::notification_id_type)
+      = 0;
     virtual ss::future<model::offset> load_latest_offset() = 0;
-    virtual ss::future<std::optional<model::record_batch_reader>>
-      read_batch(model::offset) = 0;
+    virtual ss::future<model::record_batch_reader>
+    read_batch(model::offset, ss::abort_source*) = 0;
 
     using factory = factory<source>;
 };

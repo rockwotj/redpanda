@@ -13,6 +13,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/partition_manager.h"
 #include "cluster/plugin_frontend.h"
 #include "cluster/types.h"
 #include "kafka/client/client.h"
@@ -21,6 +22,8 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/server/handlers/topics/types.h"
+#include "kafka/server/partition_proxy.h"
+#include "kafka/server/replicated_partition.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -29,18 +32,22 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "raft/group_manager.h"
+#include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
+#include "storage/types.h"
 #include "transform/io.h"
 #include "transform/logger.h"
 #include "transform/transform_manager.h"
 #include "utils/uuid.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/io_priority_class.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
-
-#include <__concepts/same_as.h>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
 #include <memory>
@@ -206,12 +213,12 @@ private:
 };
 
 template<typename I, typename T>
-class kafka_client_factory : public factory<I> {
+class kafka_client_factory final : public factory<I> {
 public:
     explicit kafka_client_factory(kafka::client::client* c)
       : _client(c) {}
 
-    std::unique_ptr<I> create(model::ntp ntp) override {
+    std::optional<std::unique_ptr<I>> create(model::ntp ntp) override {
         return std::make_unique<T>(ntp, _client);
     };
 
@@ -219,7 +226,7 @@ private:
     kafka::client::client* _client;
 };
 
-class kafka_client_sink : public sink {
+class kafka_client_sink final : public sink {
 public:
     using factory = kafka_client_factory<sink, kafka_client_sink>;
 
@@ -238,59 +245,63 @@ private:
     kafka::client::client* _client;
 };
 
-class kafka_client_source : public source {
+class partition_source_factory;
+
+class partition_source final : public source {
 public:
-    using factory = kafka_client_factory<source, kafka_client_source>;
+    using factory = partition_source_factory;
+    explicit partition_source(kafka::partition_proxy p)
+      : _partition(std::move(p)) {}
 
-    kafka_client_source(model::ntp ntp, kafka::client::client* c)
-      : _ntp(std::move(ntp))
-      , _client(c) {}
-
-    ss::future<model::offset> load_latest_offset() override {
-        auto resp = co_await _client->list_offsets(_ntp.tp);
-        if (resp.data.topics.size() != 1) {
-            throw std::runtime_error("unexpected topic count");
-        }
-        auto partitions = resp.data.topics[0].partitions;
-        if (partitions.size() != 1) {
-            throw std::runtime_error("unexpected partition count");
-        }
-        auto p = partitions[0];
-        check_error_code(p);
-        co_return p.offset;
+    cluster::notification_id_type
+    register_on_write_notification(ss::noncopyable_function<void()> cb) final {
+        return _partition.register_on_write_notification(std::move(cb));
     }
-    ss::future<std::optional<model::record_batch_reader>>
-    read_batch(model::offset offset) override {
-        constexpr auto fetch_size_bytes = 64_KiB;
-        constexpr auto fetch_timeout = 1s;
-        auto resp = co_await _client->fetch_partition(
-          _ntp.tp, offset, fetch_size_bytes, fetch_timeout);
-        if (resp.data.error_code == kafka::error_code::offset_out_of_range) {
-            co_return std::nullopt;
-        }
-        check_error_code(resp.data);
-        if (resp.data.topics.size() != 1) {
-            throw std::runtime_error("unexpected topic count");
-        }
-        auto& partitions = resp.data.topics.front().partitions;
-        if (partitions.size() != 1) {
-            throw std::runtime_error("unexpected partition count");
-        }
-        auto& p = partitions[0];
-        if (p.error_code == kafka::error_code::offset_out_of_range) {
-            co_return std::nullopt;
-        }
-        check_error_code(p);
-        if (!p.records) {
-            co_return std::nullopt;
-        }
-        co_return model::record_batch_reader(
-          std::make_unique<kafka::batch_reader>(std::move(*p.records)));
+
+    void
+    unregister_on_write_notification(cluster::notification_id_type id) final {
+        _partition.unregister_on_write_notification(id);
+    }
+
+    ss::future<model::offset> load_latest_offset() final {
+        // Use read_committed latest offset
+        auto result = _partition.last_stable_offset();
+        co_return result.value();
+    }
+
+    ss::future<model::record_batch_reader>
+    read_batch(model::offset offset, ss::abort_source* as) final {
+        auto translater = co_await _partition.make_reader(
+          storage::log_reader_config(
+            /*start_offset=*/offset,
+            /*max_offset=*/model::offset::max(),
+            // TODO: Make a new priority for WASM transforms
+            /*prio=*/kafka_read_priority(),
+            // TODO: Plumb a real abort source down
+            /*as=*/*as));
+        co_return std::move(translater).reader;
     }
 
 private:
-    model::ntp _ntp;
-    kafka::client::client* _client;
+    kafka::partition_proxy _partition;
+};
+
+class partition_source_factory final : public source::factory {
+public:
+    explicit partition_source_factory(cluster::partition_manager* manager)
+      : _manager(manager) {}
+
+    std::optional<std::unique_ptr<source>> create(model::ntp ntp) final {
+        auto p = _manager->get(ntp);
+        if (!p) {
+            return std::nullopt;
+        }
+        return std::make_unique<partition_source>(kafka::partition_proxy(
+          std::make_unique<kafka::replicated_partition>(p)));
+    };
+
+private:
+    cluster::partition_manager* _manager;
 };
 
 } // namespace
@@ -314,8 +325,9 @@ service::service(
 service::~service() = default;
 
 ss::future<> service::start() {
-    std::unique_ptr<source::factory> source_factory
-      = std::make_unique<kafka_client_source::factory>(_client.get());
+    std::unique_ptr<partition_source_factory> source_factory
+      = std::make_unique<partition_source_factory>(
+        &_partition_manager->local());
     std::unique_ptr<sink::factory> sink_factory
       = std::make_unique<kafka_client_sink::factory>(_client.get());
     _manager = std::make_unique<manager>(
@@ -380,8 +392,8 @@ void service::register_notifications() {
       = _partition_manager->local().register_manage_notification(
         model::kafka_namespace,
         [this](const ss::lw_shared_ptr<cluster::partition>& p) {
-            ntp_leader is_leader = p->is_leader() ? ntp_leader::yes
-                                                  : ntp_leader::no;
+            ntp_leader is_leader = p->is_elected_leader() ? ntp_leader::yes
+                                                          : ntp_leader::no;
             _manager->on_leadership_change(p->ntp(), is_leader);
         });
 }
@@ -391,7 +403,9 @@ ss::future<> service::stop() {
     unregister_notifications();
     co_await _gate.close();
     // Shutdown internal processes
-    co_await _manager->stop();
+    if (_manager) {
+        co_await _manager->stop();
+    }
     co_await _client->stop();
 }
 void service::unregister_notifications() {

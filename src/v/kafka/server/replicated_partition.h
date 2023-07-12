@@ -154,6 +154,10 @@ public:
 
     result<partition_info> get_partition_info() const final;
 
+    cluster::notification_id_type
+    register_on_write_notification(ss::noncopyable_function<void()> cb) final;
+    void unregister_on_write_notification(cluster::notification_id_type) final;
+
 private:
     ss::future<std::vector<cluster::rm_stm::tx_range>>
       aborted_transactions_local(

@@ -18,13 +18,16 @@
 #include "ssx/work_queue.h"
 #include "transform/fwd.h"
 #include "transform/io.h"
+#include "utils/prefix_logger.h"
 #include "wasm/api.h"
 #include "wasm/fwd.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <memory>
+#include <variant>
 
 namespace transform {
 
@@ -39,8 +42,8 @@ public:
       cluster::transform_metadata,
       std::unique_ptr<wasm::engine>,
       error_callback,
-      source::factory*,
-      sink::factory*);
+      std::unique_ptr<source>,
+      std::vector<std::unique_ptr<sink>>);
 
     ss::future<> start();
     ss::future<> stop();
@@ -51,8 +54,13 @@ public:
 private:
     ss::future<> run_transform();
     ss::future<> run_consumer();
+    ss::future<> run_poll_fallback_loop();
     ss::future<> run_all_producers();
     ss::future<> run_producer(size_t);
+
+    void register_source_subscriber();
+    void unregister_source_subscriber();
+    void drain_consumer_pings();
 
     cluster::transform_id _id;
     model::ntp _ntp;
@@ -62,9 +70,13 @@ private:
     std::vector<std::unique_ptr<sink>> _sinks;
     error_callback _error_callback;
 
-    bool _running;
+    ss::abort_source _as;
     ss::future<> _task;
+    ss::queue<std::monostate> _consumer_pings;
     ss::queue<model::record_batch> _input_queue;
     std::vector<ss::queue<model::record_batch>> _output_queues;
+    prefix_logger _logger;
+    cluster::notification_id_type _source_notification_id
+      = cluster::notification_id_type_invalid;
 };
 } // namespace transform
