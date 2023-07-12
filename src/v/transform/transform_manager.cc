@@ -206,7 +206,9 @@ ss::future<> manager::start_stm(
           meta.source_ptr, fetch_binary_timeout);
         if (!binary) {
             vlog(
-              tlog.warn, "missing source binary, offset={}", meta.source_ptr);
+              tlog.warn,
+              "missing source binary, offset={}, marking as failed",
+              meta.source_ptr);
             // enqueue a task to mark the plugin as failed
             on_plugin_error(id, meta);
             co_return;
@@ -216,6 +218,28 @@ ss::future<> manager::start_stm(
         auto factory = co_await _runtime->make_factory(
           meta, std::move(binary).value());
         auto engine = co_await factory->make_engine();
+        auto src = _source_factory->create(ntp);
+        if (!src) {
+            vlog(
+              tlog.warn,
+              "unable to create transform::stm input source, retrying...");
+            attempt_start_stm(ntp, id, attempts);
+            co_return;
+        }
+        std::vector<std::unique_ptr<sink>> sinks;
+        sinks.reserve(meta.output_topics.size());
+        for (const auto& output_topic : meta.output_topics) {
+            auto sink = _sink_factory->create(
+              model::ntp(output_topic.ns, output_topic.tp, ntp.tp.partition));
+            if (!sink) {
+                vlog(
+                  tlog.warn,
+                  "unable to create transform::stm output sink, retrying...");
+                attempt_start_stm(ntp, id, attempts);
+                co_return;
+            }
+            sinks.emplace_back(std::move(sink).value());
+        }
         s = std::make_unique<stm>(
           id,
           ntp,
@@ -224,17 +248,18 @@ ss::future<> manager::start_stm(
           [this](cluster::transform_id id, cluster::transform_metadata meta) {
               on_plugin_error(id, std::move(meta));
           },
-          _source_factory.get(),
-          _sink_factory.get());
+          std::move(src).value(),
+          std::move(sinks));
     } catch (const wasm::wasm_exception& ex) {
         vlog(
           tlog.warn,
-          "invalid wasm source unable to create transform::stm: {}",
+          "invalid wasm source unable to create transform::stm: {}, marking as "
+          "failed",
           ex);
         // enqueue a task to mark the plugin as failed
         on_plugin_error(id, meta);
     } catch (const std::exception& ex) {
-        vlog(tlog.warn, "unable to create transform::stm: {}", ex);
+        vlog(tlog.warn, "unable to create transform::stm: {}, retrying...", ex);
         // requeue a task to start the stm
         attempt_start_stm(ntp, id, attempts);
     }

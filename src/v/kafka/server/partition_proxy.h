@@ -58,6 +58,12 @@ public:
         virtual ss::future<error_code> validate_fetch_offset(
           model::offset, bool, model::timeout_clock::time_point)
           = 0;
+        virtual cluster::notification_id_type
+        register_on_write_notification(ss::noncopyable_function<void()> cb)
+          = 0;
+        virtual void
+          unregister_on_write_notification(cluster::notification_id_type)
+          = 0;
 
         virtual result<partition_info> get_partition_info() const = 0;
         virtual cluster::partition_probe& probe() = 0;
@@ -67,6 +73,13 @@ public:
     explicit partition_proxy(std::unique_ptr<impl> impl) noexcept
       : _impl(std::move(impl)) {}
 
+    cluster::notification_id_type
+    register_on_write_notification(ss::noncopyable_function<void()> cb) {
+        return _impl->register_on_write_notification(std::move(cb));
+    }
+    void unregister_on_write_notification(cluster::notification_id_type id) {
+        _impl->unregister_on_write_notification(id);
+    }
     model::offset start_offset() const { return _impl->start_offset(); }
 
     model::offset high_watermark() const { return _impl->high_watermark(); }

@@ -462,6 +462,13 @@ void admin_server::configure_metrics_route() {
       .get();
 }
 
+namespace {
+bool is_localhost(std::string_view hostname) {
+    return hostname == "127.0.0.1" || hostname == "localhost"
+           || hostname == "localhost.localdomain" || hostname == "::1";
+}
+} // namespace
+
 ss::future<> admin_server::configure_listeners() {
     // We will remember any endpoint that is listening
     // on an external address and does not have mTLS,
@@ -477,10 +484,7 @@ ss::future<> admin_server::configure_listeners() {
               return c.name == ep.name;
           });
 
-        const bool localhost = ep.address.host() == "127.0.0.1"
-                               || ep.address.host() == "localhost"
-                               || ep.address.host() == "localhost.localdomain"
-                               || ep.address.host() == "::1";
+        const bool localhost = is_localhost(ep.address.host());
 
         ss::shared_ptr<ss::tls::server_credentials> cred;
         if (tls_it != _cfg.endpoints_tls.end()) {
@@ -719,6 +723,18 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
               "peer's internal RPC address",
               req_hostname);
             target_host = leader.broker.rpc_address().host();
+        }
+        if (
+          std::string_view(target_host) == std::string_view(req_hostname)
+          && is_localhost(req_hostname)) {
+            // In this case we're making a local host request and our other
+            // server is also running on the localhost, assume that we're using
+            // the dev_cluster.py script
+            uint16_t my_port = config::node_config().admin()[0].address.port();
+            int leader_id = leader.broker.id()();
+            int my_id = config::node().node_id().value()();
+            int diff = leader_id - my_id;
+            port = ss::format(":{}", my_port + diff);
         }
     }
 

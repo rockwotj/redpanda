@@ -70,7 +70,7 @@ class Redpanda:
         self.extra_args = extra_args
 
     def stop(self):
-        print(f"{self.process.pid}: dev_cluster stop requested")
+        print(f"node-{self.config.index}: dev_cluster stop requested")
         self.process.send_signal(signal.SIGINT)
 
     async def run(self):
@@ -108,7 +108,7 @@ class Redpanda:
             if not line:
                 break
             line = line.decode("utf8").rstrip()
-            print(f"{self.process.pid}: {line}")
+            print(f"node-{self.config.index}: {line}")
 
         await self.process.wait()
 
@@ -145,7 +145,7 @@ async def main():
     parser.add_argument("--listen-address",
                         type=str,
                         help="listening address",
-                        default="0.0.0.0")
+                        default="127.0.0.1")
     parser.add_argument("--racks",
                         dest='racks',
                         help="racks for each of node",
