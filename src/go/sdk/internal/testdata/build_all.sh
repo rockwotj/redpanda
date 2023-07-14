@@ -7,6 +7,7 @@ PKGS=(
   transform-panic
   schema-registry
   wasi
+  poison-pill
 )
 
 for PKG in "${PKGS[@]}"
