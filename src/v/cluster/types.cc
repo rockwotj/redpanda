@@ -1119,14 +1119,14 @@ std::ostream& operator<<(std::ostream& o, const nt_revision& ntr) {
 std::ostream& operator<<(std::ostream& o, const transform_metadata& meta) {
     fmt::print(
       o,
-      "{{name: \"{}\", input: {}, outputs: {}, paused: {}, "
-      "source_key: {}, source_ptr: {} }}",
+      "{{name: \"{}\", input: {}, outputs: {}, failed_partitions: {}, "
+      "uuid: {}, source_ptr: {} }}",
       meta.name,
       meta.input_topic,
       meta.output_topics,
-      meta.paused,
+      meta.failed_partitions,
       // skip env becuase of pii
-      meta.source_key,
+      meta.uuid,
       meta.source_ptr);
     return o;
 }

@@ -59,7 +59,10 @@ public:
     using notification_id = plugin_table::notification_id;
     using notification_callback = plugin_table::notification_callback;
     struct mutation_result {
-        uuid_t source_key;
+        // The UUID of the modified transform, mostly useful for cleanup
+        // of wasm_binaries.
+        // See transform_metadata::uuid
+        uuid_t uuid;
         errc ec;
     };
 

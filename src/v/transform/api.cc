@@ -150,7 +150,7 @@ public:
       cluster::transform_id, cluster::transform_metadata meta) const override {
         ssx::spawn_with_gate(*_gate, [this, meta = std::move(meta)]() mutable {
             constexpr auto timeout = 300ms;
-            meta.paused = true;
+            // TODO
             return _pf
               ->upsert_transform(
                 std::move(meta), model::timeout_clock::now() + timeout)
@@ -425,7 +425,7 @@ service::deploy_transform(cluster::transform_metadata meta, iobuf buf) {
     co_await validate_source(meta, buf.share(0, buf.size_bytes()));
     auto [key, offset] = co_await write_source(name, std::move(buf));
     vlog(tlog.debug, "wrote wasm source at key={} offset={}", key, offset);
-    meta.source_key = key;
+    meta.uuid = key;
     meta.source_ptr = offset;
     auto errc = co_await _plugins->local().upsert_transform(
       std::move(meta), model::no_timeout);
@@ -449,7 +449,7 @@ service::delete_transform(cluster::transform_name name) {
     }
     // We still want to tombstone a record in case of a transform's metadata was
     // removed, but this write failed in another request.
-    co_await write_source_tombstone(result.source_key, name);
+    co_await write_source_tombstone(result.uuid, name);
     // Make deletes itempotent by translating does not exist into success
     co_return cluster::errc::success;
 }
