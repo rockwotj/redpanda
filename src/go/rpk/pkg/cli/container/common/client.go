@@ -35,6 +35,7 @@ type Client interface {
 		ctx context.Context,
 		options types.ImageListOptions,
 	) ([]types.ImageSummary, error)
+
 	ContainerCreate(
 		ctx context.Context,
 		config *container.Config,
@@ -43,6 +44,12 @@ type Client interface {
 		platform *specs.Platform,
 		containerName string,
 	) (container.CreateResponse, error)
+
+	ContainerLogs(
+		ctx context.Context,
+		containerID string,
+		options types.ContainerLogsOptions,
+	) (io.ReadCloser, error)
 
 	ContainerStart(
 		ctx context.Context,
