@@ -6,7 +6,7 @@ v_cc_library(
     "api.cc"
     "logger.cc"
     "transform_manager.cc"
-    "transform_stm.cc"
+    "transform_processor.cc"
   DEPS
     v::wasm
     v::storage

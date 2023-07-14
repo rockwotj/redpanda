@@ -84,3 +84,15 @@ rp_test(
   ARGS "-- -c 1"
   LABELS wasm
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME wasi_logs
+  SOURCES
+    wasi_logs_test.cc
+  LIBRARIES 
+    Boost::unit_test_framework
+    v::wasm
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LABELS wasm
+)

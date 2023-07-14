@@ -8,7 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "transform/transform_stm.h"
+#include "transform/transform_processor.h"
 
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -59,7 +59,7 @@ struct queue_consumer {
 constexpr size_t kQueueBufferSize = 1;
 } // namespace
 
-stm::stm(
+processor::processor(
   cluster::transform_id id,
   model::ntp ntp,
   cluster::transform_metadata meta,
@@ -84,7 +84,7 @@ stm::stm(
     }
 }
 
-ss::future<> stm::start() {
+ss::future<> processor::start() {
     try {
         co_await _engine->start();
     } catch (const std::exception& ex) {
@@ -100,7 +100,7 @@ ss::future<> stm::start() {
               .discard_result();
 }
 
-void stm::register_source_subscriber() {
+void processor::register_source_subscriber() {
     _source_notification_id = _source->register_on_write_notification([this]() {
         // Try to push into the queue, dropping if it's full. If there are
         // multiple notifications they get debounced this way.
@@ -108,11 +108,11 @@ void stm::register_source_subscriber() {
     });
 }
 
-void stm::unregister_source_subscriber() {
+void processor::unregister_source_subscriber() {
     _source->unregister_on_write_notification(_source_notification_id);
 }
 
-ss::future<> stm::run_poll_fallback_loop() {
+ss::future<> processor::run_poll_fallback_loop() {
     // the source notifications are best effort, there are cases when they can
     // be missed, this forces that we periodically poll to pick up any failures.
     try {
@@ -133,7 +133,7 @@ ss::future<> stm::run_poll_fallback_loop() {
     }
 }
 
-ss::future<> stm::run_transform() {
+ss::future<> processor::run_transform() {
     wasm::probe probe;
     // TODO: setup metrics without conflicts, what's the story here?
     // auto _ = ss::defer([&probe] { probe.clear_metrics(); });
@@ -151,13 +151,13 @@ ss::future<> stm::run_transform() {
     }
 }
 
-void stm::drain_consumer_pings() {
+void processor::drain_consumer_pings() {
     while (!_consumer_pings.empty()) {
         _consumer_pings.pop();
     }
 }
 
-ss::future<> stm::run_consumer() {
+ss::future<> processor::run_consumer() {
     try {
         auto offset = co_await _source->load_latest_offset();
         vlog(_logger.trace, "starting at offset {}", offset);
@@ -193,13 +193,13 @@ ss::future<> stm::run_consumer() {
     }
 }
 
-ss::future<> stm::run_all_producers() {
+ss::future<> processor::run_all_producers() {
     return ss::parallel_for_each(
       boost::irange<size_t>(0, _sinks.size()),
       [this](size_t idx) { return run_producer(idx); });
 }
 
-ss::future<> stm::run_producer(size_t idx) {
+ss::future<> processor::run_producer(size_t idx) {
     const auto& tp_ns = _meta.output_topics[idx];
     const auto& ntp = model::ntp(tp_ns.ns, tp_ns.tp, _ntp.tp.partition);
     auto& queue = _output_queues[idx];
@@ -217,7 +217,7 @@ ss::future<> stm::run_producer(size_t idx) {
     }
 }
 
-ss::future<> stm::stop() {
+ss::future<> processor::stop() {
     unregister_source_subscriber();
     auto ex = std::make_exception_ptr(ss::abort_requested_exception());
     _as.request_abort_ex(ex);
@@ -229,7 +229,7 @@ ss::future<> stm::stop() {
     co_await std::exchange(_task, ss::now());
     co_await _engine->stop();
 }
-cluster::transform_id stm::id() const { return _id; }
-const model::ntp& stm::ntp() const { return _ntp; }
+cluster::transform_id processor::id() const { return _id; }
+const model::ntp& processor::ntp() const { return _ntp; }
 
 } // namespace transform

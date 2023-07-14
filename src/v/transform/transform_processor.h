@@ -34,9 +34,9 @@ namespace transform {
 using error_callback = ss::noncopyable_function<void(
   cluster::transform_id, cluster::transform_metadata)>;
 
-class stm {
+class processor {
 public:
-    stm(
+    processor(
       cluster::transform_id,
       model::ntp,
       cluster::transform_metadata,

@@ -14,10 +14,13 @@
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <absl/container/flat_hash_map.h>
 
+#include <chrono>
 #include <string_view>
+#include <vector>
 
 namespace wasm::wasi {
 
@@ -59,6 +62,30 @@ struct iovec_t {
 using environ_map_t = absl::flat_hash_map<ss::sstring, ss::sstring>;
 
 /**
+ * A converter from stdout/stderr in WASI into stderr on the broker.
+ */
+class log_writer {
+public:
+    static log_writer make_for_stderr(ss::sstring name, ss::logger*);
+    static log_writer make_for_stdout(ss::sstring name, ss::logger*);
+    // Writes this string to the logger, adding a prefix
+    //
+    // Does not make a copy of the string, so leftovers must be flushed
+    uint32_t write(std::string_view);
+    // Flush remaining logs
+    uint32_t flush();
+
+private:
+    explicit log_writer(ss::sstring name, bool is_guest_stdout, ss::logger*);
+
+    bool _is_guest_stdout;
+    ss::sstring _name;
+
+    ss::logger* _logger;
+    std::vector<std::string_view> _buffer;
+};
+
+/**
  * Implementation of the wasi preview1 which is a snapshot of the wasi spec from
  * 2020.
  */
@@ -66,7 +93,8 @@ class preview1_module {
 public:
     // Create a wasi module using the args and environ to initialize the runtime
     // with.
-    preview1_module(std::vector<ss::sstring>, const environ_map_t&);
+    preview1_module(
+      std::vector<ss::sstring>, const environ_map_t&, ss::logger*);
     preview1_module(const preview1_module&) = delete;
     preview1_module& operator=(const preview1_module&) = delete;
     preview1_module(preview1_module&&) = default;
@@ -183,6 +211,8 @@ private:
     timestamp_t _now{0};
     std::vector<ss::sstring> _args;
     std::vector<ss::sstring> _environ;
+    log_writer _stdout_log_writer;
+    log_writer _stderr_log_writer;
 };
 
 } // namespace wasm::wasi
