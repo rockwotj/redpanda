@@ -522,11 +522,13 @@ public:
       wasm_engine_t* engine,
       cluster::transform_metadata meta,
       std::shared_ptr<wasmtime_module_t> mod,
-      schema_registry* sr)
+      schema_registry* sr,
+      ss::logger* l)
       : _engine(engine)
       , _module(std::move(mod))
       , _meta(std::move(meta))
-      , _sr(sr) {}
+      , _sr(sr)
+      , _logger(l) {}
 
     ss::future<std::unique_ptr<engine>> make_engine() final {
         handle<wasmtime_store_t, wasmtime_store_delete> store{
@@ -542,7 +544,8 @@ public:
         absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.environment;
         env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
         env.emplace("REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
-        auto wasi_module = std::make_unique<wasi::preview1_module>(args, env);
+        auto wasi_module = std::make_unique<wasi::preview1_module>(
+          args, env, _logger);
         register_wasi_module(wasi_module.get(), linker.get());
 
         wasmtime_instance_t instance;
@@ -569,6 +572,7 @@ private:
     std::shared_ptr<wasmtime_module_t> _module;
     cluster::transform_metadata _meta;
     schema_registry* _sr;
+    ss::logger* _logger;
 };
 
 class wasmtime_runtime : public runtime {
@@ -581,8 +585,10 @@ public:
       , _worker(t)
       , _sr(std::move(sr)) {}
 
-    ss::future<std::unique_ptr<factory>>
-    make_factory(cluster::transform_metadata meta, iobuf buf) override {
+    ss::future<std::unique_ptr<factory>> make_factory(
+      cluster::transform_metadata meta,
+      iobuf buf,
+      ss::logger* logger) override {
         auto user_module = co_await _worker->submit([this, &buf]() {
             bytes b = iobuf_to_bytes(buf);
             wasmtime_module_t* user_module_ptr = nullptr;
@@ -595,7 +601,7 @@ public:
             return user_module;
         });
         co_return std::make_unique<wasmtime_engine_factory>(
-          _engine.get(), std::move(meta), user_module, _sr.get());
+          _engine.get(), std::move(meta), user_module, _sr.get(), logger);
     }
 
 private:

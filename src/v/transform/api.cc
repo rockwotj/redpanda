@@ -522,7 +522,7 @@ service::validate_source(cluster::transform_metadata meta, iobuf buf) {
     // run anything we should probably expose a better API in runtime for
     // this, even if it just does this...
     auto factory = co_await _runtime->make_factory(
-      std::move(meta), std::move(buf));
+      std::move(meta), std::move(buf), &tlog);
     auto engine = co_await factory->make_engine();
     co_await engine->start();
     co_await engine->stop();

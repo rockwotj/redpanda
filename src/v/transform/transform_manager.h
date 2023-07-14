@@ -114,8 +114,8 @@ private:
 
     wasm::runtime* _runtime;
     std::unique_ptr<plugin_registry> _registry;
-    model::ntp_flat_map_type<std::unique_ptr<stm>> _stms_by_ntp;
-    absl::flat_hash_map<cluster::transform_id, stm*> _stms_by_id;
+    model::ntp_flat_map_type<std::unique_ptr<processor>> _stms_by_ntp;
+    absl::flat_hash_map<cluster::transform_id, processor*> _stms_by_id;
     ssx::work_queue _queue;
     std::unique_ptr<source::factory> _source_factory;
     std::unique_ptr<sink::factory> _sink_factory;

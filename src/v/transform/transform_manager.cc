@@ -15,7 +15,7 @@
 #include "model/metadata.h"
 #include "ssx/future-util.h"
 #include "transform/logger.h"
-#include "transform/transform_stm.h"
+#include "transform/transform_processor.h"
 #include "vlog.h"
 #include "wasm/api.h"
 #include "wasm/errc.h"
@@ -127,7 +127,7 @@ ss::future<> manager::handle_plugin_change(cluster::transform_id id) {
     }
     // If there is no transform we're good to go, everything is shutdown if
     // needed.
-    if (!transform || transform->paused) {
+    if (!transform) {
         co_return;
     }
     // Otherwise, start a stm for every partition we're a leader of.
@@ -198,7 +198,7 @@ ss::future<> manager::start_stm(
   cluster::transform_id id,
   cluster::transform_metadata meta,
   size_t attempts) {
-    std::unique_ptr<stm> s;
+    std::unique_ptr<processor> s;
     try {
         constexpr std::chrono::milliseconds fetch_binary_timeout
           = std::chrono::seconds(2);
@@ -216,7 +216,7 @@ ss::future<> manager::start_stm(
         // TODO: we should be sharing factories across the entire process, maybe
         // we need some sort of cache?
         auto factory = co_await _runtime->make_factory(
-          meta, std::move(binary).value());
+          meta, std::move(binary).value(), &tlog);
         auto engine = co_await factory->make_engine();
         auto src = _source_factory->create(ntp);
         if (!src) {
@@ -240,7 +240,7 @@ ss::future<> manager::start_stm(
             }
             sinks.emplace_back(std::move(sink).value());
         }
-        s = std::make_unique<stm>(
+        s = std::make_unique<processor>(
           id,
           ntp,
           std::move(meta),

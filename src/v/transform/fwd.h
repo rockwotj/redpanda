@@ -13,5 +13,5 @@
 namespace transform {
 class service;
 class manager;
-class stm;
+class processor;
 } // namespace transform

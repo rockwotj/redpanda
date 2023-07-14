@@ -517,12 +517,14 @@ public:
       ssx::thread_worker* t,
       cluster::transform_metadata meta,
       iobuf wasm_module,
-      schema_registry* sr)
+      schema_registry* sr,
+      ss::logger* l)
       : _config_ctx(config_ctx)
       , _worker(t)
       , _sr(sr)
       , _wasm_module(std::move(wasm_module))
-      , _meta(std::move(meta)) {}
+      , _meta(std::move(meta))
+      , _logger(l) {}
 
     ss::future<std::unique_ptr<engine>> make_engine() final {
         WasmEdge_Result result;
@@ -541,7 +543,8 @@ public:
         absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.environment;
         env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
         env.emplace("REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
-        auto wasi_module = std::make_unique<wasi::preview1_module>(args, env);
+        auto wasi_module = std::make_unique<wasi::preview1_module>(
+          args, env, _logger);
         register_wasi_module(wasi_module.get(), wasmedge_wasi_module);
 
         (void)_worker;
@@ -649,6 +652,7 @@ private:
 
     iobuf _wasm_module;
     cluster::transform_metadata _meta;
+    ss::logger* _logger;
 };
 
 class wasmedge_runtime : public runtime {
@@ -658,15 +662,16 @@ public:
       , _worker(t)
       , _sr(std::move(sr)) {}
 
-    ss::future<std::unique_ptr<factory>>
-    make_factory(cluster::transform_metadata meta, iobuf buf) final {
+    ss::future<std::unique_ptr<factory>> make_factory(
+      cluster::transform_metadata meta, iobuf buf, ss::logger* logger) final {
         // TODO: see if compiling works here
         co_return std::make_unique<wasmedge_engine_factory>(
           _config_ctx.get(),
           _worker,
           std::move(meta),
           std::move(buf),
-          _sr.get());
+          _sr.get(),
+          logger);
     }
 
 private:

@@ -18,6 +18,11 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/util/file.hh>
 
+namespace {
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
+static ss::logger dummy_logger("wasm_test_logger");
+} // namespace
+
 wasm_test_fixture::wasm_test_fixture()
   // TODO: Use a non-default runtime so we can fake schema registry
   : _runtime(wasm::runtime::create_default(&_worker, nullptr))
@@ -45,7 +50,8 @@ void wasm_test_fixture::load_wasm(const std::string& path) {
     for (auto& chunk : wasm_file) {
         buf.append(std::move(chunk));
     }
-    _factory = _runtime->make_factory(_meta, std::move(buf)).get();
+    _factory
+      = _runtime->make_factory(_meta, std::move(buf), &dummy_logger).get();
     if (_engine) {
         _engine->stop().get();
     }

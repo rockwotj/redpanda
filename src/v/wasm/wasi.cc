@@ -13,24 +13,76 @@
 #include "seastarx.h"
 #include "vassert.h"
 #include "vlog.h"
+#include "wasm/logger.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/print.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 
+#include <fmt/chrono.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+
 #include <chrono>
 #include <exception>
+#include <numeric>
+#include <ratio>
 #include <sstream>
+#include <string_view>
 #include <unistd.h>
+#include <utility>
 
 namespace wasm::wasi {
 
-static ss::logger wasi_log("wasi");
+log_writer::log_writer(ss::sstring name, bool is_guest_stdout, ss::logger* l)
+  : _is_guest_stdout(is_guest_stdout)
+  , _name(std::move(name))
+  , _logger(l) {}
+
+log_writer log_writer::make_for_stderr(ss::sstring name, ss::logger* l) {
+    return log_writer(std::move(name), false, l);
+}
+log_writer log_writer::make_for_stdout(ss::sstring name, ss::logger* l) {
+    return log_writer(std::move(name), true, l);
+}
+
+uint32_t log_writer::write(std::string_view buf) {
+    uint32_t amt = 0;
+    while (!buf.empty()) {
+        size_t pos = buf.find('\n');
+        if (pos == std::string_view::npos) {
+            _buffer.push_back(buf);
+            return amt;
+        }
+        _buffer.push_back(buf.substr(0, pos));
+        // Add one for the newline we stripped off and flush adds
+        amt += flush() + 1;
+        buf = buf.substr(pos + 1);
+    }
+    return amt;
+}
+
+uint32_t log_writer::flush() {
+    if (_buffer.empty()) {
+        return 0;
+    }
+    auto buf = std::exchange(_buffer, {});
+    uint32_t amt = 0;
+    for (auto b : buf) {
+        amt += b.size();
+    }
+    auto level = _is_guest_stdout ? ss::log_level::info : ss::log_level::warn;
+    _logger->log(level, "{} - {}", _name, fmt::join(buf, ""));
+    return amt;
+}
 
 preview1_module::preview1_module(
-  std::vector<ss::sstring> args, const environ_map_t& environ)
-  : _args(std::move(args)) {
+  std::vector<ss::sstring> args, const environ_map_t& environ, ss::logger* l)
+  : _args(std::move(args))
+  , _stdout_log_writer(log_writer::make_for_stdout(_args.front(), l))
+  , _stderr_log_writer(log_writer::make_for_stderr(_args.front(), l)) {
     _environ.reserve(environ.size());
     for (const auto& [k, v] : environ) {
         vassert(
@@ -123,7 +175,7 @@ errno_t preview1_module::args_get(
         serialize_args(_args, args_buf_offset, args_ptrs_buf, &data_writer);
         return ERRNO_SUCCESS;
     } catch (const std::exception& ex) {
-        vlog(wasi_log.warn, "args_get: {}", ex);
+        vlog(wasm_log.warn, "args_get: {}", ex);
         return ERRNO_INVAL;
     }
 }
@@ -147,7 +199,7 @@ errno_t preview1_module::environ_get(
           _environ, environ_buf_offset, environ_ptrs_buf, &data_writer);
         return ERRNO_SUCCESS;
     } catch (const std::exception& ex) {
-        vlog(wasi_log.warn, "environ_get: {}", ex);
+        vlog(wasm_log.warn, "environ_get: {}", ex);
         return ERRNO_INVAL;
     }
 }
@@ -207,31 +259,29 @@ errno_t preview1_module::fd_prestat_get(fd_t fd, void*) {
 
 errno_t preview1_module::fd_write(
   ffi::memory* mem, fd_t fd, ffi::array<iovec_t> iovecs, uint32_t* written) {
-    if (written == nullptr || !iovecs) [[unlikely]] {
-        return ERRNO_INVAL;
-    }
     if (fd == 1 || fd == 2) {
-        std::stringstream ss;
+        uint32_t amt = 0;
+        auto logger = fd == 1 ? &_stdout_log_writer : &_stderr_log_writer;
         for (unsigned i = 0; i < iovecs.size(); ++i) {
             const auto& vec = iovecs[i];
             try {
                 ffi::array<char> data = mem->translate<char>(
                   vec.buf, vec.buf_len);
-                ss << std::string_view(data.raw(), data.size());
+                amt += logger->write(std::string_view(data.raw(), data.size()));
             } catch (const std::exception& ex) {
-                vlog(wasi_log.warn, "fd_write: {}", ex);
+                vlog(wasm_log.warn, "fd_write: {}", ex);
                 return ERRNO_INVAL;
             }
         }
-        // TODO: We should be buffering these until a newline or something and
-        // emitting logs line by line Also: rate limit logs
-        auto str = ss.str();
-        wasi_log.info("Guest std{}: {}", fd == 1 ? "out" : "err", str);
-        *written = str.size();
+        // Always flush so we don't have to keep any memory around between
+        // calls.
+        amt += logger->flush();
+        *written = amt;
         return ERRNO_SUCCESS;
     }
     return ERRNO_NOSYS;
 }
+
 errno_t preview1_module::path_create_directory(fd_t, ffi::array<uint8_t>) {
     return ERRNO_NOSYS;
 }

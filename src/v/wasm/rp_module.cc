@@ -20,6 +20,7 @@
 #include "utils/vint.h"
 #include "vassert.h"
 #include "wasm/ffi.h"
+#include "wasm/logger.h"
 
 #include <algorithm>
 #include <exception>
@@ -29,9 +30,6 @@
 namespace wasm {
 
 namespace {
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
-static ss::logger log("rp_wasm_module_log");
-
 using serialized_schema_type = named_type<int64_t, struct schema_id_tag>;
 constexpr serialized_schema_type avro = serialized_schema_type(0);
 constexpr serialized_schema_type protobuf = serialized_schema_type(1);
@@ -299,7 +297,7 @@ ss::future<int32_t> redpanda_module::get_schema_definition_len(
         *size_out = sizer.total();
         co_return 0;
     } catch (...) {
-        vlog(log.warn, "error fetching schema definition {}", schema_id);
+        vlog(wasm_log.warn, "error fetching schema definition {}", schema_id);
         co_return -2;
     }
 }
@@ -315,7 +313,7 @@ ss::future<int32_t> redpanda_module::get_schema_definition(
         write_encoded_schema_def(schema, &writer);
         co_return writer.total();
     } catch (...) {
-        vlog(log.warn, "error fetching schema definition {}", schema_id);
+        vlog(wasm_log.warn, "error fetching schema definition {}", schema_id);
         co_return -2;
     }
 }
@@ -338,7 +336,8 @@ ss::future<int32_t> redpanda_module::get_subject_schema_len(
         *size_out = sizer.total();
         co_return 0;
     } catch (const std::exception& ex) {
-        vlog(log.warn, "error fetching schema {}/{}: {}", sub, version, ex);
+        vlog(
+          wasm_log.warn, "error fetching schema {}/{}: {}", sub, version, ex);
         co_return -2;
     }
 }
@@ -360,7 +359,8 @@ ss::future<int32_t> redpanda_module::get_subject_schema(
         write_encoded_schema_subject(schema, &writer);
         co_return writer.total();
     } catch (const std::exception& ex) {
-        vlog(log.warn, "error fetching schema {}/{}: {}", sub, version, ex);
+        vlog(
+          wasm_log.warn, "error fetching schema {}/{}: {}", sub, version, ex);
         co_return -2;
     }
 }
@@ -380,7 +380,7 @@ ss::future<int32_t> redpanda_module::create_subject_schema(
         *out_schema_id = co_await _sr->create_schema(
           unparsed_schema(sub, unparsed));
     } catch (const std::exception& ex) {
-        vlog(log.warn, "error registering subject schema: {}", ex);
+        vlog(wasm_log.warn, "error registering subject schema: {}", ex);
         co_return -2;
     }
 

@@ -57,7 +57,7 @@ struct wasm_call_params {
  */
 class redpanda_module {
 public:
-    redpanda_module(schema_registry*);
+    explicit redpanda_module(schema_registry*);
     redpanda_module(const redpanda_module&) = delete;
     redpanda_module& operator=(const redpanda_module&) = delete;
     redpanda_module(redpanda_module&&) = default;

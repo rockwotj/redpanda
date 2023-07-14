@@ -82,7 +82,7 @@ public:
      * module.
      */
     virtual ss::future<std::unique_ptr<factory>>
-      make_factory(cluster::transform_metadata, iobuf) = 0;
+    make_factory(cluster::transform_metadata, iobuf, ss::logger*) = 0;
     virtual ~runtime() = default;
 };
 
