@@ -11,7 +11,7 @@ BASE_DOCKER_IMAGE = "us-central1-docker.pkg.dev/rp-byoc-tyler/wasm-feature-branc
 
 def release_redpanda(args):
     env = {**os.environ}
-    env["TARGETS"] = "redpanda rputil"
+    env["TARGETS"] = "redpanda rp_util"
     subprocess.check_call(["task", "rp:clean-pkg", "rp:build-docker-image", "BUILD_TYPE=release", "PKG_FORMATS=deb"], env=env)
     output = json.loads(subprocess.check_output(["docker", "inspect", "localhost/redpanda:dev"]))
     arch: str = output[0]["Architecture"]
