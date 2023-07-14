@@ -28,15 +28,15 @@ import (
 var (
 	Tinygo = Buildpack{
 		Name:    "tinygo",
-		baseUrl: "https://github.com/rockwotj/tinygo/releases/download/v0.28.1-rpk1",
+		baseUrl: "https://github.com/rockwotj/tinygo/releases/download/v0.28.1-rpk2",
 		shaSums: map[string]map[string]string{
 			"linux": {
-				"amd64": "89818ddc2d1bd4709ae89a351f70e6d97f59f4ceb565d2b848ed5b1a1cf9e3a2",
-				"arm64": "2ccd368944fc5d6b08ebba3978f0232238ca78c529fd9c5ff4202200890076e2",
+				"amd64": "49fcc84b999f072ef1e52512257fcf86d5bf31ee4c68c6d894643507c757d680",
+				"arm64": "054f5d8ec63e69cf21e5fd8e429a18fc31f2cc85f2c4d32248814c991d1639f7",
 			},
 			"darwin": {
-				"amd64": "d92e42b6184aa4c1e147920beeb38d28fb7d72c0c36d0897aa40e79f6295f3a1",
-				"arm64": "5e60c5034995ec819e2963f4e3374c3f97a728378c3f689e42529628aad47ad8",
+				"amd64": "d1e128157eb1101cfd9b932b2a6bf8cf411f81c0a078e1976bf60565323d8bea",
+				"arm64": "3fd0edc438aa80c197f637a0e385962d1ce3e0ceedf008f3ba4f55746c505394",
 			},
 		},
 		modifyArgs: func(c *cobra.Command, p project.Config, args []string) []string {
