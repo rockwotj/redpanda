@@ -31,6 +31,7 @@ func newLogsCommand() *cobra.Command {
 	var (
 		follow bool
 		filter string
+		level  string
 	)
 
 	command := &cobra.Command{
@@ -43,8 +44,26 @@ func newLogsCommand() *cobra.Command {
 			}
 			defer c.Close()
 
-			re, err := regexp.Compile(filter)
-			out.MaybeDie(err, "invalid filter %q: %v", filter, err)
+			var lre, ure *regexp.Regexp
+			switch level {
+			case "trace":
+				lre = nil
+			case "debug":
+				lre = regexp.MustCompile("^(DEBUG|INFO|WARN|ERROR)")
+			case "info":
+				lre = regexp.MustCompile("^(INFO|WARN|ERROR)")
+			case "warn":
+				lre = regexp.MustCompile("^(WARN|ERROR)")
+			case "error":
+				lre = regexp.MustCompile("^(ERROR)")
+			default:
+				out.Die("invalid level %q", level)
+			}
+
+			if filter != "" {
+				ure, err = regexp.Compile(filter)
+				out.MaybeDie(err, "invalid filter %q: %v", filter, err)
+			}
 
 			nodes, err := common.GetExistingNodes(c)
 			if err != nil {
@@ -70,7 +89,13 @@ func newLogsCommand() *cobra.Command {
 							return common.WrapIfConnErr(err)
 						}
 						defer lr.Close()
-						r := utils.NewLineFilteredReader(lr, re)
+						var r io.Reader = lr
+						if lre != nil {
+							r = utils.NewLineFilteredReader(r, lre)
+						}
+						if ure != nil {
+							r = utils.NewLineFilteredReader(lr, ure)
+						}
 						info, err := c.ContainerInspect(ctx, cid)
 						if err != nil {
 							return common.WrapIfConnErr(err)
@@ -109,6 +134,8 @@ func newLogsCommand() *cobra.Command {
 		"",
 		"Filter for the logs",
 	)
+
+	command.Flags().StringVarP(&level, "level", "l", "trace", "log level to filter, any logs below this level will be hidden (error, warn, info, debug, trace)")
 
 	return command
 }
