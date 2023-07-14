@@ -31,8 +31,10 @@ public:
     }
 
 private:
-    static constexpr auto accepted_commands
-      = make_commands_list<transform_update_cmd, transform_remove_cmd>();
+    static constexpr auto accepted_commands = make_commands_list<
+      transform_update_cmd,
+      transform_remove_cmd,
+      transform_partition_failed_cmd>();
 
     ss::sharded<plugin_table>* _table;
 };

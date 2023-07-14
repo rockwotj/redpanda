@@ -42,8 +42,10 @@ namespace cluster {
  */
 class plugin_frontend : public ss::peering_sharded_service<plugin_frontend> {
 private:
-    using transform_cmd
-      = std::variant<transform_update_cmd, transform_remove_cmd>;
+    using transform_cmd = std::variant<
+      transform_update_cmd,
+      transform_partition_failed_cmd,
+      transform_remove_cmd>;
 
 public:
     // The plugin frontend takes the corresponding services for it's core.
@@ -69,6 +71,10 @@ public:
     // Create or update a transform by name.
     ss::future<errc>
       upsert_transform(transform_metadata, model::timeout_clock::time_point);
+
+    // Fail a partition of a transform
+    ss::future<errc> fail_transform_partition(
+      failed_transform_partition, model::timeout_clock::time_point);
 
     // Remove a transform by name.
     ss::future<mutation_result>

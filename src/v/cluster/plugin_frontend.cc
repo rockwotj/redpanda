@@ -93,6 +93,13 @@ ss::future<errc> plugin_frontend::upsert_transform(
     return do_mutation(std::move(c), timeout).then([](auto r) { return r.ec; });
 }
 
+ss::future<errc> plugin_frontend::fail_transform_partition(
+  failed_transform_partition failure,
+  model::timeout_clock::time_point timeout) {
+    transform_cmd c{transform_partition_failed_cmd{0, failure}};
+    return do_mutation(std::move(c), timeout).then([](auto r) { return r.ec; });
+}
+
 ss::future<mutation_result> plugin_frontend::remove_transform(
   transform_name name, model::timeout_clock::time_point timeout) {
     transform_cmd c{transform_remove_cmd{std::move(name), 0}};
@@ -165,6 +172,23 @@ ss::future<mutation_result> plugin_frontend::dispatch_mutation_to_remote(
                           mutation_result{.uuid = uuid, .ec = r.value().ec});
                     });
               },
+              [client, timeout](transform_partition_failed_cmd cmd) mutable {
+                  auto uuid = cmd.value.uuid;
+                  return client
+                    .fail_plugin_transform_partition(
+                      fail_plugin_transform_partition_request{
+                        .failure = cmd.value, .timeout = timeout},
+                      rpc::client_opts(timeout))
+                    .then(&rpc::get_ctx_data<
+                          fail_plugin_transform_partition_response>)
+                    .then([uuid](auto r) {
+                        if (r.has_error()) {
+                            return result<mutation_result>(r.error());
+                        }
+                        return result<mutation_result>(
+                          mutation_result{.uuid = uuid, .ec = r.value().ec});
+                    });
+              },
               [client, timeout](transform_remove_cmd cmd) mutable {
                   return client
                     .remove_plugin(
@@ -211,6 +235,7 @@ ss::future<mutation_result> plugin_frontend::do_local_mutation(
     auto uuid = ss::visit(
       cmd,
       [](const transform_update_cmd& cmd) { return cmd.value.uuid; },
+      [](const transform_partition_failed_cmd& cmd) { return cmd.value.uuid; },
       [this](const transform_remove_cmd& cmd) {
           // This is safe because we've validated the mutation above.
           return _table->find_by_name(cmd.key)->uuid;
@@ -245,6 +270,10 @@ void plugin_frontend::assign_id(
 errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
     return ss::visit(
       cmd,
+      [](const transform_partition_failed_cmd&) {
+          // This is an internal command, it cannot fail
+          return errc::success;
+      },
       [this](const transform_update_cmd& cmd) {
           // Any mutations are allowed to change environment variables, so we
           // always need to validate those

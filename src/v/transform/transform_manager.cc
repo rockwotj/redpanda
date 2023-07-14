@@ -72,9 +72,11 @@ void manager::on_plugin_change(cluster::transform_id id) {
     _queue.submit([this, id] { return handle_plugin_change(id); });
 }
 void manager::on_plugin_error(
-  cluster::transform_id id, cluster::transform_metadata meta) {
-    _queue.submit([this, id, meta = std::move(meta)]() mutable {
-        return handle_plugin_error(id, std::move(meta));
+  cluster::transform_id id,
+  model::partition_id partition_id,
+  cluster::transform_metadata meta) {
+    _queue.submit([this, id, partition_id, meta = std::move(meta)]() mutable {
+        return handle_plugin_error(id, partition_id, std::move(meta));
     });
 }
 
@@ -144,9 +146,12 @@ ss::future<> manager::handle_plugin_change(cluster::transform_id id) {
 }
 
 ss::future<> manager::handle_plugin_error(
-  cluster::transform_id id, cluster::transform_metadata meta) {
-    vlog(tlog.debug, "handling plugin error: {}", id);
-    _registry->report_error(id, meta);
+  cluster::transform_id id,
+  model::partition_id partition_id,
+  cluster::transform_metadata meta) {
+    vlog(
+      tlog.debug, "handling plugin error {} on partition {}", id, partition_id);
+    _registry->report_error(id, partition_id, std::move(meta));
     auto it = _stms_by_id.find(id);
     if (it == _stms_by_id.end()) {
         co_return;
@@ -163,6 +168,7 @@ void manager::attempt_start_stm(
         return do_attempt_start_stm(std::move(ntp), id, attempts);
     });
 }
+
 ss::future<> manager::do_attempt_start_stm(
   model::ntp ntp, cluster::transform_id id, size_t attempts) {
     // It's possible something else came along and kicked this stm and that
@@ -172,16 +178,17 @@ ss::future<> manager::do_attempt_start_stm(
     }
     auto transform = _registry->lookup_by_id(id);
     // This transform was deleted
-    if (!transform) {
+    if (!transform || transform->failed_partitions.contains(ntp.tp.partition)) {
         co_return;
     }
     constexpr size_t max_attempts = 3;
     if (++attempts > max_attempts) {
         vlog(
           tlog.warn,
-          "failed to create transform {}, marking as failed",
-          transform->name);
-        on_plugin_error(id, *transform);
+          "failed to create transform {} for {}, marking as failed",
+          transform->name,
+          ntp);
+        on_plugin_error(id, ntp.tp.partition, *transform);
         co_return;
     }
     auto leaders = _registry->get_leader_partitions(
@@ -198,6 +205,14 @@ ss::future<> manager::start_stm(
   cluster::transform_id id,
   cluster::transform_metadata meta,
   size_t attempts) {
+    if (meta.failed_partitions.contains(ntp.tp.partition)) {
+        vlog(
+          tlog.info,
+          "not starting transform {} on failed partition {}",
+          meta.name,
+          ntp);
+        co_return;
+    }
     std::unique_ptr<processor> s;
     try {
         constexpr std::chrono::milliseconds fetch_binary_timeout
@@ -207,10 +222,11 @@ ss::future<> manager::start_stm(
         if (!binary) {
             vlog(
               tlog.warn,
-              "missing source binary, offset={}, marking as failed",
+              "missing source binary for {} offset={}, marking as failed",
+              meta.name,
               meta.source_ptr);
             // enqueue a task to mark the plugin as failed
-            on_plugin_error(id, meta);
+            on_plugin_error(id, ntp.tp.partition, meta);
             co_return;
         }
         // TODO: we should be sharing factories across the entire process, maybe
@@ -222,19 +238,25 @@ ss::future<> manager::start_stm(
         if (!src) {
             vlog(
               tlog.warn,
-              "unable to create transform::stm input source, retrying...");
+              "unable to create transform {} input source to {}, retrying...",
+              meta.name,
+              ntp);
             attempt_start_stm(ntp, id, attempts);
             co_return;
         }
         std::vector<std::unique_ptr<sink>> sinks;
         sinks.reserve(meta.output_topics.size());
         for (const auto& output_topic : meta.output_topics) {
-            auto sink = _sink_factory->create(
-              model::ntp(output_topic.ns, output_topic.tp, ntp.tp.partition));
+            auto output_ntp = model::ntp(
+              output_topic.ns, output_topic.tp, ntp.tp.partition);
+            auto sink = _sink_factory->create(output_ntp);
             if (!sink) {
                 vlog(
                   tlog.warn,
-                  "unable to create transform::stm output sink, retrying...");
+                  "unable to create transform {} output sink to {}, "
+                  "retrying...",
+                  meta.name,
+                  output_ntp);
                 attempt_start_stm(ntp, id, attempts);
                 co_return;
             }
@@ -243,10 +265,13 @@ ss::future<> manager::start_stm(
         s = std::make_unique<processor>(
           id,
           ntp,
-          std::move(meta),
+          meta,
           std::move(engine),
-          [this](cluster::transform_id id, cluster::transform_metadata meta) {
-              on_plugin_error(id, std::move(meta));
+          [this](
+            cluster::transform_id id,
+            model::partition_id partition_id,
+            cluster::transform_metadata meta) {
+              on_plugin_error(id, partition_id, std::move(meta));
           },
           std::move(src).value(),
           std::move(sinks));
@@ -257,7 +282,7 @@ ss::future<> manager::start_stm(
           "failed",
           ex);
         // enqueue a task to mark the plugin as failed
-        on_plugin_error(id, meta);
+        on_plugin_error(id, ntp.tp.partition, meta);
     } catch (const std::exception& ex) {
         vlog(tlog.warn, "unable to create transform::stm: {}, retrying...", ex);
         // requeue a task to start the stm

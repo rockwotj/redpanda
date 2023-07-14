@@ -120,6 +120,16 @@ void plugin_table::upsert_transform(transform_id id, transform_metadata meta) {
     run_callbacks(id);
 }
 
+void plugin_table::fail_transform_partition(
+  transform_id id, uuid_t uuid, model::partition_id partition_id) {
+    auto meta = find_by_id(id);
+    if (!meta || meta->uuid != uuid) {
+        return;
+    }
+    meta->failed_partitions.emplace(partition_id);
+    upsert_transform(id, std::move(meta).value());
+}
+
 void plugin_table::remove_transform(const transform_name& name) {
     auto name_it = _name_index.find(std::string_view(name()));
     if (name_it == _name_index.end()) {

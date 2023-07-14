@@ -32,7 +32,7 @@
 namespace transform {
 
 using error_callback = ss::noncopyable_function<void(
-  cluster::transform_id, cluster::transform_metadata)>;
+  cluster::transform_id, model::partition_id, cluster::transform_metadata)>;
 
 class processor {
 public:

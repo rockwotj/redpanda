@@ -796,6 +796,15 @@ service::upsert_plugin(upsert_plugin_request&& req, rpc::streaming_context&) {
     co_return upsert_plugin_response{.ec = ec};
 }
 
+ss::future<fail_plugin_transform_partition_response>
+service::fail_plugin_transform_partition(
+  fail_plugin_transform_partition_request&& req, rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    auto result = co_await _plugin_frontend->local().fail_transform_partition(
+      req.failure, model::timeout_clock::now() + req.timeout);
+    co_return fail_plugin_transform_partition_response{.ec = result};
+}
+
 ss::future<remove_plugin_response>
 service::remove_plugin(remove_plugin_request&& req, rpc::streaming_context&) {
     co_await ss::coroutine::switch_to(get_scheduling_group());
