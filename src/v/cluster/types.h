@@ -3924,18 +3924,25 @@ struct transform_metadata
       transform_metadata,
       serde::version<0>,
       serde::compat_version<0>> {
+    // The user specified name of the transform.
     transform_name name;
+    // The input topic being transformed.
     model::topic_namespace input_topic;
-    // Right now we force there is only one,
+    // Right now we force there is only one, but we're mostly setup for
+    // multiple. These are also validated to be unique, but we use a vector
+    // here to preserve the user specified order (which is important as it
+    // will be how the ABI boundary specifies which output topic to write too).
     std::vector<model::topic_namespace> output_topics;
+    // The user specified environment variable configuration.
     absl::flat_hash_map<ss::sstring, ss::sstring> environment;
-    // Each committed WASM source has a different name, which is tracked here
-    // (mostly for best-effort cleanup).
-    uuid_t source_key;
-    // The offset of the commmitted WASM source.
+    // Each transform revision has a UUID, which is the key for the wasm_binary
+    // topic and can be used to uniquely identify this revision.
+    uuid_t uuid;
+    // The offset of the commmitted WASM source in the wasm_binary topic.
     model::offset source_ptr;
-
-    bool paused{false};
+    // Partitions that have failed and are in the error state.
+    // Currently a deploy is needed to reset them.
+    absl::flat_hash_set<model::partition_id> failed_partitions;
 
     friend bool operator==(const transform_metadata&, const transform_metadata&)
       = default;
@@ -3948,9 +3955,9 @@ struct transform_metadata
           input_topic,
           output_topics,
           environment,
-          source_key,
+          uuid,
           source_ptr,
-          paused);
+          failed_partitions);
     }
 };
 
@@ -4012,7 +4019,7 @@ struct remove_plugin_response
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    uuid_t source_key;
+    uuid_t uuid;
     errc ec;
 
     friend bool

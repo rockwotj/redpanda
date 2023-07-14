@@ -150,19 +150,19 @@ ss::future<mutation_result> plugin_frontend::dispatch_mutation_to_remote(
             return ss::visit(
               std::move(cmd),
               [client, timeout](transform_update_cmd cmd) mutable {
-                  auto key = cmd.value.source_key;
+                  auto uuid = cmd.value.uuid;
                   return client
                     .upsert_plugin(
                       upsert_plugin_request{
                         .transform = std::move(cmd.value), .timeout = timeout},
                       rpc::client_opts(timeout))
                     .then(&rpc::get_ctx_data<upsert_plugin_response>)
-                    .then([key](auto r) {
+                    .then([uuid](auto r) {
                         if (r.has_error()) {
                             return result<mutation_result>(r.error());
                         }
-                        return result<mutation_result>(mutation_result{
-                          .source_key = key, .ec = r.value().ec});
+                        return result<mutation_result>(
+                          mutation_result{.uuid = uuid, .ec = r.value().ec});
                     });
               },
               [client, timeout](transform_remove_cmd cmd) mutable {
@@ -177,8 +177,7 @@ ss::future<mutation_result> plugin_frontend::dispatch_mutation_to_remote(
                             return result<mutation_result>(r.error());
                         }
                         return result<mutation_result>(mutation_result{
-                          .source_key = r.value().source_key,
-                          .ec = r.value().ec});
+                          .uuid = r.value().uuid, .ec = r.value().ec});
                     });
               });
         })
@@ -209,21 +208,21 @@ ss::future<mutation_result> plugin_frontend::do_local_mutation(
         return ss::make_ready_future<mutation_result>(
           mutation_result{.ec = errc::throttling_quota_exceeded});
     }
-    auto key = ss::visit(
+    auto uuid = ss::visit(
       cmd,
-      [](const transform_update_cmd& cmd) { return cmd.value.source_key; },
+      [](const transform_update_cmd& cmd) { return cmd.value.uuid; },
       [this](const transform_remove_cmd& cmd) {
           // This is safe because we've validated the mutation above.
-          return _table->find_by_name(cmd.key)->source_key;
+          return _table->find_by_name(cmd.key)->uuid;
       });
     auto b = std::visit(
       [](auto cmd) { return serde_serialize_cmd(std::move(cmd)); },
       std::move(cmd));
     return _controller
       ->replicate_and_wait(std::move(b), timeout, *_abort_source)
-      .then([key](std::error_code ec) {
+      .then([uuid](std::error_code ec) {
           return ss::make_ready_future<mutation_result>(
-            mutation_result{.source_key = key, .ec = map_errc(ec)});
+            mutation_result{.uuid = uuid, .ec = map_errc(ec)});
       });
 }
 
