@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "utils/absl_sstring_hash.h"
 
@@ -66,6 +67,9 @@ public:
     void upsert_transform(transform_id id, transform_metadata);
     // remove transform metadata by name.
     void remove_transform(const transform_name&);
+    // Mark an individual partition as failed if the UUIDs match (there isn't a
+    // new revision).
+    void fail_transform_partition(transform_id id, uuid_t, model::partition_id);
 
     void reset_transforms(underlying_t);
 

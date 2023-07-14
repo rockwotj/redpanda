@@ -3995,6 +3995,59 @@ struct upsert_plugin_response
     auto serde_fields() { return std::tie(ec); }
 };
 
+struct failed_transform_partition
+  : serde::envelope<
+      failed_transform_partition,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    transform_id id;
+    // The partition that failed.
+    model::partition_id partition_id;
+    // The UUID of the transition, so that in a race with a deploy we don't fail
+    // a partition for a new revision.
+    uuid_t uuid;
+
+    friend bool operator==(
+      const failed_transform_partition&, const failed_transform_partition&)
+      = default;
+};
+
+/**
+ * Mark a transform partition as failed
+ */
+struct fail_plugin_transform_partition_request
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    failed_transform_partition failure;
+    model::timeout_clock::duration timeout{};
+
+    friend bool operator==(
+      const fail_plugin_transform_partition_request&,
+      const fail_plugin_transform_partition_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(failure, timeout); }
+};
+struct fail_plugin_transform_partition_response
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    errc ec;
+
+    friend bool operator==(
+      const fail_plugin_transform_partition_response&,
+      const fail_plugin_transform_partition_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
 /**
  * Remove a (WASM) plugin.
  */

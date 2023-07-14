@@ -53,8 +53,10 @@ public:
     virtual std::optional<cluster::transform_metadata>
       lookup_by_id(cluster::transform_id) const = 0;
 
-    virtual void
-      report_error(cluster::transform_id, cluster::transform_metadata) const
+    virtual void report_error(
+      cluster::transform_id,
+      model::partition_id,
+      cluster::transform_metadata) const
       = 0;
 
     virtual ss::future<std::optional<iobuf>>
@@ -93,7 +95,8 @@ public:
 
     void on_leadership_change(model::ntp, ntp_leader);
     void on_plugin_change(cluster::transform_id);
-    void on_plugin_error(cluster::transform_id, cluster::transform_metadata);
+    void on_plugin_error(
+      cluster::transform_id, model::partition_id, cluster::transform_metadata);
 
 private:
     void attempt_start_stm(model::ntp, cluster::transform_id, size_t attempts);
@@ -102,8 +105,8 @@ private:
     // All these private methods must be call "on" the queue.
     ss::future<> handle_leadership_change(model::ntp, ntp_leader);
     ss::future<> handle_plugin_change(cluster::transform_id);
-    ss::future<>
-      handle_plugin_error(cluster::transform_id, cluster::transform_metadata);
+    ss::future<> handle_plugin_error(
+      cluster::transform_id, model::partition_id, cluster::transform_metadata);
     ss::future<>
     do_attempt_start_stm(model::ntp, cluster::transform_id, size_t attempts);
     ss::future<> start_stm(

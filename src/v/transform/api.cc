@@ -147,15 +147,22 @@ public:
     }
 
     void report_error(
-      cluster::transform_id, cluster::transform_metadata meta) const override {
-        ssx::spawn_with_gate(*_gate, [this, meta = std::move(meta)]() mutable {
-            constexpr auto timeout = 300ms;
-            // TODO
-            return _pf
-              ->upsert_transform(
-                std::move(meta), model::timeout_clock::now() + timeout)
-              .discard_result();
-        });
+      cluster::transform_id id,
+      model::partition_id partition_id,
+      cluster::transform_metadata meta) const override {
+        ssx::spawn_with_gate(
+          *_gate, [this, id, partition_id, meta = std::move(meta)]() mutable {
+              constexpr auto timeout = 300ms;
+              return _pf
+                ->fail_transform_partition(
+                  {
+                    .id = id,
+                    .partition_id = partition_id,
+                    .uuid = meta.uuid,
+                  },
+                  model::timeout_clock::now() + timeout)
+                .discard_result();
+          });
     }
 
     ss::future<std::optional<iobuf>> fetch_binary(
@@ -442,9 +449,11 @@ service::delete_transform(cluster::transform_name name) {
     auto _ = _gate.hold();
     auto result = co_await _plugins->local().remove_transform(
       name, model::no_timeout);
-    if (
-      result.ec != cluster::errc::success
-      && result.ec != cluster::errc::transform_does_not_exist) {
+    // Make deletes itempotent
+    if (result.ec == cluster::errc::transform_does_not_exist) {
+        co_return cluster::errc::success;
+    }
+    if (result.ec != cluster::errc::success) {
         co_return result.ec;
     }
     // We still want to tombstone a record in case of a transform's metadata was

@@ -125,6 +125,10 @@ public:
     ss::future<upsert_plugin_response>
     upsert_plugin(upsert_plugin_request&&, rpc::streaming_context&) final;
 
+    ss::future<fail_plugin_transform_partition_response>
+    fail_plugin_transform_partition(
+      fail_plugin_transform_partition_request&&, rpc::streaming_context&) final;
+
     ss::future<remove_plugin_response>
     remove_plugin(remove_plugin_request&&, rpc::streaming_context&) final;
 

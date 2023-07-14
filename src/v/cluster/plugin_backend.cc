@@ -36,13 +36,19 @@ ss::future<std::error_code>
 plugin_backend::apply_update(model::record_batch b) {
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-    co_await _table->invoke_on_all([&cmd](auto& table) {
+    co_await _table->invoke_on_all([&cmd](plugin_table& table) {
         return ss::visit(
           cmd,
           [&table](transform_update_cmd update) {
               table.upsert_transform(update.key, std::move(update.value));
           },
-          [&table](transform_remove_cmd removal) {
+          [&table](transform_partition_failed_cmd cmd) {
+              const auto& failure = cmd.value;
+              table.fail_transform_partition(
+                failure.id, failure.uuid, failure.partition_id);
+          },
+          // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+          [&table](const transform_remove_cmd& removal) {
               table.remove_transform(removal.key);
           });
     });
