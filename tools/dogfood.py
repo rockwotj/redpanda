@@ -19,7 +19,7 @@ def release_redpanda(args):
     subprocess.check_call(["docker", "tag", "localhost/redpanda:dev", tag])
     subprocess.check_call(["docker", "push", tag])
     build_dir = pathlib.Path(__file__).parent.parent / "vbuild/release/clang/dist/debian/"
-    deb_files = list(build_dir.glob("*.deb"))
+    deb_files = [path for path in build_dir.glob("*.deb") if 'dbgsym' not in str(path)]
     assert len(deb_files) == 1, f"Expected only a single deb file, found: {deb_files}"
     subprocess.check_call(["gcloud", "artifacts", "apt", "upload", "wasm-feature-branch-apt", f"--source={deb_files[0]}"])
 
