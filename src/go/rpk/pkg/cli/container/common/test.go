@@ -55,6 +55,12 @@ type MockClient struct {
 		options container.StopOptions,
 	) error
 
+	MockContainerLogs func(
+		ctx context.Context,
+		containerID string,
+		options types.ContainerLogsOptions,
+	) (io.ReadCloser, error)
+
 	MockContainerList func(
 		ctx context.Context,
 		options types.ContainerListOptions,
@@ -171,6 +177,17 @@ func (c *MockClient) ContainerList(
 		return c.MockContainerList(ctx, options)
 	}
 	return []types.Container{}, nil
+}
+
+func (c *MockClient) ContainerLogs(
+	ctx context.Context,
+	containerID string,
+	options types.ContainerLogsOptions,
+) (io.ReadCloser, error) {
+	if c.MockContainerLogs != nil {
+		return c.MockContainerLogs(ctx, containerID, options)
+	}
+	return io.NopCloser(io.MultiReader()), nil
 }
 
 func (c *MockClient) ContainerInspect(
