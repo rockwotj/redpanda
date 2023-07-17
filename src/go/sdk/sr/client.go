@@ -128,12 +128,11 @@ func NewClient(opts ...ClientOpt) (c SchemaRegistryClient) {
 	if o.disableCaches {
 		return c
 	}
-	c = &cachingClientImpl{
+	return &cachingClientImpl{
 		underlying:                  c,
 		schemaByIdCache:             make(map[schemaId]*Schema),
 		schemaBySubjectVersionCache: make(map[subjectVersion]*SubjectSchema),
 	}
-	return c
 }
 
 func (sr *cachingClientImpl) LookupSchemaById(id int) (s *Schema, err error) {
