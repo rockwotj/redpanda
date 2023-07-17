@@ -434,7 +434,7 @@ service::deploy_transform(cluster::transform_metadata meta, iobuf buf) {
     bool is_valid = co_await validate_source(
       meta, buf.share(0, buf.size_bytes()));
     if (!is_valid) {
-        co_return cluster::errc::transform_invalid_create;
+        co_return cluster::errc::transform_invalid_source;
     }
     auto [key, offset] = co_await write_source(name, std::move(buf));
     vlog(tlog.debug, "wrote wasm source at key={} offset={}", key, offset);
