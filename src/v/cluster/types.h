@@ -3925,6 +3925,184 @@ static const ss::sstring rm_stm_snapshot = "tx.snapshot";
 static const ss::sstring tm_stm_snapshot = "tx.coordinator.snapshot";
 static const ss::sstring id_allocator_snapshot = "id.snapshot";
 
+/**
+ * An ID for a transform, these get allocated globally, to allow for users to
+ * re-use names of transforms.
+ */
+using transform_id = named_type<int64_t, struct transform_id_tag>;
+/**
+ * The name of a transform, which is the user defined.
+ *
+ * Generally you should only use names when surfacing information to a user,
+ * otherwise the ID should be used, especially if the information is persisted.
+ */
+using transform_name = named_type<ss::sstring, struct transform_name_tag>;
+/**
+ * Metadata for a WASM powered data transforms.
+ */
+struct transform_metadata
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    // The user specified name of the transform.
+    transform_name name;
+    // The input topic being transformed.
+    model::topic_namespace input_topic;
+    // Right now we force there is only one, but we're mostly setup for
+    // multiple. These are also validated to be unique, but we use a vector
+    // here to preserve the user specified order (which is important as it
+    // will be how the ABI boundary specifies which output topic to write too).
+    std::vector<model::topic_namespace> output_topics;
+    // The user specified environment variable configuration.
+    absl::flat_hash_map<ss::sstring, ss::sstring> environment;
+    // Each transform revision has a UUID, which is the key for the wasm_binary
+    // topic and can be used to uniquely identify this revision.
+    uuid_t uuid;
+    // The offset of the commmitted WASM source in the wasm_binary topic.
+    model::offset source_ptr;
+    // Partitions that have failed and are in the error state.
+    // Currently a deploy is needed to reset them.
+    absl::flat_hash_set<model::partition_id> failed_partitions;
+
+    friend bool operator==(const transform_metadata&, const transform_metadata&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream&, const transform_metadata&);
+
+    auto serde_fields() {
+        return std::tie(
+          name,
+          input_topic,
+          output_topics,
+          environment,
+          uuid,
+          source_ptr,
+          failed_partitions);
+    }
+};
+
+/**
+ * Create/update a (WASM) plugin.
+ */
+struct upsert_plugin_request
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    transform_metadata transform;
+    model::timeout_clock::duration timeout{};
+
+    friend bool
+    operator==(const upsert_plugin_request&, const upsert_plugin_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(transform, timeout); }
+};
+struct upsert_plugin_response
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    errc ec;
+
+    friend bool
+    operator==(const upsert_plugin_response&, const upsert_plugin_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
+struct failed_transform_partition
+  : serde::envelope<
+      failed_transform_partition,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    transform_id id;
+    // The partition that failed.
+    model::partition_id partition_id;
+    // The UUID of the transition, so that in a race with a deploy we don't fail
+    // a partition for a new revision.
+    uuid_t uuid;
+
+    friend bool operator==(
+      const failed_transform_partition&, const failed_transform_partition&)
+      = default;
+};
+
+/**
+ * Mark a transform partition as failed
+ */
+struct fail_plugin_transform_partition_request
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    failed_transform_partition failure;
+    model::timeout_clock::duration timeout{};
+
+    friend bool operator==(
+      const fail_plugin_transform_partition_request&,
+      const fail_plugin_transform_partition_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(failure, timeout); }
+};
+struct fail_plugin_transform_partition_response
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    errc ec;
+
+    friend bool operator==(
+      const fail_plugin_transform_partition_response&,
+      const fail_plugin_transform_partition_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
+/**
+ * Remove a (WASM) plugin.
+ */
+struct remove_plugin_request
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    transform_name name;
+    model::timeout_clock::duration timeout{};
+
+    friend bool
+    operator==(const remove_plugin_request&, const remove_plugin_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(name, timeout); }
+};
+struct remove_plugin_response
+  : serde::envelope<
+      transform_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    uuid_t uuid;
+    errc ec;
+
+    friend bool
+    operator==(const remove_plugin_response&, const remove_plugin_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
 } // namespace cluster
 namespace std {
 template<>
@@ -4736,6 +4914,21 @@ std::ostream& operator<<(std::ostream& o, const absl::flat_hash_map<K, V>& r) {
             o << ", ";
         }
         o << "{" << k << " -> " << v << "}";
+        first = false;
+    }
+    o << "}";
+    return o;
+}
+
+template<typename K>
+std::ostream& operator<<(std::ostream& o, const absl::flat_hash_set<K>& r) {
+    o << "{";
+    bool first = true;
+    for (const auto& k : r) {
+        if (!first) {
+            o << ", ";
+        }
+        o << k;
         first = false;
     }
     o << "}";

@@ -68,6 +68,7 @@ topics_frontend::topics_frontend(
   ss::sharded<cluster::members_table>& members_table,
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& shard_table,
+  plugin_table* plugin_table,
   config::binding<unsigned> hard_max_disk_usage_ratio)
   : _self(self)
   , _stm(s)
@@ -82,6 +83,7 @@ topics_frontend::topics_frontend(
   , _members_table(members_table)
   , _pm(pm)
   , _shard_table(shard_table)
+  , _plugin_table(plugin_table)
   , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio) {}
 
 static bool
@@ -527,6 +529,15 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
         topic_result result(std::move(tp_ns), errc::topic_not_exists);
         return ss::make_ready_future<topic_result>(result);
     }
+    // Before deleting a topic we need to make sure there are no transforms
+    // hooked up to it first.
+    auto source_transforms = _plugin_table->find_by_input_topic(tp_ns);
+    auto sink_transforms = _plugin_table->find_by_output_topic(tp_ns);
+    if (!source_transforms.empty() || !sink_transforms.empty()) {
+        topic_result result(std::move(tp_ns), errc::source_topic_still_in_use);
+        return ss::make_ready_future<topic_result>(result);
+    }
+
     auto& topic_meta = topic_meta_opt.value().get();
 
     // Lifecycle marker driven deletion is added alongside the v2 manifest
@@ -980,6 +991,31 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
         co_return make_error_result(
           p_cfg.tp_ns, errc::topic_invalid_partitions);
+    }
+
+    auto transforms = _plugin_table->find_by_input_topic(p_cfg.tp_ns);
+    // Check that all the topics are co partitioned
+    for (const auto& entry : transforms) {
+        for (const auto& output_topic : entry.second.output_topics) {
+            auto output_tp_cfg = _topics.local().get_topic_cfg(output_topic);
+            if (!output_tp_cfg) {
+                vlog(
+                  clusterlog.error,
+                  "invalid transform (id={}) output topic {} doesn't exist",
+                  entry.first,
+                  output_topic);
+                co_return make_error_result(
+                  p_cfg.tp_ns, errc::topic_invalid_config);
+            }
+            // We enforce the input topic has as many partitions as the
+            // output topic (co partitioning).
+            if (
+              p_cfg.new_total_partition_count
+              < output_tp_cfg->partition_count) {
+                co_return make_error_result(
+                  p_cfg.tp_ns, errc::topic_invalid_partitions);
+            }
+        }
     }
 
     auto units = co_await _allocator.invoke_on(
