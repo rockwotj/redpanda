@@ -38,6 +38,13 @@ class NetworkAddress:
     address: str
     port: int
 
+@dataclasses.dataclass
+class PandaproxyConfig:
+    pandaproxy_api: NetworkAddress
+
+@dataclasses.dataclass
+class SchemaRegistryConfig:
+    schema_registry_api: NetworkAddress
 
 @dataclasses.dataclass
 class RedpandaConfig:
@@ -54,6 +61,8 @@ class RedpandaConfig:
 @dataclasses.dataclass
 class NodeConfig:
     redpanda: RedpandaConfig
+    pandaproxy: PandaproxyConfig
+    schema_registry: SchemaRegistryConfig
     config_path: str
 
     # This is _not_ the node_id, just the index into our array of nodes
@@ -142,6 +151,14 @@ async def main():
                         type=int,
                         help="admin port",
                         default=9644)
+    parser.add_argument("--base-schema-registry-port",
+                        type=int,
+                        help="schema registry port",
+                        default=8081)
+    parser.add_argument("--base-pandaproxy-port",
+                        type=int,
+                        help="schema registry port",
+                        default=8092)
     parser.add_argument("--listen-address",
                         type=str,
                         help="listening address",
@@ -176,10 +193,14 @@ async def main():
                                   seed_servers=rpc_addresses[:3],
                                   empty_seed_starts_cluster=False,
                                   rack=rack)
+        pandaproxy = PandaproxyConfig(pandaproxy_api=make_address(args.base_pandaproxy_port))
+        schema_registry = SchemaRegistryConfig(schema_registry_api=make_address(args.base_schema_registry_port))
         return NodeConfig(redpanda=redpanda,
                           index=i,
                           config_path=config_path,
-                          cluster_size=args.nodes)
+                          cluster_size=args.nodes,
+                          pandaproxy=pandaproxy,
+                          schema_registry=schema_registry)
 
     def pathlib_path_representer(dumper, path):
         return dumper.represent_scalar("!Path", str(path))
