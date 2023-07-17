@@ -28,12 +28,16 @@ var (
 )
 
 func main() {
+	println("creating new client")
 	c = sr.NewClient()
+	println("creating example")
 	e := Example{}
+	println("creating schema")
 	c.CreateSchema(topicName+"-value", sr.Schema{
 		Type:   sr.TypeAvro,
 		Schema: e.Schema(),
 	})
+	println("registering on record written")
 	redpanda.OnRecordWritten(avroToJsonTransform)
 }
 
