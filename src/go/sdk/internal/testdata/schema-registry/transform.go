@@ -28,16 +28,15 @@ var (
 )
 
 func main() {
-	println("creating new client")
 	c = sr.NewClient()
-	println("creating example")
 	e := Example{}
-	println("creating schema")
-	c.CreateSchema(topicName+"-value", sr.Schema{
+	_, err := c.CreateSchema(topicName+"-value", sr.Schema{
 		Type:   sr.TypeAvro,
 		Schema: e.Schema(),
 	})
-	println("registering on record written")
+	if err != nil {
+		println("unable to registry schema: ", err)
+	}
 	redpanda.OnRecordWritten(avroToJsonTransform)
 }
 

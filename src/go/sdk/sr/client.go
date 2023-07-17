@@ -214,7 +214,7 @@ func (sr *clientImpl) LookupSchemaByVersion(subject string, version int) (s *Sub
 
 func (sr *cachingClientImpl) CreateSchema(subject string, schema Schema) (s *SubjectSchema, err error) {
 	s, err = sr.underlying.CreateSchema(subject, schema)
-	if err != nil {
+	if err == nil {
 		sr.schemaBySubjectVersionCache[subjectVersion{subject, s.Version}] = s
 	}
 	return
