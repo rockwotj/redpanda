@@ -85,7 +85,7 @@ public:
 
 private:
     ss::future<> create_internal_source_topic();
-    ss::future<> validate_source(cluster::transform_metadata, iobuf);
+    ss::future<bool> validate_source(cluster::transform_metadata, iobuf);
     ss::future<std::pair<uuid_t, model::offset>>
       write_source(cluster::transform_name, iobuf);
     ss::future<> write_source_tombstone(uuid_t, cluster::transform_name);

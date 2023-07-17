@@ -39,6 +39,8 @@ public:
 
     cluster::transform_metadata meta() const { return _meta; };
 
+    wasm::engine* engine() { return _engine.get(); }
+
 private:
     ssx::thread_worker _worker;
     std::unique_ptr<wasm::runtime> _runtime;

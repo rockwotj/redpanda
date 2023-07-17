@@ -429,7 +429,11 @@ ss::future<cluster::errc>
 service::deploy_transform(cluster::transform_metadata meta, iobuf buf) {
     auto _ = _gate.hold();
     auto name = meta.name;
-    co_await validate_source(meta, buf.share(0, buf.size_bytes()));
+    bool is_valid = co_await validate_source(
+      meta, buf.share(0, buf.size_bytes()));
+    if (!is_valid) {
+        co_return cluster::errc::transform_invalid_create;
+    }
     auto [key, offset] = co_await write_source(name, std::move(buf));
     vlog(tlog.debug, "wrote wasm source at key={} offset={}", key, offset);
     meta.uuid = key;
@@ -525,7 +529,7 @@ service::write_source_tombstone(uuid_t key, cluster::transform_name name) {
       model::wasm_plugin_internal_tp, std::move(batch));
     check_error_code(resp);
 }
-ss::future<>
+ss::future<bool>
 service::validate_source(cluster::transform_metadata meta, iobuf buf) {
     // Validate that the source is good by just creating a transform, but don't
     // run anything we should probably expose a better API in runtime for
@@ -534,7 +538,19 @@ service::validate_source(cluster::transform_metadata meta, iobuf buf) {
       std::move(meta), std::move(buf), &tlog);
     auto engine = co_await factory->make_engine();
     co_await engine->start();
+    bool is_valid = true;
+    try {
+        co_await engine->initialize();
+    } catch (const std::exception& ex) {
+        vlog(
+          tlog.info,
+          "transform {} failed to be initialized: {}",
+          meta.name,
+          ex);
+        is_valid = false;
+    }
     co_await engine->stop();
+    co_return is_valid;
 }
 
 } // namespace transform

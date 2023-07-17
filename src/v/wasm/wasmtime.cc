@@ -384,7 +384,9 @@ public:
 
     std::string_view function_name() const final { return _user_module_name; }
 
-    ss::future<> start() final { return initialize_wasi(); }
+    ss::future<> start() final { return ss::now(); }
+
+    ss::future<> initialize() final { return initialize_wasi(); }
 
     ss::future<> stop() final { return ss::now(); }
 

@@ -71,6 +71,7 @@ enum class errc : int16_t {
     transform_does_not_exist,
     transform_invalid_update,
     transform_invalid_create,
+    transform_invalid_source,
     transform_invalid_environment,
 };
 struct errc_category final : public std::error_category {
@@ -204,6 +205,8 @@ struct errc_category final : public std::error_category {
         case errc::transform_invalid_update:
             return "Invalid update to transform, name or topic configuration "
                    "cannot change";
+        case errc::transform_invalid_source:
+            return "Invalid transform source";
         case errc::transform_invalid_create:
             return "Invalid create transform configuration";
         case errc::transform_invalid_environment:

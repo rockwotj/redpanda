@@ -22,3 +22,18 @@ FIXTURE_TEST(test_wasm_transforms_work, wasm_test_fixture) {
     BOOST_CHECK_EQUAL(transformed.copy_records(), batch.copy_records());
     BOOST_CHECK_EQUAL(transformed, batch);
 }
+
+FIXTURE_TEST(test_wasm_engines_can_be_restarted, wasm_test_fixture) {
+    load_wasm("identity.wasm");
+    engine()->stop().get();
+    // Can be restarted without initialization
+    engine()->start().get();
+    engine()->stop().get();
+    // It still works after being restarted
+    engine()->start().get();
+    engine()->initialize().get();
+    auto batch = make_tiny_batch();
+    auto transformed = transform(batch);
+    BOOST_CHECK_EQUAL(transformed.copy_records(), batch.copy_records());
+    BOOST_CHECK_EQUAL(transformed, batch);
+}

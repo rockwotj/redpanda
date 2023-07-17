@@ -335,10 +335,26 @@ public:
     std::string_view function_name() const final { return _user_module_name; }
 
     ss::future<> start() final {
+        _queue = ss::queue<ss::noncopyable_function<void()>>(1);
+        _is_running = true;
+        // TODO: Specify a special scheduling group
+        _thread = ss::thread([this] {
+            while (_is_running) {
+                auto task = _queue.pop_eventually().get();
+                task();
+            }
+        });
+        return ss::now();
+    }
+
+    ss::future<> initialize() final {
         return enqueue<void>([this] { initialize_wasi(); });
     }
 
     ss::future<> stop() final {
+        if (!_is_running) {
+            co_return;
+        }
         _is_running = false;
         // Enqueue a task to flush the queue
         co_await enqueue<void>([] {});
@@ -487,14 +503,8 @@ private:
     }
 
     ss::queue<ss::noncopyable_function<void()>> _queue{1};
-    bool _is_running = true;
-    // TODO: Specify a special scheduling group
-    ss::thread _thread{[this] {
-        while (_is_running) {
-            auto task = _queue.pop_eventually().get();
-            task();
-        }
-    }};
+    bool _is_running = false;
+    ss::thread _thread{};
 
     std::vector<WasmEdgeModule> _modules;
     WasmEdgeStore _store_ctx;
