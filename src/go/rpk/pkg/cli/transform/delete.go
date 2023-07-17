@@ -13,7 +13,6 @@ import (
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -24,24 +23,14 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete [NAME]",
 		Short: "Delete a data transform",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			api, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
-			functionName := ""
-			if len(args) == 1 {
-				functionName = args[0]
-			}
-			if functionName == "" {
-				cfg, err := project.LoadCfg(fs)
-				if err == nil {
-					functionName = cfg.Name
-				}
-			}
-
+			functionName := args[0]
 			transforms, err := api.ListWasmTransforms(cmd.Context())
 			out.MaybeDie(err, "unable to list existing transforms: %v", err)
 
