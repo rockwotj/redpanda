@@ -79,7 +79,7 @@ Will initialize a transform project in the foobar directory.
 			ok, err := afero.Exists(fs, c)
 			out.MaybeDie(err, "unable to determine if %q exists: %v", c, err)
 			if ok {
-				out.Die("there is already a transform at %q", c)
+				out.Die("there is already a transform at %q, please delete it before retrying", c)
 			}
 			for name == "" {
 				suggestion := filepath.Base(path)
