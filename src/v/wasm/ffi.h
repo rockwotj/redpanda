@@ -322,6 +322,23 @@ std::tuple<Type> extract_parameter(
     }
 }
 
+template<typename Type>
+constexpr size_t num_parameters() {
+    if constexpr (std::is_same_v<ffi::memory*, Type>) {
+        return 0;
+    } else if constexpr (
+      is_array<Type>::value || std::is_same_v<ss::sstring, Type>) {
+        // one for the pointer and one for the length
+        return 2;
+    } else if constexpr (std::is_pointer_v<Type> || std::is_integral_v<Type>) {
+        return 1;
+    } else if constexpr (reflection::is_rp_named_type<Type>) {
+        return num_parameters<typename Type::type>();
+    } else {
+        static_assert(dependent_false<Type>::value, "Unknown type");
+    }
+}
+
 template<typename... Args>
 concept EmptyPack = sizeof...(Args) == 0;
 } // namespace detail
@@ -356,21 +373,14 @@ std::tuple<Type, Rest...> extract_parameters(
 }
 
 template<typename... Rest>
-size_t parameter_count()
+constexpr size_t parameter_count()
 requires detail::EmptyPack<Rest...>
 {
     return 0;
 }
+
 template<typename Type, typename... Rest>
-size_t parameter_count() {
-    size_t r = 0;
-    if constexpr (std::is_same_v<memory*, Type>) {
-        r = 0;
-    } else if constexpr (detail::is_array<Type>::value) {
-        r = 2;
-    } else {
-        r = 1;
-    }
-    return r + parameter_count<Rest...>();
+constexpr size_t parameter_count() {
+    return detail::num_parameters<Type>() + parameter_count<Rest...>();
 }
 } // namespace wasm::ffi
