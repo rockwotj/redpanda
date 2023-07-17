@@ -39,6 +39,7 @@
 #include "transform/io.h"
 #include "transform/logger.h"
 #include "transform/transform_manager.h"
+#include "units.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/abort_source.hh>
@@ -311,6 +312,7 @@ private:
     cluster::partition_manager* _manager;
 };
 
+constexpr size_t max_wasm_binary_size = 5_MiB;
 } // namespace
 
 service::service(
@@ -493,6 +495,7 @@ ss::future<> service::create_internal_source_topic() {
         topic_config(kafka::topic_property_retention_duration, retain_forever),
         topic_config(kafka::topic_property_retention_local_target_bytes, retain_forever),
         topic_config(kafka::topic_property_retention_local_target_ms, retain_forever),
+        topic_config(kafka::topic_property_max_message_bytes, ss::format("{}", max_wasm_binary_size)),
       },
     };
     auto resp = co_await _client->create_topic(req);
@@ -531,6 +534,11 @@ service::write_source_tombstone(uuid_t key, cluster::transform_name name) {
 }
 ss::future<bool>
 service::validate_source(cluster::transform_metadata meta, iobuf buf) {
+    // TODO: This size isn't exactly correct as it doesn't account for the
+    // "serialized" as a batch size
+    if (buf.size_bytes() > max_wasm_binary_size) {
+        co_return false;
+    }
     // Validate that the source is good by just creating a transform, but don't
     // run anything we should probably expose a better API in runtime for
     // this, even if it just does this...
