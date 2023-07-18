@@ -136,6 +136,12 @@ configuration::configuration()
   , coproc_max_ingest_bytes(*this, "coproc_max_ingest_bytes")
   , coproc_max_batch_size(*this, "coproc_max_batch_size")
   , coproc_offset_flush_interval_ms(*this, "coproc_offset_flush_interval_ms")
+  , enable_data_transforms(
+      *this,
+      "enable_data_transforms",
+      "If WASM powered data transforms are enabled",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      false)
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",
