@@ -167,6 +167,7 @@ ss::future<> processor::run_consumer() {
             // to do this now so that we don't race with a write and read at the
             // same time.
             drain_consumer_pings();
+            // TODO: Failures should cause backoff
             auto reader = co_await _source->read_batch(offset, &_as);
             auto latest_offset = co_await std::move(reader).consume(
               queue_consumer{
@@ -209,6 +210,7 @@ ss::future<> processor::run_producer(size_t idx) {
         while (!_as.abort_requested()) {
             auto batch = co_await queue.pop_eventually();
             vlog(_logger.trace, "writing output to {}", tp_ns);
+            // TODO: Support retries here with backoff
             co_await sink->write(std::move(batch));
         }
     } catch (const ss::abort_requested_exception&) {

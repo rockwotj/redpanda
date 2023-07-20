@@ -90,11 +90,13 @@
 #include "storage/compaction_controller.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
+#include "transform/api.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
 #include "version.h"
 #include "vlog.h"
+#include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/memory.hh>
@@ -1047,6 +1049,26 @@ void application::wire_up_runtime_services(model::node_id node_id) {
           std::reference_wrapper(controller));
     }
     construct_single_service(_monitor_unsafe_log_flag, std::ref(feature_table));
+
+    if (config::shard_local_cfg().enable_data_transforms.value()) {
+        syschecks::systemd_message("Creating wasm runtime").get();
+        _wasm_runtime = wasm::runtime::create_default(
+          thread_worker.get(), _schema_registry.get());
+        syschecks::systemd_message("Creating transform service").get();
+        std::optional<kafka::client::configuration> transform_kafka_client_cfg;
+        set_local_kafka_client_config(
+          transform_kafka_client_cfg, config::node());
+        construct_service(
+          _transform_service,
+          _wasm_runtime.get(),
+          node_id,
+          &controller->get_plugin_frontend(),
+          &controller->get_feature_table(),
+          &raft_group_manager,
+          &controller->get_partition_manager(),
+          std::reference_wrapper(transform_kafka_client_cfg.value()))
+          .get();
+    }
 
     configure_admin_server();
 }
@@ -2087,6 +2109,11 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     }
 
     start_kafka(node_id, app_signal);
+
+    if (config::shard_local_cfg().enable_data_transforms.value()) {
+        _transform_service.invoke_on_all(&transform::service::start).get();
+    }
+
     controller->set_ready().get();
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
     _monitor_unsafe_log_flag->start().get();

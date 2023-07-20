@@ -52,7 +52,9 @@
 #include "ssx/metrics.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
+#include "transform/fwd.h"
 #include "utils/stop_signal.h"
+#include "wasm/fwd.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -267,6 +269,9 @@ private:
       _archival_upload_housekeeping;
     std::unique_ptr<monitor_unsafe_log_flag> _monitor_unsafe_log_flag;
     ss::sharded<archival::scrubber> _archival_scrubber;
+
+    std::unique_ptr<wasm::runtime> _wasm_runtime;
+    ss::sharded<transform::service> _transform_service;
 
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
