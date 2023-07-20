@@ -16,6 +16,8 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/docker/docker/api/types"
@@ -32,19 +34,21 @@ func newLogsCommand() *cobra.Command {
 		follow bool
 		filter string
 		level  string
+		host   string
 	)
 
 	command := &cobra.Command{
 		Use:   "logs",
-		Short: "Watch logs",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Short: "View broker logs",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
 			c, err := common.NewDockerClient()
 			if err != nil {
 				return err
 			}
 			defer c.Close()
 
-			var lre, ure *regexp.Regexp
+			var lre, sre, ure *regexp.Regexp
 			switch level {
 			case "trace":
 				lre = nil
@@ -60,6 +64,14 @@ func newLogsCommand() *cobra.Command {
 				out.Die("invalid level %q", level)
 			}
 
+			if len(args) > 0 {
+				for i, arg := range args {
+					args[i] = regexp.QuoteMeta(arg)
+				}
+				// TODO: be more strict in matching log lines here
+				sre = regexp.MustCompile("] (" + strings.Join(args, "|") + ") -")
+			}
+
 			if filter != "" {
 				ure, err = regexp.Compile(filter)
 				out.MaybeDie(err, "invalid filter %q: %v", filter, err)
@@ -72,6 +84,13 @@ func newLogsCommand() *cobra.Command {
 			if len(nodes) == 0 {
 				fmt.Println("No Redpanda nodes detected - use `rpk container start` or check `docker ps` if you expected nodes")
 				return nil
+			}
+			if host != "all" {
+				idx, err := strconv.Atoi(host)
+				if err != nil || idx < 0 || idx >= len(nodes) {
+					out.Die("invalid node index: %q", host)
+				}
+				nodes = []*common.NodeState{nodes[idx]}
 			}
 			dumpLogs := func(ctx context.Context) error {
 				g, ctx := errgroup.WithContext(ctx)
@@ -90,8 +109,14 @@ func newLogsCommand() *cobra.Command {
 						}
 						defer lr.Close()
 						var r io.Reader = lr
+						// TODO: This is naive as log lines can be emitted with newlines
+						// We should instead group as a first stage, then send it down a
+						// pipeline of regexp filters
 						if lre != nil {
 							r = utils.NewLineFilteredReader(r, lre)
+						}
+						if sre != nil {
+							r = utils.NewLineFilteredReader(r, sre)
 						}
 						if ure != nil {
 							r = utils.NewLineFilteredReader(lr, ure)
@@ -123,9 +148,9 @@ func newLogsCommand() *cobra.Command {
 
 	command.Flags().BoolVar(
 		&follow,
-		"follow",
+		"tail",
 		false,
-		"Tail the logs continuously",
+		"continuously watch and output new logs as they are emitted (default false)",
 	)
 
 	command.Flags().StringVar(
@@ -133,6 +158,13 @@ func newLogsCommand() *cobra.Command {
 		"filter",
 		"",
 		"Filter for the logs",
+	)
+
+	command.Flags().StringVar(
+		&host,
+		"host",
+		"all",
+		"The host number to emit logs for (default all)",
 	)
 
 	command.Flags().StringVarP(&level, "level", "l", "trace", "log level to filter, any logs below this level will be hidden (error, warn, info, debug, trace)")
