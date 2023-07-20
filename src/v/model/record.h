@@ -81,6 +81,12 @@ public:
       , _val_size(v_len)
       , _value(std::move(v)) {}
 
+    record_header(iobuf k, iobuf v)
+      : _key_size(int32_t(k.size_bytes()))
+      , _key(std::move(k))
+      , _val_size(int32_t(v.size_bytes()))
+      , _value(std::move(v)) {}
+
     int32_t memory_usage() const {
         return sizeof(*this) + _key.size_bytes() + _value.size_bytes();
     }
