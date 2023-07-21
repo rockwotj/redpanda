@@ -29,6 +29,7 @@ import (
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/plugin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/profile"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/topic"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -106,6 +107,7 @@ func Execute() {
 		plugincmd.NewCommand(fs),
 		topic.NewCommand(fs, p),
 		version.NewCommand(fs, p),
+		transform.NewCommand(fs, p, osExec),
 
 		newStatusCommand(), // deprecated
 	)

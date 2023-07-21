@@ -69,9 +69,15 @@ func PickIndex(options []string, msg string, args ...interface{}) (int, error) {
 
 // Prompt prompts the user for input, returning the input or an error.
 func Prompt(msg string, args ...interface{}) (string, error) {
+	return PromptWithSuggestion("", msg, args...)
+}
+
+// Prompt prompts the user for input, returning the input or an error.
+func PromptWithSuggestion(defaultInput string, msg string, args ...interface{}) (string, error) {
 	var input string
 	err := survey.AskOne(&survey.Input{
 		Message: fmt.Sprintf(msg, args...),
+		Default: defaultInput,
 	}, &input)
 	return input, err
 }
