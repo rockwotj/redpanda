@@ -82,18 +82,27 @@ func newLogsCommand() *cobra.Command {
 							return common.WrapIfConnErr(err)
 						}
 						defer lr.Close()
-						r := common.NewLogsFilterReader(lr, ll, filters...)
 						info, err := c.ContainerInspect(ctx, cid)
 						if err != nil {
 							return common.WrapIfConnErr(err)
 						}
-						w := utils.NewLinePrefixWriter(os.Stdout, name+" ")
-						if !info.Config.Tty {
-							_, err = stdcopy.StdCopy(w, w, r)
-						} else {
-							_, err = io.Copy(w, r)
-						}
-						return common.WrapIfConnErr(err)
+						pr, pw := io.Pipe()
+						g, _ := errgroup.WithContext(ctx)
+						g.Go(func() error {
+							r := common.NewLogsFilterReader(pr, ll, filters...)
+							w := utils.NewLinePrefixWriter(os.Stdout, name+" ")
+							_, err := io.Copy(w, r)
+							return err
+						})
+						g.Go(func() error {
+							if !info.Config.Tty {
+								_, err = stdcopy.StdCopy(pw, pw, lr)
+							} else {
+								_, err = io.Copy(pw, lr)
+							}
+							return pw.CloseWithError(err)
+						})
+						return common.WrapIfConnErr(g.Wait())
 					})
 				}
 				return g.Wait()
@@ -110,16 +119,16 @@ func newLogsCommand() *cobra.Command {
 
 	command.Flags().BoolVar(
 		&tail,
-		"tail",
+		"follow",
 		false,
-		"Tail the logs continuously",
+		"output new entries as they are appended",
 	)
 
 	command.Flags().StringVar(
 		&filter,
 		"filter",
 		"",
-		"Filter for the logs",
+		"Filter log messages according to the regular expression",
 	)
 
 	command.Flags().StringVarP(&level, "level", "l", "trace", "log level to filter, any logs below this level will be hidden (error, warn, info, debug, trace)")
