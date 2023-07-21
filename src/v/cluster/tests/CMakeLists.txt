@@ -30,7 +30,6 @@ set(srcs
     topic_configuration_compat_test.cc
     local_monitor_test.cc
     tx_compaction_tests.cc
-
     )
 
 foreach(cluster_test_src ${srcs})
@@ -76,6 +75,15 @@ set_source_files_properties(
     partition_allocator_tests.cc
     allocation_bench.cc
   PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME plugin_table_test
+  SOURCES plugin_table_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::cluster
+  LABELS cluster
+)
 
 rp_test(
   UNIT_TEST
