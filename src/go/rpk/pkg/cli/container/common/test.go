@@ -43,6 +43,12 @@ type MockClient struct {
 		containerName string,
 	) (container.CreateResponse, error)
 
+	MockContainerLogs func(
+		ctx context.Context,
+		containerID string,
+		options types.ContainerLogsOptions,
+	) (io.ReadCloser, error)
+
 	MockContainerStart func(
 		ctx context.Context,
 		containerID string,
@@ -124,6 +130,17 @@ func (c *MockClient) ContainerCreate(
 		)
 	}
 	return container.CreateResponse{}, nil
+}
+
+func (c *MockClient) ContainerLogs(
+	ctx context.Context,
+	containerID string,
+	options types.ContainerLogsOptions,
+) (io.ReadCloser, error) {
+	if c.MockContainerLogs != nil {
+		return c.MockContainerLogs(ctx, containerID, options)
+	}
+	return io.NopCloser(io.MultiReader()), nil
 }
 
 func (c *MockClient) ImagePull(

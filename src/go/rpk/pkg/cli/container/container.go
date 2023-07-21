@@ -23,6 +23,7 @@ func NewCommand() *cobra.Command {
 	command.AddCommand(newStopCommand())
 	command.AddCommand(newPurgeCommand())
 	command.AddCommand(newStatusCommand())
+	command.AddCommand(newLogsCommand())
 
 	return command
 }
