@@ -12,6 +12,8 @@
 #include "redpanda/admin_server.h"
 
 #include "archival/ntp_archiver_service.h"
+#include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_partition.h"
@@ -51,6 +53,7 @@
 #include "finjector/hbadger.h"
 #include "finjector/stress_fiber.h"
 #include "json/document.h"
+#include "json/istreamwrapper.h"
 #include "json/schema.h"
 #include "json/stringbuffer.h"
 #include "json/validator.h"
@@ -80,6 +83,7 @@
 #include "redpanda/admin/api-doc/shadow_indexing.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
+#include "redpanda/admin/api-doc/transform.json.h"
 #include "redpanda/admin/api-doc/usage.json.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
@@ -236,6 +240,7 @@ admin_server::admin_server(
   ss::sharded<storage::node>& storage_node,
   ss::sharded<memory_sampling>& memory_sampling_service,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::sharded<transform::service>& transform_service,
   ss::sharded<resources::cpu_profiler>& cpu_profiler)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
@@ -261,6 +266,7 @@ admin_server::admin_server(
   , _storage_node(storage_node)
   , _memory_sampling_service(memory_sampling_service)
   , _cloud_storage_cache(cloud_storage_cache)
+  , _transform_service(transform_service)
   , _cpu_profiler(cpu_profiler)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {
@@ -323,6 +329,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "debug");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "cluster");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "transform");
     register_config_routes();
     register_cluster_config_routes();
     register_raft_routes();
@@ -339,6 +347,7 @@ void admin_server::configure_admin_routes() {
     register_self_test_routes();
     register_cluster_routes();
     register_shadow_indexing_routes();
+    register_transform_routes();
 }
 
 namespace {
@@ -995,6 +1004,13 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::base_exception(
               fmt::format("Too many requests: {}", ec.message()),
               ss::http::reply::status_type::too_many_requests);
+        case cluster::errc::transform_does_not_exist:
+        case cluster::errc::transform_invalid_create:
+        case cluster::errc::transform_invalid_environment:
+        case cluster::errc::transform_invalid_update:
+        case cluster::errc::topic_not_exists:
+            throw ss::httpd::bad_request_exception(
+              ss::format("{}", ec.message()));
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
@@ -5436,4 +5452,131 @@ admin_server::sampled_memory_profile_handler(
 
     co_return co_await ss::make_ready_future<ss::json::json_return_type>(
       std::move(resp));
+}
+
+void admin_server::register_transform_routes() {
+    register_route_raw_async<user>(
+      ss::httpd::transform_json::deploy_transform,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return deploy_transform(std::move(req), std::move(rep));
+      });
+    register_route<user>(
+      ss::httpd::transform_json::list_transforms,
+      [this](auto req) { return list_transforms(std::move(req)); });
+    register_route<user>(
+      ss::httpd::transform_json::delete_transform,
+      [this](auto req) { return delete_transform(std::move(req)); });
+}
+
+namespace {
+static json::validator make_transform_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "input_topic": {
+            "type": "string"
+        },
+        "output_topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+        },
+        "env": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        }
+    },
+    "required": ["name", "input_topic", "output_topics"],
+    "additionalProperties": false
+}
+)";
+    return json::validator(schema);
+}
+} // namespace
+
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_transform(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> reply) {
+    iobuf body;
+    auto out_stream = make_iobuf_ref_output_stream(body);
+    // write the input stream to an iobuf
+    co_await ss::copy(*req->content_stream, out_stream);
+    iobuf_istreambuf ibuf(body);
+    std::istream stream(&ibuf);
+    json::Document doc;
+    json::IStreamWrapper s(stream);
+    // Parse the JSON document, and stop when we read the end of it, after the
+    // json object is where the wasm file is.
+    doc.ParseStream<
+      rapidjson::kParseDefaultFlags | rapidjson::kParseStopWhenDoneFlag>(s);
+    body.trim_front(s.Tell());
+    if (doc.HasParseError()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("JSON parse error: {}", doc.GetParseError()));
+    }
+    auto validator = make_transform_validator();
+    apply_validator(validator, doc);
+
+    auto input_nt = model::topic_namespace(
+      model::kafka_namespace, model::topic(doc["input_topic"].GetString()));
+    // TODO
+    auto output_nt = model::topic_namespace(
+      model::kafka_namespace, model::topic(doc["output_topics"].GetString()));
+    auto name = cluster::transform_name(doc["name"].GetString());
+    absl::flat_hash_map<ss::sstring, ss::sstring> env;
+    if (doc.HasMember("env")) {
+        for (const auto& m : doc["env"].GetObject()) {
+            env.insert_or_assign(m.name.GetString(), m.value.GetString());
+        }
+    }
+    cluster::errc ec = co_await _transform_service.local().deploy_transform(
+      {.name = name,
+       .input_topic = input_nt,
+       .output_topics = {output_nt},
+       .environment = std::move(env)},
+      std::move(body));
+    co_await throw_on_error(*req, ec, model::controller_ntp);
+    reply->set_status(ss::http::reply::status_type::ok);
+    reply->write_body("json", ss::json::json_void().to_json());
+    co_return std::move(reply);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
+    using namespace ss::httpd::transform_json;
+    auto transforms = _transform_service.local().list_transforms();
+    std::vector<transform_metadata> output;
+    output.reserve(transforms.size());
+    for (const auto& xform : transforms) {
+        transform_metadata meta;
+        meta.name = xform.name();
+        meta.input_topic = xform.input_topic.tp();
+        for (const auto& out : xform.output_topics) {
+            meta.output_topics.push(out.tp());
+        }
+        output.push_back(std::move(meta));
+    }
+    co_return output;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::delete_transform(std::unique_ptr<ss::http::request> req) {
+    auto doc = co_await parse_json_body(req.get());
+    auto validator = make_transform_validator();
+    apply_validator(validator, doc);
+    // TODO: Just take the name as input?
+    auto name = doc["name"].GetString();
+    auto ec = co_await _transform_service.local().delete_transform(
+      cluster::transform_name(name));
+    co_await throw_on_error(*req, ec, model::controller_ntp);
+    co_return ss::json::json_void();
 }

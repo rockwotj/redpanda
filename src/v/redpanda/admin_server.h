@@ -25,6 +25,8 @@
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "storage/node.h"
+#include "transform/api.h"
+#include "transform/fwd.h"
 #include "utils/request_auth.h"
 
 #include <seastar/core/do_with.hh>
@@ -83,6 +85,7 @@ public:
       ss::sharded<storage::node>&,
       ss::sharded<memory_sampling>&,
       ss::sharded<cloud_storage::cache>&,
+      ss::sharded<transform::service>&,
       ss::sharded<resources::cpu_profiler>&);
 
     ss::future<> start();
@@ -348,6 +351,7 @@ private:
     void register_self_test_routes();
     void register_cluster_routes();
     void register_shadow_indexing_routes();
+    void register_transform_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -472,6 +476,14 @@ private:
     ss::future<ss::json::json_return_type>
       put_disk_stat_handler(std::unique_ptr<ss::http::request>);
 
+    // Transform routes
+    ss::future<std::unique_ptr<ss::http::reply>> deploy_transform(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<ss::json::json_return_type>
+      list_transforms(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      delete_transform(std::unique_ptr<ss::http::request>);
+
     // Debug routes
     ss::future<ss::json::json_return_type>
       cpu_profile_handler(std::unique_ptr<ss::http::request>);
@@ -536,6 +548,7 @@ private:
     ss::sharded<storage::node>& _storage_node;
     ss::sharded<memory_sampling>& _memory_sampling_service;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
+    ss::sharded<transform::service>& _transform_service;
     ss::sharded<resources::cpu_profiler>& _cpu_profiler;
 
     // Value before the temporary override

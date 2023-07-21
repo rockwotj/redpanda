@@ -1,0 +1,77 @@
+{
+  "apiVersion": "0.0.1",
+  "swaggerVersion": "1.2",
+  "basePath": "/v1",
+  "resourcePath": "/transform",
+  "apis": [
+    {
+      "path": "/v1/transform/deploy",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Deploy transform",
+          "type": "void",
+          "nickname": "deploy_transform",
+          "consumes": [
+          ],
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/transform/delete",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Delete transform",
+          "type": "void",
+          "nickname": "delete_transform",
+          "consumes": [
+            "application/json+wasm"
+          ],
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/transform/list",
+      "operations": [
+        {
+          "method": "GET",
+          "summary": "List transforms",
+          "nickname": "list_transforms",
+          "produces": [
+            "application/json"
+          ],
+          "type": "array",
+          "items": {
+            "type": "wasm_transform"
+          }
+        }
+      ]
+    }
+  ],
+  "models": {
+    "transform_metadata": {
+      "id": "transform_metadata",
+      "properties": {
+        "input_topic": {
+          "type": "string"
+        },
+        "output_topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
