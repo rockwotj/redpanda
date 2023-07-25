@@ -20,12 +20,18 @@ rp_test(
     v::seastar_testing_main
     v::wasm_test_fixture
   # TODO: Hookup this to the build system properly
+  BUILD_DEPENDENCIES
+    wasm_testdata_identity
+    wasm_testdata_transform-error
+    wasm_testdata_transform-panic
+    wasm_testdata_setup-panic
+    wasm_testdata_wasi
   INPUT_FILES 
-    ${CMAKE_SOURCE_DIR}/src/go/transform-sdk/internal/testdata/identity.wasm
-    ${CMAKE_SOURCE_DIR}/src/go/transform-sdk/internal/testdata/transform-error.wasm
-    ${CMAKE_SOURCE_DIR}/src/go/transform-sdk/internal/testdata/transform-panic.wasm
-    ${CMAKE_SOURCE_DIR}/src/go/transform-sdk/internal/testdata/setup-panic.wasm
-    ${CMAKE_SOURCE_DIR}/src/go/transform-sdk/internal/testdata/wasi.wasm
+    ${CMAKE_BINARY_DIR}/src/go/transform-sdk/internal/testdata/identity.wasm
+    ${CMAKE_BINARY_DIR}/src/go/transform-sdk/internal/testdata/transform-error.wasm
+    ${CMAKE_BINARY_DIR}/src/go/transform-sdk/internal/testdata/transform-panic.wasm
+    ${CMAKE_BINARY_DIR}/src/go/transform-sdk/internal/testdata/setup-panic.wasm
+    ${CMAKE_BINARY_DIR}/src/go/transform-sdk/internal/testdata/wasi.wasm
   ARGS "-- -c 1"
   LABELS wasm
 )
