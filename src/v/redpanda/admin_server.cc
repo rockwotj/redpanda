@@ -113,6 +113,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/exception.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
@@ -5506,6 +5507,9 @@ static json::validator make_transform_validator() {
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_transform(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> reply) {
+    if (!_transform_service.local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("data transforms not enabled");
+    }
     iobuf body;
     auto out_stream = make_iobuf_ref_output_stream(body);
     // write the input stream to an iobuf
@@ -5528,9 +5532,12 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_transform(
 
     auto input_nt = model::topic_namespace(
       model::kafka_namespace, model::topic(doc["input_topic"].GetString()));
-    // TODO
-    auto output_nt = model::topic_namespace(
-      model::kafka_namespace, model::topic(doc["output_topics"].GetString()));
+    std::vector<model::topic_namespace> output_topics;
+    for (const auto& topic : doc["output_topics"].GetArray()) {
+        auto output_nt = model::topic_namespace(
+          model::kafka_namespace, model::topic(topic.GetString()));
+        output_topics.push_back(output_nt);
+    }
     auto name = cluster::transform_name(doc["name"].GetString());
     absl::flat_hash_map<ss::sstring, ss::sstring> env;
     if (doc.HasMember("env")) {
@@ -5541,7 +5548,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_transform(
     cluster::errc ec = co_await _transform_service.local().deploy_transform(
       {.name = name,
        .input_topic = input_nt,
-       .output_topics = {output_nt},
+       .output_topics = output_topics,
        .environment = std::move(env)},
       std::move(body));
     co_await throw_on_error(*req, ec, model::controller_ntp);
@@ -5552,6 +5559,9 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_transform(
 
 ss::future<ss::json::json_return_type>
 admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
+    if (!_transform_service.local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("data transforms not enabled");
+    }
     using namespace ss::httpd::transform_json;
     auto transforms = _transform_service.local().list_transforms();
     std::vector<transform_metadata> output;
@@ -5570,6 +5580,9 @@ admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
 
 ss::future<ss::json::json_return_type>
 admin_server::delete_transform(std::unique_ptr<ss::http::request> req) {
+    if (!_transform_service.local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("data transforms not enabled");
+    }
     auto doc = co_await parse_json_body(req.get());
     auto validator = make_transform_validator();
     apply_validator(validator, doc);
