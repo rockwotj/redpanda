@@ -20,20 +20,117 @@
 #include "wasm/api.h"
 #include "wasm/errc.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
+
+#include <boost/multi_index/composite_key.hpp>
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/mem_fun.hpp>
+#include <boost/multi_index_container.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <future>
 #include <iterator>
 #include <memory>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 namespace transform {
+
+// The underlying container for holding processors and indexing them correctly.
+//
+// It's possible for there to be the same ntp with multiple transforms and it's
+// also possible for a transform to be attached to multiple ntps, so the true
+// "key" for a processor is the tuple of (id, ntp), hence the need for the
+// complicated table of indexes.
+class processor_table {
+    struct key_index_t {};
+    struct ntp_index_t {};
+    struct id_index_t {};
+
+    using underlying_t = boost::multi_index::multi_index_container<
+      // a set of processors
+      std::unique_ptr<processor>,
+      boost::multi_index::indexed_by<
+        // uniquely indexed by id and ntp together
+        boost::multi_index::hashed_unique<
+          boost::multi_index::tag<key_index_t>,
+          boost::multi_index::composite_key<
+            std::unique_ptr<processor>,
+            boost::multi_index::
+              const_mem_fun<processor, cluster::transform_id, &processor::id>,
+            boost::multi_index::
+              const_mem_fun<processor, const model::ntp&, &processor::ntp>>,
+          boost::multi_index::composite_key_hash<
+            std::hash<cluster::transform_id>,
+            std::hash<model::ntp>>>,
+        // indexed by ntp
+        boost::multi_index::hashed_non_unique<
+          boost::multi_index::tag<ntp_index_t>,
+          boost::multi_index::
+            const_mem_fun<processor, const model::ntp&, &processor::ntp>,
+          std::hash<model::ntp>,
+          std::equal_to<>>,
+        // indexed by id
+        boost::multi_index::hashed_non_unique<
+          boost::multi_index::tag<id_index_t>,
+          boost::multi_index::
+            const_mem_fun<processor, cluster::transform_id, &processor::id>,
+          std::hash<cluster::transform_id>,
+          std::equal_to<>>>>;
+
+public:
+    processor* insert(std::unique_ptr<processor> p) {
+        auto [it, inserted] = _underlying.emplace(std::move(p));
+        vassert(inserted, "invalid transform::stm management");
+        return it->get();
+    }
+
+    bool contains(cluster::transform_id id, const model::ntp& ntp) {
+        auto& by_key = _underlying.get<key_index_t>();
+        return by_key.contains(std::make_tuple(id, ntp));
+    }
+
+    ss::future<> clear() {
+        std::vector<ss::future<>> futures;
+        futures.reserve(_underlying.size());
+        for (auto& entry : _underlying) {
+            futures.push_back(entry->stop());
+        }
+        co_await ss::when_all(futures.begin(), futures.end());
+        _underlying.clear();
+    }
+
+    ss::future<> erase_by_id(cluster::transform_id id) {
+        auto& by_id = _underlying.get<id_index_t>();
+        auto range = by_id.equal_range(id);
+        co_await ss::parallel_for_each(
+          range.first,
+          range.second,
+          // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+          [](auto& engine) { return engine->stop(); });
+        by_id.erase(range.first, range.second);
+    }
+
+    ss::future<> erase_by_ntp(model::ntp ntp) {
+        auto& by_id = _underlying.get<ntp_index_t>();
+        auto range = by_id.equal_range(ntp);
+        co_await ss::parallel_for_each(
+          range.first,
+          range.second,
+          // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+          [](auto& engine) { return engine->stop(); });
+        by_id.erase(range.first, range.second);
+    }
+
+private:
+    underlying_t _underlying;
+};
 
 manager::manager(
   wasm::runtime* rt,
@@ -42,6 +139,7 @@ manager::manager(
   std::unique_ptr<sink::factory> outf)
   : _runtime(rt)
   , _registry(std::move(pr))
+  , _processors(std::make_unique<processor_table>())
   , _queue([](const std::exception_ptr& ex) {
       vlog(tlog.error, "unexpected transform manager error: {}", ex);
   })
@@ -54,15 +152,7 @@ ss::future<> manager::start() { return ss::now(); }
 ss::future<> manager::stop() {
     vlog(tlog.info, "Stopping transform manager...");
     co_await _queue.shutdown();
-    // Now shutdown all the stms
-    std::vector<ss::future<>> futures;
-    futures.reserve(_stms_by_ntp.size());
-    for (auto& entry : _stms_by_ntp) {
-        futures.push_back(entry.second->stop());
-    }
-    co_await ss::when_all(futures.begin(), futures.end());
-    _stms_by_id.clear();
-    _stms_by_ntp.clear();
+    co_await _processors->clear();
     vlog(tlog.info, "Stopped transform manager.");
 }
 
@@ -90,46 +180,32 @@ manager::handle_leadership_change(model::ntp ntp, ntp_leader leader_status) {
       "handling leadership status change to leader={} for: {}",
       leader_status,
       ntp);
-    auto it = _stms_by_ntp.find(ntp);
-    if (it == _stms_by_ntp.end()) {
-        // We aren't the leader and we don't have an stm running, good to
-        // go.
-        if (leader_status == ntp_leader::no) {
-            co_return;
-        }
-        // We need to start an stm
-        auto transforms = _registry->lookup_by_input_topic(
-          model::topic_namespace_view(ntp));
-        co_await ss::parallel_for_each(
-          std::move(transforms), [this, ntp](auto entry) {
-              return start_stm(
-                ntp, entry.first, std::move(entry.second), /*attempts=*/0);
-          });
+
+    if (leader_status == ntp_leader::no) {
+        // We're not the leader anymore, time to shutdown all the transforms
+        co_await _processors->erase_by_ntp(ntp);
         co_return;
     }
-    // There is nothing to do, we're already running and we're managing as
-    // the leader.
-    if (leader_status == ntp_leader::yes) {
-        co_return;
-    }
-    // Time to stop our stm
-    co_await it->second->stop();
-    vassert(_stms_by_id.erase(it->second->id()) > 0, "index inconsistency");
-    _stms_by_ntp.erase(it);
+    // We are leader - start all the stms that aren't already running
+    auto transforms = _registry->lookup_by_input_topic(
+      model::topic_namespace_view(ntp));
+    co_await ss::parallel_for_each(
+      std::move(transforms), [this, &ntp](auto entry) {
+          if (_processors->contains(entry.first, ntp)) {
+              return ss::now();
+          }
+          return start_processor(
+            ntp, entry.first, std::move(entry.second), /*attempts=*/0);
+      });
 }
 
 ss::future<> manager::handle_plugin_change(cluster::transform_id id) {
     vlog(tlog.debug, "handling update to plugin: {}", id);
-    auto transform = _registry->lookup_by_id(id);
-    auto it = _stms_by_id.find(id);
     // If we have an existing stm we need to restart it with the updates
     // applied.
-    if (it != _stms_by_id.end()) {
-        co_await it->second->stop();
-        vassert(
-          _stms_by_ntp.erase(it->second->ntp()) > 0, "index inconsistency");
-        _stms_by_id.erase(it);
-    }
+    co_await _processors->erase_by_id(id);
+
+    auto transform = _registry->lookup_by_id(id);
     // If there is no transform we're good to go, everything is shutdown if
     // needed.
     if (!transform) {
@@ -143,7 +219,7 @@ ss::future<> manager::handle_plugin_change(cluster::transform_id id) {
         auto ntp = model::ntp(
           transform->input_topic.ns, transform->input_topic.tp, partition);
         futures.push_back(
-          start_stm(std::move(ntp), id, *transform, /*attempts=*/0));
+          start_processor(std::move(ntp), id, *transform, /*attempts=*/0));
     }
     co_await ss::when_all(futures.begin(), futures.end());
 }
@@ -155,28 +231,22 @@ ss::future<> manager::handle_plugin_error(
     vlog(
       tlog.debug, "handling plugin error {} on partition {}", id, partition_id);
     _registry->report_error(id, partition_id, std::move(meta));
-    auto it = _stms_by_id.find(id);
-    if (it == _stms_by_id.end()) {
-        co_return;
-    }
-    co_await it->second->stop();
-    vassert(_stms_by_ntp.erase(it->second->ntp()) > 0, "index inconsistency");
-    _stms_by_id.erase(it);
+    co_await _processors->erase_by_id(id);
 }
 
-void manager::attempt_start_stm(
+void manager::attempt_start_processor(
   model::ntp ntp, cluster::transform_id id, size_t attempts) {
     // TODO: Do a delay before attempting to start again.
     _queue.submit([this, ntp = std::move(ntp), id, attempts]() mutable {
-        return do_attempt_start_stm(std::move(ntp), id, attempts);
+        return do_attempt_start_processor(std::move(ntp), id, attempts);
     });
 }
 
-ss::future<> manager::do_attempt_start_stm(
+ss::future<> manager::do_attempt_start_processor(
   model::ntp ntp, cluster::transform_id id, size_t attempts) {
     // It's possible something else came along and kicked this stm and that
     // worked.
-    if (_stms_by_id.contains(id)) {
+    if (_processors->contains(id, ntp)) {
         co_return;
     }
     auto transform = _registry->lookup_by_id(id);
@@ -200,10 +270,10 @@ ss::future<> manager::do_attempt_start_stm(
     if (!leaders.contains(ntp.tp.partition)) {
         co_return;
     }
-    co_await start_stm(ntp, id, *transform, attempts);
+    co_await start_processor(ntp, id, *transform, attempts);
 }
 
-ss::future<> manager::start_stm(
+ss::future<> manager::start_processor(
   model::ntp ntp,
   cluster::transform_id id,
   cluster::transform_metadata meta,
@@ -216,7 +286,7 @@ ss::future<> manager::start_stm(
           ntp);
         co_return;
     }
-    std::unique_ptr<processor> s;
+    std::unique_ptr<processor> created;
     try {
         constexpr std::chrono::milliseconds fetch_binary_timeout
           = std::chrono::seconds(2);
@@ -244,7 +314,7 @@ ss::future<> manager::start_stm(
               "unable to create transform {} input source to {}, retrying...",
               meta.name,
               ntp);
-            attempt_start_stm(ntp, id, attempts);
+            attempt_start_processor(ntp, id, attempts);
             co_return;
         }
         std::vector<std::unique_ptr<sink>> sinks;
@@ -260,12 +330,12 @@ ss::future<> manager::start_stm(
                   "retrying...",
                   meta.name,
                   output_ntp);
-                attempt_start_stm(ntp, id, attempts);
+                attempt_start_processor(ntp, id, attempts);
                 co_return;
             }
             sinks.emplace_back(std::move(sink).value());
         }
-        s = std::make_unique<processor>(
+        created = std::make_unique<processor>(
           id,
           ntp,
           meta,
@@ -289,17 +359,23 @@ ss::future<> manager::start_stm(
     } catch (const std::exception& ex) {
         vlog(tlog.warn, "unable to create transform::stm: {}, retrying...", ex);
         // requeue a task to start the stm
-        attempt_start_stm(ntp, id, attempts);
+        attempt_start_processor(ntp, id, attempts);
     }
-    if (!s) {
+    if (!created) {
         co_return;
     }
     // Ensure that we insert this transform into our mapping before we start it.
-    _stms_by_id[id] = s.get();
-    auto [it, inserted] = _stms_by_ntp.emplace(ntp, std::move(s));
-    vassert(
-      inserted, "invalid transform::stm management for id={} ntp={}", id, ntp);
-    co_await it->second->start();
+    auto* p = _processors->insert(std::move(created));
+    try {
+        co_await p->start();
+    } catch (const std::exception& ex) {
+        vlog(
+          tlog.warn,
+          "invalid wasm source unable to start transform::stm: {}, marking as "
+          "failed",
+          ex);
+        on_plugin_error(id, ntp.tp.partition, meta);
+    }
     vlog(tlog.info, "started transform {} on {}", id, ntp);
 }
 
