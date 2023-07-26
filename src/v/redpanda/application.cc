@@ -2111,12 +2111,15 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
 
     start_kafka(node_id, app_signal);
 
+    controller->set_ready().get();
+
     if (config::shard_local_cfg().enable_data_transforms.value()) {
         _transform_service.invoke_on_all(&transform::service::start).get();
+        vlog(_log.info, "Started data transform service");
     }
 
-    controller->set_ready().get();
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
+
     _monitor_unsafe_log_flag->start().get();
 
     vlog(_log.info, "Successfully started Redpanda!");

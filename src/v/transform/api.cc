@@ -52,6 +52,7 @@
 #include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
+#include <exception>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -318,15 +319,15 @@ service::service(
   ss::sharded<features::feature_table>* features,
   ss::sharded<raft::group_manager>* leaders,
   ss::sharded<cluster::partition_manager>* partition_manager,
-  const kafka::client::configuration&)
+  const kafka::client::configuration& client_config)
   : _runtime(rt)
   , _self(self)
   , _plugins(plugins)
   , _leaders(leaders)
   , _features(features)
   , _partition_manager(partition_manager)
-  , _client(std::make_unique<kafka::client::client>(config::to_yaml(
-      kafka::client::configuration(), config::redact_secrets::no)))
+  , _client(std::make_unique<kafka::client::client>(
+      config::to_yaml(client_config, config::redact_secrets::no)))
   , _manager(nullptr) {}
 
 service::~service() = default;
@@ -347,7 +348,17 @@ ss::future<> service::start() {
       std::move(source_factory),
       std::move(sink_factory));
 
-    co_await _client->connect();
+    try {
+        co_await _client->connect();
+    } catch (...) {
+        auto ex = std::current_exception();
+        vlog(
+          tlog.error,
+          "unable to connect transforms kafka client to {}: {}",
+          _client->config().brokers.value(),
+          ex);
+        std::rethrow_exception(ex);
+    }
     if (ss::this_shard_id() == 0) {
         co_await create_internal_source_topic();
     }
