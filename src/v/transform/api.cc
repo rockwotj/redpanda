@@ -359,9 +359,6 @@ ss::future<> service::start() {
           ex);
         std::rethrow_exception(ex);
     }
-    if (ss::this_shard_id() == 0) {
-        co_await create_internal_source_topic();
-    }
     co_await _manager->start();
     register_notifications();
 }
@@ -464,6 +461,9 @@ service::deploy_transform(cluster::transform_metadata meta, iobuf buf) {
 
 ss::future<cluster::errc>
 service::delete_transform(cluster::transform_name name) {
+    if (!_features->local().is_active(features::feature::wasm_transforms)) {
+        co_return cluster::errc::feature_disabled;
+    }
     auto _ = _gate.hold();
     auto result = co_await _plugins->local().remove_transform(
       name, model::no_timeout);
@@ -527,6 +527,8 @@ ss::future<> service::create_internal_source_topic() {
 
 ss::future<std::pair<uuid_t, model::offset>>
 service::write_source(cluster::transform_name name, iobuf buf) {
+    // TODO: Do this lazily
+    co_await create_internal_source_topic();
     auto key = uuid_t::create();
     model::record_batch batch = make_batch(
       key, name, std::move(buf), tombstone::no);
@@ -537,6 +539,8 @@ service::write_source(cluster::transform_name name, iobuf buf) {
 }
 ss::future<>
 service::write_source_tombstone(uuid_t key, cluster::transform_name name) {
+    // TODO: Do this lazily
+    co_await create_internal_source_topic();
     model::record_batch batch = make_batch(
       key, name, std::nullopt, tombstone::yes);
     auto resp = co_await _client->produce_record_batch(
