@@ -32,10 +32,7 @@ void probe::setup_metrics(ss::sstring transform_name) {
           "latency_us",
           sm::description("Wasm Latency"),
           labels,
-          [this] {
-              return _transform_latency.seastar_histogram_logform(
-                log_hist_public_scale);
-          })
+          [this] { return _transform_latency.seastar_histogram_logform(1); })
           .aggregate({ss::metrics::shard_label}),
         sm::make_counter(
           "count",
