@@ -26,7 +26,7 @@ void probe::setup_metrics(ss::sstring transform_name) {
       name_label(std::move(transform_name)),
     };
     _public_metrics.add_group(
-      prometheus_sanitize::metrics_name("redpanda:wasm"),
+      prometheus_sanitize::metrics_name("transform_execution"),
       {
         sm::make_histogram(
           "latency_us",
