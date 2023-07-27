@@ -66,7 +66,8 @@ processor::processor(
   std::unique_ptr<wasm::engine> engine,
   error_callback cb,
   std::unique_ptr<source> source,
-  std::vector<std::unique_ptr<sink>> sinks)
+  std::vector<std::unique_ptr<sink>> sinks,
+  wasm::probe* probe)
   : _id(id)
   , _ntp(std::move(ntp))
   , _meta(std::move(meta))
@@ -74,6 +75,7 @@ processor::processor(
   , _source(std::move(source))
   , _sinks(std::move(sinks))
   , _error_callback(std::move(cb))
+  , _probe(probe)
   , _task(ss::now())
   , _consumer_pings(kQueueBufferSize)
   , _input_queue(kQueueBufferSize)
@@ -135,14 +137,10 @@ ss::future<> processor::run_poll_fallback_loop() {
 }
 
 ss::future<> processor::run_transform() {
-    wasm::probe probe;
-    // TODO: setup metrics without conflicts, what's the story here?
-    // auto _ = ss::defer([&probe] { probe.clear_metrics(); });
-    // probe.setup_metrics(_meta.name());
     try {
         while (!_as.abort_requested()) {
             auto batch = co_await _input_queue.pop_eventually();
-            auto transformed = co_await _engine->transform(&batch, &probe);
+            auto transformed = co_await _engine->transform(&batch, _probe);
             co_await _output_queues[0].push_eventually(std::move(transformed));
         }
     } catch (const ss::abort_requested_exception&) {

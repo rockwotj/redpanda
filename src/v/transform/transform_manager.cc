@@ -16,9 +16,11 @@
 #include "ssx/future-util.h"
 #include "transform/logger.h"
 #include "transform/transform_processor.h"
+#include "vassert.h"
 #include "vlog.h"
 #include "wasm/api.h"
 #include "wasm/errc.h"
+#include "wasm/probe.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
@@ -26,6 +28,7 @@
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <boost/multi_index/composite_key.hpp>
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/mem_fun.hpp>
@@ -113,19 +116,33 @@ public:
           range.first,
           range.second,
           // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-          [](auto& engine) { return engine->stop(); });
+          [](auto& p) { return p->stop(); });
         by_id.erase(range.first, range.second);
     }
 
-    ss::future<> erase_by_ntp(model::ntp ntp) {
-        auto& by_id = _underlying.get<ntp_index_t>();
-        auto range = by_id.equal_range(ntp);
+    // Clear our all the transforms with a given ntp and return all the IDs that
+    // no longer exist.
+    ss::future<absl::flat_hash_set<cluster::transform_id>>
+    erase_by_ntp(model::ntp ntp) {
+        auto& by_ntp = _underlying.get<ntp_index_t>();
+        auto range = by_ntp.equal_range(ntp);
         co_await ss::parallel_for_each(
           range.first,
           range.second,
           // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-          [](auto& engine) { return engine->stop(); });
-        by_id.erase(range.first, range.second);
+          [](auto& p) { return p->stop(); });
+        absl::flat_hash_set<cluster::transform_id> ids;
+        for (auto it = range.first; it != range.second; ++it) {
+            ids.insert((*it)->id());
+        }
+        by_ntp.erase(range.first, range.second);
+        auto& by_id = _underlying.get<id_index_t>();
+        for (auto it = ids.begin(); it != ids.end(); ++it) {
+            if (by_id.contains(*it)) {
+                ids.erase(it);
+            }
+        }
+        co_return ids;
     }
 
 private:
@@ -153,6 +170,10 @@ ss::future<> manager::stop() {
     vlog(tlog.info, "Stopping transform manager...");
     co_await _queue.shutdown();
     co_await _processors->clear();
+    for (auto& entry : _probes) {
+        entry.second->clear_metrics();
+    }
+    _probes.clear();
     vlog(tlog.info, "Stopped transform manager.");
 }
 
@@ -183,7 +204,10 @@ manager::handle_leadership_change(model::ntp ntp, ntp_leader leader_status) {
 
     if (leader_status == ntp_leader::no) {
         // We're not the leader anymore, time to shutdown all the transforms
-        co_await _processors->erase_by_ntp(ntp);
+        auto ids = co_await _processors->erase_by_ntp(ntp);
+        for (const auto& id : ids) {
+            erase_probe(id);
+        }
         co_return;
     }
     // We are leader - start all the stms that aren't already running
@@ -204,6 +228,7 @@ ss::future<> manager::handle_plugin_change(cluster::transform_id id) {
     // If we have an existing stm we need to restart it with the updates
     // applied.
     co_await _processors->erase_by_id(id);
+    erase_probe(id);
 
     auto transform = _registry->lookup_by_id(id);
     // If there is no transform we're good to go, everything is shutdown if
@@ -232,6 +257,16 @@ ss::future<> manager::handle_plugin_error(
       tlog.debug, "handling plugin error {} on partition {}", id, partition_id);
     _registry->report_error(id, partition_id, std::move(meta));
     co_await _processors->erase_by_id(id);
+    erase_probe(id);
+}
+
+void manager::erase_probe(cluster::transform_id id) {
+    auto it = _probes.find(id);
+    if (it != _probes.end()) {
+        return;
+    }
+    it->second->clear_metrics();
+    _probes.erase(it);
 }
 
 void manager::attempt_start_processor(
@@ -271,6 +306,17 @@ ss::future<> manager::do_attempt_start_processor(
         co_return;
     }
     co_await start_processor(ntp, id, *transform, attempts);
+}
+wasm::probe* manager::get_or_create_probe(
+  cluster::transform_id id, const cluster::transform_name& name) {
+    auto it = _probes.find(id);
+    if (it != _probes.end()) {
+        return it->second.get();
+    }
+    auto [pit, inserted] = _probes.emplace(id, std::make_unique<wasm::probe>());
+    vassert(inserted, "double insert into probes map");
+    pit->second->setup_metrics(name());
+    return pit->second.get();
 }
 
 ss::future<> manager::start_processor(
@@ -335,6 +381,7 @@ ss::future<> manager::start_processor(
             }
             sinks.emplace_back(std::move(sink).value());
         }
+        auto* probe = get_or_create_probe(id, meta.name);
         created = std::make_unique<processor>(
           id,
           ntp,
@@ -347,7 +394,8 @@ ss::future<> manager::start_processor(
               on_plugin_error(id, partition_id, std::move(meta));
           },
           std::move(src).value(),
-          std::move(sinks));
+          std::move(sinks),
+          probe);
     } catch (const wasm::wasm_exception& ex) {
         vlog(
           tlog.warn,

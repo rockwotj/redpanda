@@ -120,8 +120,13 @@ private:
       cluster::transform_id,
       cluster::transform_metadata,
       size_t attempts);
+    wasm::probe*
+    get_or_create_probe(cluster::transform_id, const cluster::transform_name&);
+    void erase_probe(cluster::transform_id);
 
     wasm::runtime* _runtime;
+    absl::flat_hash_map<cluster::transform_id, std::unique_ptr<wasm::probe>>
+      _probes;
     std::unique_ptr<plugin_registry> _registry;
     std::unique_ptr<processor_table> _processors;
     ssx::work_queue _queue;

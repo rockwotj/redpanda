@@ -19,8 +19,6 @@
 
 namespace wasm {
 
-class probe;
-
 // Per transform probe
 class probe {
 public:
