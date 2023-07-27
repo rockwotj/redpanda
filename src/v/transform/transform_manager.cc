@@ -133,15 +133,13 @@ public:
           [](auto& p) { return p->stop(); });
         absl::flat_hash_set<cluster::transform_id> ids;
         for (auto it = range.first; it != range.second; ++it) {
-            ids.insert((*it)->id());
+            ids.insert(it->get()->id());
         }
         by_ntp.erase(range.first, range.second);
         auto& by_id = _underlying.get<id_index_t>();
-        for (auto it = ids.begin(); it != ids.end(); ++it) {
-            if (by_id.contains(*it)) {
-                ids.erase(it);
-            }
-        }
+        // Erase everything that is still around, we only want to return the
+        // ones that were deleted.
+        absl::erase_if(ids, [&by_id](auto id) { return by_id.contains(id); });
         co_return ids;
     }
 
@@ -262,7 +260,7 @@ ss::future<> manager::handle_plugin_error(
 
 void manager::erase_probe(cluster::transform_id id) {
     auto it = _probes.find(id);
-    if (it != _probes.end()) {
+    if (it == _probes.end()) {
         return;
     }
     it->second->clear_metrics();
