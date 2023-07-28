@@ -121,13 +121,14 @@
 #include <memory>
 #include <vector>
 
+namespace {
 // This file in the data directory tracks the metadata
 // needed to detect crash loops.
-static constexpr std::string_view crash_loop_tracker_file = "startup_log";
+constexpr std::string_view crash_loop_tracker_file = "startup_log";
 // Crash tracking resets every 1h.
-static constexpr model::timestamp_clock::duration crash_reset_duration{1h};
+constexpr model::timestamp_clock::duration crash_reset_duration{1h};
 
-static void set_local_kafka_client_config(
+void set_local_kafka_client_config(
   std::optional<kafka::client::configuration>& client_config,
   const config::node_config& config) {
     client_config.emplace();
@@ -151,7 +152,7 @@ static void set_local_kafka_client_config(
     }
 }
 
-static void set_pp_kafka_client_defaults(
+void set_pp_kafka_client_defaults(
   pandaproxy::rest::configuration& proxy_config,
   kafka::client::configuration& client_config) {
     // override pandaparoxy_client.consumer_session_timeout_ms with
@@ -165,8 +166,7 @@ static void set_pp_kafka_client_defaults(
     }
 }
 
-static void
-set_sr_kafka_client_defaults(kafka::client::configuration& client_config) {
+void set_sr_kafka_client_defaults(kafka::client::configuration& client_config) {
     if (!client_config.produce_batch_delay.is_overriden()) {
         client_config.produce_batch_delay.set_value(0ms);
     }
@@ -181,6 +181,24 @@ set_sr_kafka_client_defaults(kafka::client::configuration& client_config) {
           std::make_optional<ss::sstring>("schema_registry_client"));
     }
 }
+
+void set_xform_kafka_client_defaults(
+  kafka::client::configuration& client_config) {
+    if (!client_config.produce_batch_delay.is_overriden()) {
+        client_config.produce_batch_delay.set_value(0ms);
+    }
+    if (!client_config.produce_batch_record_count.is_overriden()) {
+        client_config.produce_batch_record_count.set_value(int32_t(0));
+    }
+    if (!client_config.produce_batch_size_bytes.is_overriden()) {
+        client_config.produce_batch_size_bytes.set_value(int32_t(0));
+    }
+    if (!client_config.client_identifier.is_overriden()) {
+        client_config.client_identifier.set_value(
+          std::make_optional<ss::sstring>("data_transform_client"));
+    }
+}
+} // namespace
 
 application::application(ss::sstring logger_name)
   : _log(std::move(logger_name)){};
@@ -1056,9 +1074,9 @@ void application::wire_up_runtime_services(model::node_id node_id) {
         _wasm_runtime = wasm::runtime::create_default(
           thread_worker.get(), _schema_registry.get());
         syschecks::systemd_message("Creating transform service").get();
-        std::optional<kafka::client::configuration> transform_kafka_client_cfg;
         set_local_kafka_client_config(
-          transform_kafka_client_cfg, config::node());
+          _data_transforms_client_config, config::node());
+        set_xform_kafka_client_defaults(*_data_transforms_client_config);
         construct_service(
           _transform_service,
           _wasm_runtime.get(),
@@ -1067,7 +1085,7 @@ void application::wire_up_runtime_services(model::node_id node_id) {
           &controller->get_feature_table(),
           &raft_group_manager,
           &controller->get_partition_manager(),
-          std::reference_wrapper(transform_kafka_client_cfg.value()))
+          std::reference_wrapper(*_data_transforms_client_config))
           .get();
     }
 
