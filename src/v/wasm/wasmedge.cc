@@ -333,6 +333,7 @@ public:
     std::string_view function_name() const final { return _user_module_name; }
 
     ss::future<> start() final {
+        vassert(!_is_running, "cannot start a running wasm engine");
         _queue = ss::queue<ss::noncopyable_function<void()>>(1);
         _is_running = true;
         // TODO: Specify a special scheduling group
@@ -346,13 +347,15 @@ public:
     }
 
     ss::future<> initialize() final {
+        if (!_is_running) [[unlikely]] {
+            throw wasm_exception(
+              "Wasm engine is not running", errc::engine_not_running);
+        }
         return enqueue<void>([this] { initialize_wasi(); });
     }
 
     ss::future<> stop() final {
-        if (!_is_running) {
-            co_return;
-        }
+        vassert(_is_running, "wasm engine already stopped");
         _is_running = false;
         // Enqueue a task to flush the queue
         co_await enqueue<void>([] {});
@@ -362,6 +365,10 @@ public:
 
     ss::future<model::record_batch>
     transform(model::record_batch batch, transform_probe* probe) override {
+        if (!_is_running) [[unlikely]] {
+            throw wasm_exception(
+              "Wasm engine is not running", errc::engine_not_running);
+        }
         vlog(
           wasm_log.trace,
           "Transforming batch: {}",
