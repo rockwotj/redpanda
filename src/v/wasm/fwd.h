@@ -10,7 +10,7 @@
 #pragma once
 
 namespace wasm {
-class probe;
+class transform_probe;
 class engine;
 class factory;
 class runtime;

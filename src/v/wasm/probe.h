@@ -13,6 +13,7 @@
 #include <seastar/core/metrics.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/thread_cputime_clock.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
 #include <memory>
@@ -20,16 +21,16 @@
 namespace wasm {
 
 // Per transform probe
-class probe {
+class transform_probe {
 public:
     using hist_t = log_hist_public;
 
-    probe() = default;
-    probe(const probe&) = delete;
-    probe& operator=(const probe&) = delete;
-    probe(probe&&) = delete;
-    probe& operator=(probe&&) = delete;
-    ~probe() = default;
+    transform_probe() = default;
+    transform_probe(const transform_probe&) = delete;
+    transform_probe& operator=(const transform_probe&) = delete;
+    transform_probe(transform_probe&&) = delete;
+    transform_probe& operator=(transform_probe&&) = delete;
+    ~transform_probe() = default;
 
     std::unique_ptr<hist_t::measurement> latency_measurement() {
         return _transform_latency.auto_measure();
@@ -37,13 +38,21 @@ public:
     void transform_complete() { ++_transform_count; }
     void transform_error() { ++_transform_errors; }
 
-    void setup_metrics(ss::sstring transform_name);
-    void clear_metrics() { _public_metrics.clear(); }
+    void setup_metrics(
+      ss::sstring transform_name,
+      ss::noncopyable_function<uint64_t()> num_processors_callback);
+    void clear_metrics() {
+        _public_metrics.clear();
+        _num_processors_callback = [] { return 0; };
+    }
 
 private:
     uint64_t _transform_count{0};
     uint64_t _transform_errors{0};
     hist_t _transform_latency;
+    ss::noncopyable_function<uint64_t()> _num_processors_callback = [] {
+        return 0;
+    };
     ssx::metrics::metric_groups _public_metrics
       = ssx::metrics::metric_groups::make_public();
 };

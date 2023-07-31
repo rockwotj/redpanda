@@ -360,8 +360,8 @@ public:
         co_await _thread.join();
     }
 
-    ss::future<model::record_batch>
-    transform(const model::record_batch* batch, probe* probe) override {
+    ss::future<model::record_batch> transform(
+      const model::record_batch* batch, transform_probe* probe) override {
         vlog(
           wasm_log.trace,
           "Transforming batch: {}",
@@ -419,7 +419,7 @@ private:
     }
 
     model::record_batch
-    invoke_transform(const model::record_batch* batch, probe* probe) {
+    invoke_transform(const model::record_batch* batch, transform_probe* probe) {
         return _rp_module->for_each_record(
           batch, [this, probe](wasm_call_params params) {
               _wasi_module->set_timestamp(params.current_record_timestamp);

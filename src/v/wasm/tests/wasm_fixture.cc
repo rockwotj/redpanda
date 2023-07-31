@@ -34,7 +34,7 @@ wasm_test_fixture::wasm_test_fixture()
       .environment = {},
       .source_ptr = model::offset(0)}) {
     _worker.start().get();
-    _probe.setup_metrics(_meta.name());
+    _probe.setup_metrics(_meta.name(), [] { return 0; });
 }
 wasm_test_fixture::~wasm_test_fixture() {
     if (_engine) {

@@ -46,6 +46,6 @@ private:
     std::unique_ptr<wasm::runtime> _runtime;
     std::unique_ptr<wasm::factory> _factory;
     std::unique_ptr<wasm::engine> _engine;
-    wasm::probe _probe;
+    wasm::transform_probe _probe;
     cluster::transform_metadata _meta;
 };

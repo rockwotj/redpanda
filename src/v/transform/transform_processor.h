@@ -44,7 +44,7 @@ public:
       error_callback,
       std::unique_ptr<source>,
       std::vector<std::unique_ptr<sink>>,
-      wasm::probe*);
+      wasm::transform_probe*);
 
     ss::future<> start();
     ss::future<> stop();
@@ -70,7 +70,7 @@ private:
     std::unique_ptr<source> _source;
     std::vector<std::unique_ptr<sink>> _sinks;
     error_callback _error_callback;
-    wasm::probe* _probe;
+    wasm::transform_probe* _probe;
 
     ss::abort_source _as;
     ss::future<> _task;

@@ -67,7 +67,7 @@ processor::processor(
   error_callback cb,
   std::unique_ptr<source> source,
   std::vector<std::unique_ptr<sink>> sinks,
-  wasm::probe* probe)
+  wasm::transform_probe* probe)
   : _id(id)
   , _ntp(std::move(ntp))
   , _meta(std::move(meta))

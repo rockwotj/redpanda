@@ -99,6 +99,11 @@ public:
         return by_key.contains(std::make_tuple(id, ntp));
     }
 
+    size_t count_by_id(cluster::transform_id id) {
+        auto& by_id = _underlying.get<id_index_t>();
+        return by_id.count(id);
+    }
+
     ss::future<> clear() {
         std::vector<ss::future<>> futures;
         futures.reserve(_underlying.size());
@@ -305,15 +310,17 @@ ss::future<> manager::do_attempt_start_processor(
     }
     co_await start_processor(ntp, id, *transform, attempts);
 }
-wasm::probe* manager::get_or_create_probe(
+wasm::transform_probe* manager::get_or_create_probe(
   cluster::transform_id id, const cluster::transform_name& name) {
     auto it = _probes.find(id);
     if (it != _probes.end()) {
         return it->second.get();
     }
-    auto [pit, inserted] = _probes.emplace(id, std::make_unique<wasm::probe>());
+    auto [pit, inserted] = _probes.emplace(
+      id, std::make_unique<wasm::transform_probe>());
     vassert(inserted, "double insert into probes map");
-    pit->second->setup_metrics(name());
+    pit->second->setup_metrics(
+      name(), [this, id] { return _processors->count_by_id(id); });
     return pit->second.get();
 }
 
