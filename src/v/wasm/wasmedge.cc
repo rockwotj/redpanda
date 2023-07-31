@@ -360,15 +360,15 @@ public:
         co_await _thread.join();
     }
 
-    ss::future<model::record_batch> transform(
-      const model::record_batch* batch, transform_probe* probe) override {
+    ss::future<model::record_batch>
+    transform(model::record_batch batch, transform_probe* probe) override {
         vlog(
           wasm_log.trace,
           "Transforming batch: {}",
-          batch->header().record_count);
-        if (batch->compressed()) {
+          batch.header().record_count);
+        if (batch.compressed()) {
             model::record_batch decompressed
-              = co_await storage::internal::decompress_batch(*batch);
+              = co_await storage::internal::decompress_batch(std::move(batch));
             if (decompressed.record_count() == 0) {
                 co_return std::move(decompressed);
             }
@@ -377,11 +377,13 @@ public:
                   return invoke_transform(&decompressed, probe);
               });
         } else {
-            if (batch->record_count() == 0) {
-                co_return batch->copy();
+            if (batch.record_count() == 0) {
+                co_return batch;
             }
             co_return co_await enqueue<model::record_batch>(
-              [this, batch, probe] { return invoke_transform(batch, probe); });
+              [this, &batch, probe] {
+                  return invoke_transform(&batch, probe);
+              });
         }
     }
 
@@ -475,7 +477,6 @@ private:
                       user_result),
                     errc::user_code_failure);
               }
-              probe->transform_complete();
           });
     }
 

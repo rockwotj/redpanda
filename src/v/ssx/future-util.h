@@ -176,6 +176,7 @@ inline auto async_flat_transform(Rng& rng, Func&& func) {
 }
 
 /// \brief Run tasks in parallel and wait for completion, capturing possible
+///
 /// errors (iterator version).
 ///
 /// Given a range [\c begin, \c end) of objects, run \c func on each \c *i in

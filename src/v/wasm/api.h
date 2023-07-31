@@ -28,7 +28,7 @@ namespace wasm {
 class engine {
 public:
     virtual ss::future<model::record_batch>
-    transform(const model::record_batch* batch, transform_probe* probe) = 0;
+    transform(model::record_batch batch, transform_probe* probe) = 0;
 
     virtual ss::future<> start() = 0;
     virtual ss::future<> initialize() = 0;

@@ -14,6 +14,7 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
 #include "seastarx.h"
 #include "ssx/work_queue.h"
 #include "transform/fwd.h"
@@ -28,6 +29,7 @@
 
 #include <memory>
 #include <variant>
+#include <vector>
 
 namespace transform {
 
@@ -75,8 +77,8 @@ private:
     ss::abort_source _as;
     ss::future<> _task;
     ss::queue<std::monostate> _consumer_pings;
-    ss::queue<model::record_batch> _input_queue;
-    std::vector<ss::queue<model::record_batch>> _output_queues;
+    ss::queue<model::record_batch_reader::data_t> _input_queue;
+    std::vector<ss::queue<std::vector<model::record_batch>>> _output_queues;
     prefix_logger _logger;
     cluster::notification_id_type _source_notification_id
       = cluster::notification_id_type_invalid;

@@ -12,9 +12,11 @@
 
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "random/simple_time_jitter.h"
+#include "ssx/future-util.h"
 #include "transform/logger.h"
 #include "transform/transform_manager.h"
 #include "utils/prefix_logger.h"
@@ -29,32 +31,51 @@
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/all.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <boost/range/irange.hpp>
 
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <memory>
 #include <optional>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
 namespace transform {
 
 namespace {
-struct queue_consumer {
-    ss::queue<model::record_batch>* queue;
-    model::offset latest_offset;
-    prefix_logger* logger;
-
-    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-        latest_offset = model::next_offset(b.last_offset());
-        vlog(logger->trace, "read upto input offset {}", b.last_offset());
-        co_await queue->push_eventually(std::move(b));
-        co_return ss::stop_iteration::no;
+model::record_batch_reader::data_t
+extract_batches(model::record_batch_reader::storage_t s) {
+    if (std::holds_alternative<model::record_batch_reader::data_t>(s)) {
+        return std::get<model::record_batch_reader::data_t>(std::move(s));
+    } else {
+        const auto& f = std::get<model::record_batch_reader::foreign_data_t>(s);
+        model::record_batch_reader::data_t copied;
+        for (const model::record_batch& batch : *f.buffer) {
+            copied.push_back(batch.copy());
+        }
+        return copied;
     }
-    model::offset end_of_stream() { return latest_offset; }
-};
+}
+
+ss::future<std::optional<model::offset>> consume_batches(
+  std::unique_ptr<model::record_batch_reader::impl> reader,
+  ss::queue<model::record_batch_reader::data_t>* output) {
+    std::optional<model::offset> latest_offset;
+    while (!reader->is_end_of_stream()) {
+        auto slice = co_await reader->do_load_slice(model::no_timeout);
+        auto batches = extract_batches(std::move(slice));
+        if (batches.empty()) {
+            continue;
+        }
+        latest_offset = batches.back().last_offset();
+        co_await output->push_eventually(std::move(batches));
+    }
+    co_return latest_offset;
+}
 // We use a queue with a single element as a notification mechanism
 constexpr size_t kQueueBufferSize = 1;
 } // namespace
@@ -139,8 +160,11 @@ ss::future<> processor::run_poll_fallback_loop() {
 ss::future<> processor::run_transform() {
     try {
         while (!_as.abort_requested()) {
-            auto batch = co_await _input_queue.pop_eventually();
-            auto transformed = co_await _engine->transform(&batch, _probe);
+            auto batches = co_await _input_queue.pop_eventually();
+            auto transformed = co_await ssx::parallel_transform(
+              std::move(batches), [this](auto batch) {
+                  return _engine->transform(std::move(batch), _probe);
+              });
             co_await _output_queues[0].push_eventually(std::move(transformed));
         }
     } catch (const ss::abort_requested_exception&) {
@@ -167,13 +191,9 @@ ss::future<> processor::run_consumer() {
             drain_consumer_pings();
             // TODO: Failures should cause backoff
             auto reader = co_await _source->read_batch(offset, &_as);
-            auto latest_offset = co_await std::move(reader).consume(
-              queue_consumer{
-                .queue = &_input_queue,
-                .latest_offset = offset,
-                .logger = &_logger},
-              model::no_timeout);
-            if (latest_offset == offset) {
+            auto latest_offset = co_await consume_batches(
+              std::move(reader).release(), &_input_queue);
+            if (!latest_offset.has_value() || latest_offset.value() <= offset) {
                 // Wait for a ping before attempting to read after we read and
                 // get nothing.
                 vlog(
@@ -183,7 +203,7 @@ ss::future<> processor::run_consumer() {
                 co_await _consumer_pings.pop_eventually();
                 continue;
             }
-            offset = latest_offset;
+            offset = latest_offset.value();
             vlog(_logger.trace, "consumed upto offset {}", offset);
         }
     } catch (const ss::abort_requested_exception&) {
@@ -206,10 +226,12 @@ ss::future<> processor::run_producer(size_t idx) {
     auto& sink = _sinks[idx];
     try {
         while (!_as.abort_requested()) {
-            auto batch = co_await queue.pop_eventually();
+            auto batches = co_await queue.pop_eventually();
             vlog(_logger.trace, "writing output to {}", tp_ns);
-            // TODO: Support retries here with backoff
-            co_await sink->write(std::move(batch));
+            co_await ss::parallel_for_each(
+              std::make_move_iterator(batches.begin()),
+              std::make_move_iterator(batches.end()),
+              [&sink](auto batch) { return sink->write(std::move(batch)); });
         }
     } catch (const ss::abort_requested_exception&) {
     } catch (const std::exception& ex) {

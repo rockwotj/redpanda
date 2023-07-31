@@ -51,12 +51,6 @@ void transform_probe::setup_metrics(
           [this] { return _transform_latency.seastar_histogram_logform(1); })
           .aggregate({ss::metrics::shard_label}),
         sm::make_counter(
-          "",
-          [this] { return _transform_count; },
-          sm::description("Data transforms running"),
-          labels)
-          .aggregate({ss::metrics::shard_label}),
-        sm::make_counter(
           "errors",
           [this] { return _transform_errors; },
           sm::description("Data transform invocation errors"),

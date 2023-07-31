@@ -35,7 +35,6 @@ public:
     std::unique_ptr<hist_t::measurement> latency_measurement() {
         return _transform_latency.auto_measure();
     }
-    void transform_complete() { ++_transform_count; }
     void transform_error() { ++_transform_errors; }
 
     void setup_metrics(
@@ -47,7 +46,6 @@ public:
     }
 
 private:
-    uint64_t _transform_count{0};
     uint64_t _transform_errors{0};
     hist_t _transform_latency;
     ss::noncopyable_function<uint64_t()> _num_processors_callback = [] {

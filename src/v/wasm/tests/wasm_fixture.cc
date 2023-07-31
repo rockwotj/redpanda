@@ -61,7 +61,7 @@ void wasm_test_fixture::load_wasm(const std::string& path) {
 }
 
 model::record_batch wasm_test_fixture::transform(const model::record_batch& b) {
-    return _engine->transform(&b, &_probe).get();
+    return _engine->transform(b.copy(), &_probe).get();
 }
 model::record_batch wasm_test_fixture::make_tiny_batch() {
     return model::test::make_random_batch(model::test::record_batch_spec{
