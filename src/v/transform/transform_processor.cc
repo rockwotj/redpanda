@@ -161,10 +161,12 @@ ss::future<> processor::run_transform() {
     try {
         while (!_as.abort_requested()) {
             auto batches = co_await _input_queue.pop_eventually();
-            auto transformed = co_await ssx::parallel_transform(
-              std::move(batches), [this](auto batch) {
-                  return _engine->transform(std::move(batch), _probe);
-              });
+            std::vector<model::record_batch> transformed;
+            transformed.reserve(batches.size());
+            for (auto& batch : batches) {
+                transformed.push_back(
+                  co_await _engine->transform(std::move(batch), _probe));
+            }
             co_await _output_queues[0].push_eventually(std::move(transformed));
         }
     } catch (const ss::abort_requested_exception&) {

@@ -492,19 +492,18 @@ private:
         ss::promise<T> p;
         auto fut = std::move(p.get_future());
         try {
-            co_await _queue.push_eventually(
-              [p = std::move(p), fn = std::move(fn)]() mutable {
-                  try {
-                      if constexpr (std::is_void_v<T>) {
-                          fn();
-                          p.set_value();
-                      } else {
-                          p.set_value(fn());
-                      }
-                  } catch (...) {
-                      p.set_to_current_exception();
-                  }
-              });
+            co_await _queue.push_eventually([&p, fn = std::move(fn)]() mutable {
+                try {
+                    if constexpr (std::is_void_v<T>) {
+                        fn();
+                        p.set_value();
+                    } else {
+                        p.set_value(fn());
+                    }
+                } catch (...) {
+                    p.set_to_current_exception();
+                }
+            });
         } catch (...) {
             p.set_to_current_exception();
         }
