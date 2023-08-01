@@ -28,7 +28,7 @@ import (
 
 var Tinygo = Buildpack{
 	Name:    "tinygo",
-	baseURL: "https://github.com/rockwotj/tinygo/releases/download/v0.28.1-rpk2",
+	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/v0.28.1-rpk2",
 	shaSums: map[string]map[string]string{
 		"linux": {
 			"amd64": "49fcc84b999f072ef1e52512257fcf86d5bf31ee4c68c6d894643507c757d680",
