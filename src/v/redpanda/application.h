@@ -273,6 +273,8 @@ private:
 
     std::unique_ptr<wasm::runtime> _wasm_runtime;
     ss::sharded<transform::service> _transform_service;
+    ss::sharded<transform::rpc::local_service> _transform_rpc_service;
+    ss::sharded<transform::rpc::client> _transform_rpc_client;
 
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();

@@ -37,7 +37,7 @@ public:
     sink& operator=(sink&&) = delete;
     virtual ~sink() = default;
 
-    virtual ss::future<> write(model::record_batch) = 0;
+    virtual ss::future<> write(ss::chunked_fifo<model::record_batch>) = 0;
 
     using factory = factory<sink>;
 };

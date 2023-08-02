@@ -39,6 +39,7 @@
 #include <exception>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <type_traits>
 #include <variant>
@@ -71,7 +72,7 @@ ss::future<std::optional<model::offset>> consume_batches(
         if (batches.empty()) {
             continue;
         }
-        latest_offset = batches.back().last_offset();
+        latest_offset = model::next_offset(batches.back().last_offset());
         co_await output->push_eventually(std::move(batches));
     }
     co_return latest_offset;
@@ -161,7 +162,7 @@ ss::future<> processor::run_transform() {
     try {
         while (!_as.abort_requested()) {
             auto batches = co_await _input_queue.pop_eventually();
-            std::vector<model::record_batch> transformed;
+            ss::chunked_fifo<model::record_batch> transformed;
             transformed.reserve(batches.size());
             for (auto& batch : batches) {
                 transformed.push_back(
@@ -230,10 +231,7 @@ ss::future<> processor::run_producer(size_t idx) {
         while (!_as.abort_requested()) {
             auto batches = co_await queue.pop_eventually();
             vlog(_logger.trace, "writing output to {}", tp_ns);
-            co_await ss::parallel_for_each(
-              std::make_move_iterator(batches.begin()),
-              std::make_move_iterator(batches.end()),
-              [&sink](auto batch) { return sink->write(std::move(batch)); });
+            co_await sink->write(std::move(batches));
         }
     } catch (const ss::abort_requested_exception&) {
     } catch (const std::exception& ex) {
@@ -256,5 +254,12 @@ ss::future<> processor::stop() {
 }
 cluster::transform_id processor::id() const { return _id; }
 const model::ntp& processor::ntp() const { return _ntp; }
-
+uint64_t processor::input_queue_size() const { return _input_queue.size(); }
+uint64_t processor::output_queue_size() const {
+    return std::accumulate(
+      _output_queues.begin(),
+      _output_queues.end(),
+      uint64_t(0),
+      [](uint64_t acc, const auto& q) { return acc + q.size(); });
+}
 } // namespace transform

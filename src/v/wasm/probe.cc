@@ -20,12 +20,8 @@
 namespace wasm {
 
 void transform_probe::setup_metrics(
-  ss::sstring transform_name,
-  ss::noncopyable_function<uint64_t()> num_processors_callback) {
+  ss::sstring transform_name, transform_guages g) {
     namespace sm = ss::metrics;
-    // TODO: For some reason the callback passed to make_gauge needs to be
-    // copyable, even though it looks like it doesn't.
-    _num_processors_callback = std::move(num_processors_callback);
 
     auto name_label = sm::label("function_name");
     const std::vector<sm::label_instance> labels = {
@@ -36,8 +32,20 @@ void transform_probe::setup_metrics(
       {
         sm::make_gauge(
           "processors_running",
-          [this] { return _num_processors_callback(); },
+          std::move(g.num_processors_callback),
           sm::description("Data transform processor instances"),
+          labels)
+          .aggregate({ss::metrics::shard_label}),
+        sm::make_gauge(
+          "processors_input_queue_size",
+          std::move(g.input_queue_size_callback),
+          sm::description("Data transform processor input queue sizes"),
+          labels)
+          .aggregate({ss::metrics::shard_label}),
+        sm::make_gauge(
+          "processors_output_queue_size",
+          std::move(g.output_queue_size_callback),
+          sm::description("Data transform processor output queue sizes"),
           labels)
           .aggregate({ss::metrics::shard_label}),
       });

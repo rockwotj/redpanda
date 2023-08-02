@@ -22,6 +22,7 @@
 #include "model/metadata.h"
 #include "raft/fwd.h"
 #include "raft/group_manager.h"
+#include "transform/fwd.h"
 #include "utils/uuid.h"
 #include "wasm/api.h"
 
@@ -49,6 +50,7 @@ public:
       ss::sharded<features::feature_table>* features,
       ss::sharded<raft::group_manager>* leaders,
       ss::sharded<cluster::partition_manager>* partition_manager,
+      ss::sharded<rpc::client>* transform_client,
       const kafka::client::configuration&);
     service(const service&) = delete;
     service& operator=(const service&) = delete;
@@ -57,13 +59,12 @@ public:
     ~service();
 
     /**
-     * This creates the internal wasm source topic if it doesn't exist and
-     * starts the listeners for updates to plugins and topics.
+     * This starts the listeners for updates to plugins and topics.
      */
     ss::future<> start();
     /**
      * This shuts down the service by stopping the listeners and gracefully
-     * ensuring all the transform state machines are stopped.
+     * ensuring all the transform processors are stopped.
      */
     ss::future<> stop();
 
@@ -102,6 +103,7 @@ private:
     ss::sharded<raft::group_manager>* _leaders;
     ss::sharded<features::feature_table>* _features;
     ss::sharded<cluster::partition_manager>* _partition_manager;
+    ss::sharded<rpc::client>* _transform_client;
     std::unique_ptr<kafka::client::client> _client;
     std::unique_ptr<manager> _manager;
     ss::gate _gate;

@@ -8,6 +8,7 @@ v_cc_library(
     "transform_manager.cc"
     "transform_processor.cc"
   DEPS
+    v::transform_rpc
     v::wasm
     v::storage
     v::cluster
@@ -16,3 +17,4 @@ v_cc_library(
     Seastar::seastar
 )
 
+add_subdirectory(rpc)

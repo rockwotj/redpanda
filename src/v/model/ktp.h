@@ -107,6 +107,21 @@ public:
     ntp to_ntp() const { return {kafka_namespace, tp}; };
 
     /**
+     * @brief Return the equivalent topic_partition object.
+     *
+     * Returns an topic_partition object in the kafka namespace,
+     * with the same topic and partition as this object. For any ktp
+     * object k, it is always the case that:
+     *
+     * k.tp == k.to_tp()
+     *
+     * This object returns by-value, so in general may perform
+     * an allocation for the topic name if it is longer than
+     * the sstring SSO threshold.
+     */
+    topic_partition to_tp() const { return tp; };
+
+    /**
      * @brief Return a topic namespace view corresponding to this object.
      *
      * Return a topic_namespace_view with kafka as the namespace and

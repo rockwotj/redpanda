@@ -20,6 +20,12 @@
 
 namespace wasm {
 
+struct transform_guages {
+    std::function<uint64_t()> num_processors_callback;
+    std::function<uint64_t()> input_queue_size_callback;
+    std::function<uint64_t()> output_queue_size_callback;
+};
+
 // Per transform probe
 class transform_probe {
 public:
@@ -37,20 +43,12 @@ public:
     }
     void transform_error() { ++_transform_errors; }
 
-    void setup_metrics(
-      ss::sstring transform_name,
-      ss::noncopyable_function<uint64_t()> num_processors_callback);
-    void clear_metrics() {
-        _public_metrics.clear();
-        _num_processors_callback = [] { return 0; };
-    }
+    void setup_metrics(ss::sstring transform_name, transform_guages);
+    void clear_metrics() { _public_metrics.clear(); }
 
 private:
     uint64_t _transform_errors{0};
     hist_t _transform_latency;
-    ss::noncopyable_function<uint64_t()> _num_processors_callback = [] {
-        return 0;
-    };
     ssx::metrics::metric_groups _public_metrics
       = ssx::metrics::metric_groups::make_public();
 };

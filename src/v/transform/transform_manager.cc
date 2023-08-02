@@ -39,6 +39,7 @@
 #include <future>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -104,6 +105,10 @@ public:
         return by_id.count(id);
     }
 
+    auto find_by_id(cluster::transform_id id) {
+        auto& by_id = _underlying.get<id_index_t>();
+        return by_id.equal_range(id);
+    }
     ss::future<> clear() {
         std::vector<ss::future<>> futures;
         futures.reserve(_underlying.size());
@@ -320,7 +325,31 @@ wasm::transform_probe* manager::get_or_create_probe(
       id, std::make_unique<wasm::transform_probe>());
     vassert(inserted, "double insert into probes map");
     pit->second->setup_metrics(
-      name(), [this, id] { return _processors->count_by_id(id); });
+      name(),
+      {.num_processors_callback = [this,
+                                   id] { return _processors->count_by_id(id); },
+       .input_queue_size_callback =
+         [this, id] {
+             auto [begin, end] = _processors->find_by_id(id);
+             return std::accumulate(
+               begin,
+               end,
+               uint64_t(0),
+               [](uint64_t acc, const std::unique_ptr<processor>& p) {
+                   return acc + p->input_queue_size();
+               });
+         },
+       .output_queue_size_callback =
+         [this, id] {
+             auto [begin, end] = _processors->find_by_id(id);
+             return std::accumulate(
+               begin,
+               end,
+               uint64_t(0),
+               [](uint64_t acc, const std::unique_ptr<processor>& p) {
+                   return acc + p->output_queue_size();
+               });
+         }});
     return pit->second.get();
 }
 

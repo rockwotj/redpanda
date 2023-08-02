@@ -10,13 +10,12 @@
  */
 
 #pragma once
-namespace transform {
-class service;
-class manager;
-class processor;
-namespace rpc {
-class client;
-class local_service;
-class network_service;
-} // namespace rpc
-} // namespace transform
+
+#include "seastarx.h"
+
+#include <seastar/util/log.hh>
+
+namespace transform::rpc {
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+extern ss::logger log;
+} // namespace transform::rpc

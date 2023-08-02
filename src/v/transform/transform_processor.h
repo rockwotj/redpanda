@@ -53,6 +53,8 @@ public:
 
     cluster::transform_id id() const;
     const model::ntp& ntp() const;
+    uint64_t input_queue_size() const;
+    uint64_t output_queue_size() const;
 
 private:
     ss::future<> run_transform();
@@ -78,7 +80,8 @@ private:
     ss::future<> _task;
     ss::queue<std::monostate> _consumer_pings;
     ss::queue<model::record_batch_reader::data_t> _input_queue;
-    std::vector<ss::queue<std::vector<model::record_batch>>> _output_queues;
+    std::vector<ss::queue<ss::chunked_fifo<model::record_batch>>>
+      _output_queues;
     prefix_logger _logger;
     cluster::notification_id_type _source_notification_id
       = cluster::notification_id_type_invalid;

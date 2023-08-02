@@ -91,6 +91,8 @@
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
 #include "transform/api.h"
+#include "transform/rpc/client.h"
+#include "transform/rpc/service.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
@@ -1077,6 +1079,22 @@ void application::wire_up_runtime_services(model::node_id node_id) {
         set_local_kafka_client_config(
           _data_transforms_client_config, config::node());
         set_xform_kafka_client_defaults(*_data_transforms_client_config);
+
+        construct_service(
+          _transform_rpc_service,
+          &shard_table,
+          &metadata_cache,
+          &partition_manager)
+          .get();
+
+        construct_service(
+          _transform_rpc_client,
+          node_id,
+          &controller->get_partition_leaders(),
+          &_connection_cache,
+          &_transform_rpc_service)
+          .get();
+
         construct_service(
           _transform_service,
           _wasm_runtime.get(),
@@ -1085,6 +1103,7 @@ void application::wire_up_runtime_services(model::node_id node_id) {
           &controller->get_feature_table(),
           &raft_group_manager,
           &controller->get_partition_manager(),
+          &_transform_rpc_client,
           std::reference_wrapper(*_data_transforms_client_config))
           .get();
     }
@@ -2281,6 +2300,14 @@ void application::start_runtime_services(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(controller->get_ephemeral_credential_frontend())));
+
+          if (config::shard_local_cfg().enable_data_transforms.value()) {
+              runtime_services.push_back(
+                std::make_unique<transform::rpc::network_service>(
+                  sched_groups.cluster_sg(),
+                  smp_service_groups.cluster_smp_sg(),
+                  &_transform_rpc_service));
+          }
 
           runtime_services.push_back(
             std::make_unique<cluster::topic_recovery_status_rpc_handler>(

@@ -39,6 +39,7 @@
 #include "storage/types.h"
 #include "transform/io.h"
 #include "transform/logger.h"
+#include "transform/rpc/client.h"
 #include "transform/transform_manager.h"
 #include "units.h"
 #include "utils/uuid.h"
@@ -217,37 +218,39 @@ private:
     ss::gate* _gate;
 };
 
-template<typename I, typename T>
-class kafka_client_factory final : public factory<I> {
+class rpc_client_sink final : public sink {
 public:
-    explicit kafka_client_factory(kafka::client::client* c)
-      : _client(c) {}
-
-    std::optional<std::unique_ptr<I>> create(model::ntp ntp) override {
-        return std::make_unique<T>(ntp, _client);
-    };
-
-private:
-    kafka::client::client* _client;
-};
-
-class kafka_client_sink final : public sink {
-public:
-    using factory = kafka_client_factory<sink, kafka_client_sink>;
-
-    kafka_client_sink(model::ntp ntp, kafka::client::client* c)
+    rpc_client_sink(model::ntp ntp, rpc::client* c)
       : _ntp(std::move(ntp))
       , _client(c) {}
 
-    ss::future<> write(model::record_batch batch) override {
-        auto resp = co_await _client->produce_record_batch(
-          _ntp.tp, std::move(batch));
-        check_error_code(resp);
+    ss::future<> write(ss::chunked_fifo<model::record_batch> batches) override {
+        constexpr auto timeout = 300ms;
+        auto resp = co_await _client->produce(
+          _ntp.tp, std::move(batches), timeout);
+        if (resp != cluster::errc::success) {
+            // TODO: A better exception type or return a status code.
+            throw std::runtime_error(
+              ss::format("failure to produce transform data: {}", resp));
+        }
     }
 
 private:
     model::ntp _ntp;
-    kafka::client::client* _client;
+    rpc::client* _client;
+};
+
+class rpc_client_factory final : public sink::factory {
+public:
+    explicit rpc_client_factory(rpc::client* c)
+      : _client(c) {}
+
+    std::optional<std::unique_ptr<sink>> create(model::ntp ntp) override {
+        return std::make_unique<rpc_client_sink>(ntp, _client);
+    };
+
+private:
+    rpc::client* _client;
 };
 
 class partition_source_factory;
@@ -319,6 +322,7 @@ service::service(
   ss::sharded<features::feature_table>* features,
   ss::sharded<raft::group_manager>* leaders,
   ss::sharded<cluster::partition_manager>* partition_manager,
+  ss::sharded<rpc::client>* transform_client,
   const kafka::client::configuration& client_config)
   : _runtime(rt)
   , _self(self)
@@ -326,6 +330,7 @@ service::service(
   , _leaders(leaders)
   , _features(features)
   , _partition_manager(partition_manager)
+  , _transform_client(transform_client)
   , _client(std::make_unique<kafka::client::client>(
       config::to_yaml(client_config, config::redact_secrets::no)))
   , _manager(nullptr) {}
@@ -337,7 +342,7 @@ ss::future<> service::start() {
       = std::make_unique<partition_source_factory>(
         &_partition_manager->local());
     std::unique_ptr<sink::factory> sink_factory
-      = std::make_unique<kafka_client_sink::factory>(_client.get());
+      = std::make_unique<rpc_client_factory>(&_transform_client->local());
     _manager = std::make_unique<manager>(
       _runtime,
       std::make_unique<plugin_registry_adapter>(
