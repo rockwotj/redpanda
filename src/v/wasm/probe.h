@@ -24,6 +24,7 @@ struct transform_guages {
     std::function<uint64_t()> num_processors_callback;
     std::function<uint64_t()> input_queue_size_callback;
     std::function<uint64_t()> output_queue_size_callback;
+    std::function<uint64_t()> engine_memory_usage_callback;
 };
 
 // Per transform probe

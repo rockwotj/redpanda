@@ -379,6 +379,17 @@ wasm::transform_probe* manager::get_or_create_probe(
                [](uint64_t acc, const std::unique_ptr<processor>& p) {
                    return acc + p->output_queue_size();
                });
+         },
+       .engine_memory_usage_callback =
+         [this, id] {
+             auto [begin, end] = _processors->find_by_id(id);
+             return std::accumulate(
+               begin,
+               end,
+               uint64_t(0),
+               [](uint64_t acc, const std::unique_ptr<processor>& p) {
+                   return acc + p->engine_memory_usage_size_bytes();
+               });
          }});
     return pit->second.get();
 }
@@ -412,8 +423,8 @@ ss::future<> manager::start_processor(
             on_plugin_error(id, ntp.tp.partition, meta);
             co_return;
         }
-        // TODO: we should be sharing factories across the entire process, maybe
-        // we need some sort of cache?
+        // TODO: we should be sharing factories across the entire process,
+        // maybe we need some sort of cache?
         auto factory = co_await _runtime->make_factory(
           meta, std::move(binary).value(), &tlog);
         auto engine = co_await factory->make_engine();
@@ -421,7 +432,8 @@ ss::future<> manager::start_processor(
         if (!src) {
             vlog(
               tlog.warn,
-              "unable to create transform {} input source to {}, retrying...",
+              "unable to create transform {} input source to {}, "
+              "retrying...",
               meta.name,
               ntp);
             attempt_start_processor(ntp, id, attempts);
@@ -472,7 +484,8 @@ ss::future<> manager::start_processor(
     } catch (const wasm::wasm_exception& ex) {
         vlog(
           tlog.warn,
-          "invalid wasm source unable to create transform::stm: {}, marking as "
+          "invalid wasm source unable to create transform::stm: {}, "
+          "marking as "
           "failed",
           ex);
         // enqueue a task to mark the plugin as failed
@@ -485,14 +498,16 @@ ss::future<> manager::start_processor(
     if (!created) {
         co_return;
     }
-    // Ensure that we insert this transform into our mapping before we start it.
+    // Ensure that we insert this transform into our mapping before we start
+    // it.
     auto* p = _processors->insert(std::move(created));
     try {
         co_await p->start();
     } catch (const std::exception& ex) {
         vlog(
           tlog.warn,
-          "invalid wasm source unable to start transform::stm: {}, marking as "
+          "invalid wasm source unable to start transform::stm: {}, marking "
+          "as "
           "failed",
           ex);
         on_plugin_error(id, ntp.tp.partition, meta);

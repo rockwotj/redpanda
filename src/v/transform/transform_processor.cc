@@ -262,4 +262,7 @@ uint64_t processor::output_queue_size() const {
       uint64_t(0),
       [](uint64_t acc, const auto& q) { return acc + q.size(); });
 }
+uint64_t processor::engine_memory_usage_size_bytes() const {
+    return _engine->memory_usage_size_bytes();
+}
 } // namespace transform

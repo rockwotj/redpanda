@@ -61,6 +61,7 @@ public:
     const model::ntp& ntp() const;
     uint64_t input_queue_size() const;
     uint64_t output_queue_size() const;
+    uint64_t engine_memory_usage_size_bytes() const;
 
 private:
     ss::future<> run_transform();

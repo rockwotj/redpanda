@@ -68,3 +68,9 @@ FIXTURE_TEST(test_transform_error, wasm_test_fixture) {
           return ex.error_code() == wasm::errc::user_code_failure;
       });
 }
+
+FIXTURE_TEST(test_memory_usage, wasm_test_fixture) {
+    load_wasm("identity.wasm");
+    BOOST_CHECK_GT(engine()->memory_usage_size_bytes(), 0);
+    info("memory usage: {}", engine()->memory_usage_size_bytes());
+}

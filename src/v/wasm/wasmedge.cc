@@ -333,6 +333,23 @@ public:
 
     std::string_view function_name() const final { return _user_module_name; }
 
+    uint64_t memory_usage_size_bytes() const final {
+        auto* mod = WasmEdge_VMGetActiveModule(_vm_ctx.get());
+        if (!mod) {
+            return 0;
+        }
+        constexpr std::string_view memory_export_name = "memory";
+        auto name = WasmEdge_StringWrap(
+          memory_export_name.data(), memory_export_name.size());
+        auto* mem = WasmEdge_ModuleInstanceFindMemory(mod, name);
+        if (!mem) {
+            return 0;
+        }
+        constexpr uint64_t page_size_bytes = 64_KiB;
+        auto num_pages = WasmEdge_MemoryInstanceGetPageSize(mem);
+        return num_pages * page_size_bytes;
+    }
+
     ss::future<> start() final { return _queue.start(); }
 
     ss::future<> initialize() final {
