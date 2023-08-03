@@ -16,6 +16,7 @@
 #include "model/record.h"
 #include "reflection/type_traits.h"
 #include "seastarx.h"
+#include "ssx/work_queue.h"
 #include "storage/parser_utils.h"
 #include "units.h"
 #include "utils/mutex.h"
@@ -332,43 +333,16 @@ public:
 
     std::string_view function_name() const final { return _user_module_name; }
 
-    ss::future<> start() final {
-        vassert(!_is_running, "cannot start a running wasm engine");
-        _queue = ss::queue<ss::noncopyable_function<void()>>(1);
-        _is_running = true;
-        // TODO: Specify a special scheduling group
-        _thread = ss::thread([this] {
-            while (_is_running) {
-                auto task = _queue.pop_eventually().get();
-                task();
-            }
-        });
-        return ss::now();
-    }
+    ss::future<> start() final { return _queue.start(); }
 
     ss::future<> initialize() final {
-        if (!_is_running) [[unlikely]] {
-            throw wasm_exception(
-              "Wasm engine is not running", errc::engine_not_running);
-        }
-        return enqueue<void>([this] { initialize_wasi(); });
+        return _queue.enqueue<void>([this] { initialize_wasi(); });
     }
 
-    ss::future<> stop() final {
-        vassert(_is_running, "wasm engine already stopped");
-        _is_running = false;
-        // Enqueue a task to flush the queue
-        co_await enqueue<void>([] {});
-        _queue.abort(std::make_exception_ptr(ss::abort_requested_exception()));
-        co_await _thread.join();
-    }
+    ss::future<> stop() final { return _queue.stop(); }
 
     ss::future<model::record_batch>
     transform(model::record_batch batch, transform_probe* probe) override {
-        if (!_is_running) [[unlikely]] {
-            throw wasm_exception(
-              "Wasm engine is not running", errc::engine_not_running);
-        }
         vlog(
           wasm_log.trace,
           "Transforming batch: {}",
@@ -379,7 +353,7 @@ public:
             if (decompressed.record_count() == 0) {
                 co_return std::move(decompressed);
             }
-            co_return co_await enqueue<model::record_batch>(
+            co_return co_await _queue.enqueue<model::record_batch>(
               [this, &decompressed, probe] {
                   return invoke_transform(&decompressed, probe);
               });
@@ -387,7 +361,7 @@ public:
             if (batch.record_count() == 0) {
                 co_return batch;
             }
-            co_return co_await enqueue<model::record_batch>(
+            co_return co_await _queue.enqueue<model::record_batch>(
               [this, &batch, probe] {
                   return invoke_transform(&batch, probe);
               });
@@ -487,32 +461,7 @@ private:
           });
     }
 
-    template<typename T>
-    ss::future<T> enqueue(ss::noncopyable_function<T()> fn) {
-        ss::promise<T> p;
-        auto fut = std::move(p.get_future());
-        try {
-            co_await _queue.push_eventually([&p, fn = std::move(fn)]() mutable {
-                try {
-                    if constexpr (std::is_void_v<T>) {
-                        fn();
-                        p.set_value();
-                    } else {
-                        p.set_value(fn());
-                    }
-                } catch (...) {
-                    p.set_to_current_exception();
-                }
-            });
-        } catch (...) {
-            p.set_to_current_exception();
-        }
-        co_return co_await std::move(fut);
-    }
-
-    ss::queue<ss::noncopyable_function<void()>> _queue{1};
-    bool _is_running = false;
-    ss::thread _thread{};
+    ssx::threaded_work_queue _queue;
 
     std::vector<WasmEdgeModule> _modules;
     WasmEdgeStore _store_ctx;

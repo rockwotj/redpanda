@@ -77,6 +77,10 @@ ss::future<> threaded_work_queue::start() {
     return ss::now();
 }
 ss::future<> threaded_work_queue::stop() {
+    // already have stopped
+    if (_as.abort_requested()) {
+        co_return;
+    }
     co_await submit([this] { _as.request_abort(); });
     co_await _thread.join();
 }
