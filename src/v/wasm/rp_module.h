@@ -18,7 +18,6 @@ namespace wasm {
 using batch_handle = named_type<int32_t, struct batch_handle_tag>;
 using record_handle = named_type<int32_t, struct record_handle_tag>;
 
-constexpr int max_output_records = 256;
 constexpr std::string_view redpanda_on_record_callback_function_name
   = "redpanda_on_record";
 

@@ -25,6 +25,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <memory>
@@ -33,8 +34,13 @@
 
 namespace transform {
 
+using is_retryable = ss::bool_class<struct is_retryable_tag>;
+
 using error_callback = ss::noncopyable_function<void(
-  cluster::transform_id, model::partition_id, cluster::transform_metadata)>;
+  cluster::transform_id,
+  model::partition_id,
+  cluster::transform_metadata,
+  is_retryable)>;
 
 class processor {
 public:

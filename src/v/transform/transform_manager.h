@@ -106,6 +106,7 @@ public:
 private:
     void
     attempt_start_processor(model::ntp, cluster::transform_id, size_t attempts);
+    void restart_processor(model::ntp, cluster::transform_id);
 
 private:
     // All these private methods must be call "on" the queue.
@@ -115,6 +116,7 @@ private:
       cluster::transform_id, model::partition_id, cluster::transform_metadata);
     ss::future<> do_attempt_start_processor(
       model::ntp, cluster::transform_id, size_t attempts);
+    ss::future<> do_restart_processor(model::ntp, cluster::transform_id);
     ss::future<> start_processor(
       model::ntp,
       cluster::transform_id,

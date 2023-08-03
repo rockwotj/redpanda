@@ -10,6 +10,7 @@
  */
 #include "transform/transform_manager.h"
 
+#include "cluster/partition.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -40,6 +41,7 @@
 #include <iterator>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -108,6 +110,15 @@ public:
     auto find_by_id(cluster::transform_id id) {
         auto& by_id = _underlying.get<id_index_t>();
         return by_id.equal_range(id);
+    }
+    std::optional<processor*>
+    find_by_key(cluster::transform_id id, const model::ntp& ntp) {
+        auto& by_key = _underlying.get<key_index_t>();
+        auto it = by_key.find(std::make_tuple(id, ntp));
+        if (it == by_key.end()) {
+            return std::nullopt;
+        }
+        return it->get();
     }
     ss::future<> clear() {
         std::vector<ss::future<>> futures;
@@ -277,6 +288,24 @@ void manager::erase_probe(cluster::transform_id id) {
     _probes.erase(it);
 }
 
+void manager::restart_processor(model::ntp ntp, cluster::transform_id id) {
+    _queue.submit([this, ntp = std::move(ntp), id]() mutable {
+        return do_restart_processor(std::move(ntp), id);
+    });
+}
+
+ss::future<>
+manager::do_restart_processor(model::ntp ntp, cluster::transform_id id) {
+    auto maybe_processor = _processors->find_by_key(id, ntp);
+    if (!maybe_processor) {
+        co_return;
+    }
+    auto* p = maybe_processor.value();
+    // TODO: record a stat here
+    co_await p->stop();
+    co_await p->start();
+}
+
 void manager::attempt_start_processor(
   model::ntp ntp, cluster::transform_id id, size_t attempts) {
     // TODO: Do a delay before attempting to start again.
@@ -424,8 +453,17 @@ ss::future<> manager::start_processor(
           [this](
             cluster::transform_id id,
             model::partition_id partition_id,
-            cluster::transform_metadata meta) {
-              on_plugin_error(id, partition_id, std::move(meta));
+            cluster::transform_metadata meta,
+            is_retryable retryable) {
+              if (retryable == is_retryable::yes) {
+                  auto ntp = model::ntp(
+                    std::move(meta.input_topic.ns),
+                    std::move(meta.input_topic.tp),
+                    partition_id);
+                  restart_processor(std::move(ntp), id);
+              } else {
+                  on_plugin_error(id, partition_id, std::move(meta));
+              }
           },
           std::move(src).value(),
           std::move(sinks),

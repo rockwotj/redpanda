@@ -39,6 +39,8 @@ struct transformed_partition_data
     model::partition_id partition_id;
     ss::chunked_fifo<model::record_batch> batches;
 
+    transformed_partition_data share();
+
     auto serde_fields() { return std::tie(partition_id, batches); }
 };
 
@@ -61,6 +63,8 @@ struct transformed_topic_data
     model::topic topic;
     ss::chunked_fifo<transformed_partition_data> partitions;
 
+    transformed_topic_data share();
+
     auto serde_fields() { return std::tie(topic, partitions); }
 };
 
@@ -77,6 +81,8 @@ struct produce_request
       , timeout{timeout} {}
 
     auto serde_fields() { return std::tie(topic_data, timeout); }
+
+    produce_request share();
 
     ss::chunked_fifo<transformed_topic_data> topic_data;
     model::timeout_clock::duration timeout{};

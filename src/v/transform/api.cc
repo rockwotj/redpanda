@@ -225,9 +225,7 @@ public:
       , _client(c) {}
 
     ss::future<> write(ss::chunked_fifo<model::record_batch> batches) override {
-        constexpr auto timeout = 300ms;
-        auto resp = co_await _client->produce(
-          _ntp.tp, std::move(batches), timeout);
+        auto resp = co_await _client->produce(_ntp.tp, std::move(batches));
         if (resp != cluster::errc::success) {
             // TODO: A better exception type or return a status code.
             throw std::runtime_error(
@@ -274,6 +272,10 @@ public:
     ss::future<model::offset> load_latest_offset() final {
         // Use read_committed latest offset
         auto result = _partition.last_stable_offset();
+        if (result.has_error()) {
+            throw kafka::exception(
+              result.error(), kafka::make_error_code(result.error()).message());
+        }
         co_return result.value();
     }
 
@@ -285,7 +287,6 @@ public:
             /*max_offset=*/model::offset::max(),
             // TODO: Make a new priority for WASM transforms
             /*prio=*/kafka_read_priority(),
-            // TODO: Plumb a real abort source down
             /*as=*/*as));
         co_return std::move(translater).reader;
     }

@@ -265,9 +265,8 @@ int32_t redpanda_module::write_record(ffi::array<uint8_t> buf) {
     if (!_call_ctx) {
         return -1;
     }
-    if (_call_ctx->output_record_count >= max_output_records) {
-        return -2;
-    }
+    // TODO: Add a limit on the size of output batch to be the output topic's
+    // max batch size.
     iobuf b;
     b.append(buf.raw(), buf.size());
     expected_record_metadata expected{

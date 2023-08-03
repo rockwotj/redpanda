@@ -23,6 +23,8 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 namespace transform::rpc {
 
 /**
@@ -39,13 +41,22 @@ public:
       ss::sharded<cluster::partition_leaders_table>*,
       ss::sharded<::rpc::connection_cache>*,
       ss::sharded<local_service>*);
+    client(client&&) = delete;
+    client& operator=(client&&) = delete;
+    client(const client&) = delete;
+    client& operator=(const client&) = delete;
+    ~client() = default;
 
-    ss::future<cluster::errc> produce(
-      model::topic_partition,
-      ss::chunked_fifo<model::record_batch>,
-      model::timeout_clock::duration);
+    ss::future<cluster::errc>
+      produce(model::topic_partition, ss::chunked_fifo<model::record_batch>);
+
+    ss::future<> stop();
 
 private:
+    ss::future<produce_reply> do_local_produce(produce_request);
+    ss::future<produce_reply>
+      do_remote_produce(model::node_id, produce_request);
+
     model::node_id _self;
     // need partition_leaders_table to know which node owns the partitions
     ss::sharded<cluster::partition_leaders_table>* _leaders;

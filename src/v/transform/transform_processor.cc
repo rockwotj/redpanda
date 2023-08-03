@@ -114,7 +114,7 @@ ss::future<> processor::start() {
         co_await _engine->initialize();
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error starting stm: {}", ex);
-        _error_callback(_id, _ntp.tp.partition, _meta);
+        _error_callback(_id, _ntp.tp.partition, _meta, is_retryable::no);
     }
     register_source_subscriber();
     _task = ss::when_all_succeed(
@@ -173,7 +173,7 @@ ss::future<> processor::run_transform() {
     } catch (const ss::abort_requested_exception&) {
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error running transform: {}", ex);
-        _error_callback(_id, _ntp.tp.partition, _meta);
+        _error_callback(_id, _ntp.tp.partition, _meta, is_retryable::no);
     }
 }
 
@@ -212,7 +212,7 @@ ss::future<> processor::run_consumer() {
     } catch (const ss::abort_requested_exception&) {
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error running transform consumer: {}", ex);
-        _error_callback(_id, _ntp.tp.partition, _meta);
+        _error_callback(_id, _ntp.tp.partition, _meta, is_retryable::yes);
     }
 }
 
@@ -236,7 +236,7 @@ ss::future<> processor::run_producer(size_t idx) {
     } catch (const ss::abort_requested_exception&) {
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error running transform producer: {}", ex);
-        _error_callback(_id, _ntp.tp.partition, _meta);
+        _error_callback(_id, _ntp.tp.partition, _meta, is_retryable::yes);
     }
 }
 
