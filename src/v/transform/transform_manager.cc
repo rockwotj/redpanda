@@ -303,6 +303,7 @@ manager::do_restart_processor(model::ntp ntp, cluster::transform_id id) {
     auto* p = maybe_processor.value();
     // TODO: record a stat here
     co_await p->stop();
+    // TODO: delay with backoff
     co_await p->start();
 }
 
