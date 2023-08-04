@@ -345,14 +345,13 @@ ss::future<> manager::do_attempt_start_processor(
     }
     co_await start_processor(ntp, id, *transform, attempts);
 }
-wasm::transform_probe* manager::get_or_create_probe(
+probe* manager::get_or_create_probe(
   cluster::transform_id id, const cluster::transform_name& name) {
     auto it = _probes.find(id);
     if (it != _probes.end()) {
         return it->second.get();
     }
-    auto [pit, inserted] = _probes.emplace(
-      id, std::make_unique<wasm::transform_probe>());
+    auto [pit, inserted] = _probes.emplace(id, std::make_unique<probe>());
     vassert(inserted, "double insert into probes map");
     pit->second->setup_metrics(
       name(),

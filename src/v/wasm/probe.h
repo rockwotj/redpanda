@@ -7,6 +7,8 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#pragma once
+
 #include "ssx/metrics.h"
 #include "utils/log_hist.h"
 
@@ -19,13 +21,6 @@
 #include <memory>
 
 namespace wasm {
-
-struct transform_guages {
-    std::function<uint64_t()> num_processors_callback;
-    std::function<uint64_t()> input_queue_size_callback;
-    std::function<uint64_t()> output_queue_size_callback;
-    std::function<uint64_t()> engine_memory_usage_callback;
-};
 
 // Per transform probe
 class transform_probe {
@@ -44,13 +39,15 @@ public:
     }
     void transform_error() { ++_transform_errors; }
 
-    void setup_metrics(ss::sstring transform_name, transform_guages);
+    void setup_metrics(ss::sstring transform_name);
     void clear_metrics() { _public_metrics.clear(); }
+
+protected:
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 
 private:
     uint64_t _transform_errors{0};
     hist_t _transform_latency;
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
 };
 } // namespace wasm

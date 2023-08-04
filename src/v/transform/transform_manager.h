@@ -17,6 +17,7 @@
 #include "ssx/work_queue.h"
 #include "transform/fwd.h"
 #include "transform/io.h"
+#include "transform/probe.h"
 #include "transform/transform_processor.h"
 #include "wasm/fwd.h"
 
@@ -122,15 +123,12 @@ private:
       cluster::transform_id,
       cluster::transform_metadata,
       size_t attempts);
-    wasm::transform_probe*
+    probe*
     get_or_create_probe(cluster::transform_id, const cluster::transform_name&);
     void erase_probe(cluster::transform_id);
 
     wasm::runtime* _runtime;
-    absl::flat_hash_map<
-      cluster::transform_id,
-      std::unique_ptr<wasm::transform_probe>>
-      _probes;
+    absl::flat_hash_map<cluster::transform_id, std::unique_ptr<probe>> _probes;
     std::unique_ptr<plugin_registry> _registry;
     std::unique_ptr<processor_table> _processors;
     ssx::work_queue _queue;

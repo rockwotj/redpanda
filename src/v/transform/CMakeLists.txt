@@ -4,6 +4,7 @@ v_cc_library(
     api.h
   SRCS
     "api.cc"
+    "probe.cc"
     "logger.cc"
     "transform_manager.cc"
     "transform_processor.cc"

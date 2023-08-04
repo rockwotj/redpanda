@@ -18,10 +18,10 @@
 #include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
 #include "transform/logger.h"
+#include "transform/probe.h"
 #include "transform/transform_manager.h"
 #include "utils/prefix_logger.h"
 #include "wasm/fwd.h"
-#include "wasm/probe.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/loop.hh>
@@ -89,7 +89,7 @@ processor::processor(
   error_callback cb,
   std::unique_ptr<source> source,
   std::vector<std::unique_ptr<sink>> sinks,
-  wasm::transform_probe* probe)
+  probe* p)
   : _id(id)
   , _ntp(std::move(ntp))
   , _meta(std::move(meta))
@@ -97,7 +97,7 @@ processor::processor(
   , _source(std::move(source))
   , _sinks(std::move(sinks))
   , _error_callback(std::move(cb))
-  , _probe(probe)
+  , _probe(p)
   , _task(ss::now())
   , _consumer_pings(kQueueBufferSize)
   , _input_queue(kQueueBufferSize)
