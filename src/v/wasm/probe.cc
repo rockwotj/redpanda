@@ -33,7 +33,7 @@ void transform_probe::setup_metrics(ss::sstring transform_name) {
           "latency_us",
           sm::description("Data transforms per record latency"),
           labels,
-          [this] { return _transform_latency.seastar_histogram_logform(1); })
+          [this] { return _transform_latency.public_histogram_logform(); })
           .aggregate({ss::metrics::shard_label}),
         sm::make_counter(
           "errors",
