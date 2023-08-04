@@ -18,3 +18,4 @@ v_cc_library(
 )
 
 add_subdirectory(rpc)
+add_subdirectory(tests)
