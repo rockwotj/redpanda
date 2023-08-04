@@ -27,6 +27,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -36,6 +37,7 @@
 #include <iterator>
 #include <memory>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -94,6 +96,15 @@ public:
     ss::future<model::record_batch_reader>
     read_batch(model::offset offset, ss::abort_source* as) override {
         BOOST_CHECK_EQUAL(offset, _latest_offset);
+        if (!_batches.empty()) {
+            model::record_batch_reader::data_t batches;
+            while (!_batches.empty()) {
+                batches.push_back(_batches.pop());
+            }
+            _latest_offset = model::next_offset(batches.back().last_offset());
+            co_return model::make_memory_record_batch_reader(
+              std::move(batches));
+        }
         auto sub = as->subscribe(
           // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
           [this](const std::optional<std::exception_ptr>& ex) noexcept {
@@ -188,7 +199,8 @@ public:
     model::record_batch read_batch() { return _sinks[0]->read().get(); }
 
 private:
-    model::offset _offset = model::offset(9);
+    static constexpr model::offset start_offset = model::offset(9);
+    model::offset _offset = start_offset;
     std::unique_ptr<transform::processor> _p;
     fake_source* _src;
     std::vector<fake_sink*> _sinks;
@@ -205,8 +217,10 @@ FIXTURE_TEST(process_one, processor_fixture) {
 
 FIXTURE_TEST(process_many, processor_fixture) {
     std::vector<model::record_batch> batches;
-    std::generate_n(
-      std::back_inserter(batches), 32, [this] { return make_tiny_batch(); });
+    constexpr int num_batches = 32;
+    std::generate_n(std::back_inserter(batches), num_batches, [this] {
+        return make_tiny_batch();
+    });
     cork();
     for (auto& b : batches) {
         push_batch(b.share());
