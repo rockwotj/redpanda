@@ -338,15 +338,20 @@ public:
         if (!mod) {
             return 0;
         }
-        constexpr std::string_view memory_export_name = "memory";
-        auto name = WasmEdge_StringWrap(
-          memory_export_name.data(), memory_export_name.size());
-        auto* mem = WasmEdge_ModuleInstanceFindMemory(mod, name);
-        if (!mem) {
-            return 0;
+        uint32_t num_mems = WasmEdge_ModuleInstanceListMemoryLength(mod);
+        std::vector<WasmEdge_String> memory_names;
+        memory_names.assign(num_mems, {});
+        uint32_t returned_mems = WasmEdge_ModuleInstanceListMemory(
+          mod, memory_names.data(), memory_names.size());
+        uint32_t num_pages = 0;
+        for (uint32_t i = 0; i < returned_mems; ++i) {
+            auto* mem = WasmEdge_ModuleInstanceFindMemory(mod, memory_names[i]);
+            if (!mem) {
+                continue;
+            }
+            num_pages += WasmEdge_MemoryInstanceGetPageSize(mem);
         }
         constexpr uint64_t page_size_bytes = 64_KiB;
-        auto num_pages = WasmEdge_MemoryInstanceGetPageSize(mem);
         return num_pages * page_size_bytes;
     }
 
