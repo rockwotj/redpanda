@@ -20,6 +20,9 @@ import (
 )
 
 func newBuildCommand(fs afero.Fs, execFn func(string, []string) error) *cobra.Command {
+	var (
+		debug bool
+	)
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build a transform",
@@ -38,13 +41,30 @@ build a .wasm file.
 			case project.WasmLangTinygo:
 				tinygo, err := installBuildpack(cmd.Context(), buildpack.Tinygo, fs)
 				out.MaybeDie(err, "unable to install tinygo plugin: %v", err)
-				args := []string{"-o", fmt.Sprintf("%s.wasm", cfg.Name)}
+				// See https://tinygo.org/docs/guides/optimizing-binaries/
+				args := []string{
+					"build",
+					// We're targeting WASI environments
+					"-target", "wasi",
+					// Optimize these binaries to the max
+					"-opt", "2",
+					// Print out an error before aborting
+					"-panic", "print",
+					// This is all single threaded, no goroutines
+					"-scheduler", "none",
+					// Output using the project name, deploy expects this
+					"-o", fmt.Sprintf("%s.wasm", cfg.Name),
+				}
+				if !debug {
+					args = append(args, "-no-debug")
+				}
 				out.MaybeDieErr(execFn(tinygo, args))
 			default:
 				out.Die("unknown language: %q", cfg.Language)
 			}
 		},
 	}
+	cmd.Flags().BoolVar(&debug, "debug", false, "Include debug symbols in the binary")
 	return cmd
 }
 

@@ -16,37 +16,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
 
 var Tinygo = Buildpack{
 	Name:    "tinygo",
-	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/v0.28.1-rpk2",
+	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/v0.28.1-rpk3",
 	shaSums: map[string]map[string]string{
-		"linux": {
-			"amd64": "49fcc84b999f072ef1e52512257fcf86d5bf31ee4c68c6d894643507c757d680",
-			"arm64": "054f5d8ec63e69cf21e5fd8e429a18fc31f2cc85f2c4d32248814c991d1639f7",
-		},
 		"darwin": {
-			"amd64": "d1e128157eb1101cfd9b932b2a6bf8cf411f81c0a078e1976bf60565323d8bea",
-			"arm64": "3fd0edc438aa80c197f637a0e385962d1ce3e0ceedf008f3ba4f55746c505394",
+			"amd64": "07a6210f3cbe3e77f3622ae580e721b2f243b973b349084a2bc18bdf541eb6c4",
+			"arm64": "bb499d1962a4535bf2662d28f04abb8a8deaa9d18667ef62b1c83e703bcc25e4",
 		},
-	},
-	modifyArgs: func(c *cobra.Command, p project.Config, args []string) []string {
-		// Add the output flag if not specified
-		for _, arg := range args {
-			if arg == "-o" || strings.HasPrefix(arg, "-o=") {
-				return args
-			}
-		}
-		return append(args, "-o", fmt.Sprintf("%s.wasm", p.Name))
+		"linux": {
+			"amd64": "9954fef4aaf3e2b6aa0162d5768b3ab0ba1d09325fefa1453a8405cc254d3f75",
+			"arm64": "b42929c8b0a86df915ec3649aac9616acb8e06d9b307c3c90afce73b5cafc046",
+		},
 	},
 }
 
@@ -57,16 +46,6 @@ type Buildpack struct {
 	baseURL string
 	// [GOOS][GOARCH] = shasum
 	shaSums map[string]map[string]string
-	// A callback to modify arguments before executing the command
-	modifyArgs func(c *cobra.Command, p project.Config, args []string) []string
-}
-
-// Modify the args before invoking the binary in the buildpack.
-func (bp *Buildpack) ModifyArgs(c *cobra.Command, p project.Config, args []string) []string {
-	if bp.modifyArgs != nil {
-		return bp.modifyArgs(c, p, args)
-	}
-	return args
 }
 
 // The sha of the buildpack for this platform.
