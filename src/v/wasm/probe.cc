@@ -30,8 +30,8 @@ void transform_probe::setup_metrics(ss::sstring transform_name) {
       prometheus_sanitize::metrics_name("transform_execution"),
       {
         sm::make_histogram(
-          "latency_us",
-          sm::description("Data transforms per record latency"),
+          "latency_sec",
+          sm::description("Data transforms per record latency in seconds"),
           labels,
           [this] { return _transform_latency.public_histogram_logform(); })
           .aggregate({ss::metrics::shard_label}),
