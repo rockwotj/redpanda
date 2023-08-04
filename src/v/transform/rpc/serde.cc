@@ -33,7 +33,7 @@ transformed_topic_data transformed_topic_data::share() {
     for (auto& partition : partitions) {
         shared.push_back(partition.share());
     }
-    return {topic, std::move(partitions)};
+    return {topic, std::move(shared)};
 }
 
 produce_request produce_request::share() {
