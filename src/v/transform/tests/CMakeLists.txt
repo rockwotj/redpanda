@@ -1,3 +1,16 @@
+v_cc_library(
+  NAME transform_test_fixture
+  HDRS 
+    test_fixture.h
+  SRCS 
+    test_fixture.cc
+  DEPS
+    v::transform
+    Seastar::seastar
+    v::model_test_utils
+    Boost::unit_test_framework
+  )
+
 rp_test(
   UNIT_TEST
   BINARY_NAME transform_processor
@@ -5,8 +18,7 @@ rp_test(
     transform_processor_test.cc
   LIBRARIES 
     v::seastar_testing_main
-    v::transform
-    v::model_test_utils
+    v::transform_test_fixture
   ARGS "-- -c 1"
   LABELS transform
 )

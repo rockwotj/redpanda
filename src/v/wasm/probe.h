@@ -43,6 +43,7 @@ public:
     void clear_metrics() { _public_metrics.clear(); }
 
 protected:
+    // NOLINTNEXTLINE(*-non-private-member-variables-in-classes)
     ssx::metrics::metric_groups _public_metrics
       = ssx::metrics::metric_groups::make_public();
 
