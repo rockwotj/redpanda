@@ -20,9 +20,7 @@ import (
 )
 
 func newBuildCommand(fs afero.Fs, execFn func(string, []string) error) *cobra.Command {
-	var (
-		debug bool
-	)
+	var debug bool
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build a transform",
