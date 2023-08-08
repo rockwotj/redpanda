@@ -25,8 +25,9 @@
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
 #include "wasm/probe.h"
-#include "wasm/rp_module.h"
 #include "wasm/schema_registry.h"
+#include "wasm/schema_registry_module.h"
+#include "wasm/transform_module.h"
 #include "wasm/wasi.h"
 
 #include <seastar/core/abort_source.hh>
@@ -293,14 +294,22 @@ void register_wasi_module(
 #undef REG_HOST_FN
 }
 
-void register_rp_module(
-  redpanda_module* mod, const WasmEdgeModule& wasmedge_module) {
+void register_transform_module(
+  transform_module* mod, const WasmEdgeModule& wasmedge_module) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&redpanda_module::name>::reg(wasmedge_module, mod, #name)
+    host_function<&transform_module::name>::reg(wasmedge_module, mod, #name)
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_record);
     REG_HOST_FN(write_record);
+#undef REG_HOST_FN
+}
+void register_sr_module(
+  schema_registry_module* mod, const WasmEdgeModule& wasmedge_module) {
+    // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define REG_HOST_FN(name)                                                      \
+    host_function<&schema_registry_module::name>::reg(                         \
+      wasmedge_module, mod, #name)
     REG_HOST_FN(get_schema_definition);
     REG_HOST_FN(get_schema_definition_len);
     REG_HOST_FN(get_subject_schema);
@@ -316,14 +325,16 @@ public:
       std::vector<WasmEdgeModule> modules,
       WasmEdgeStore s,
       WasmEdgeVM vm,
-      std::unique_ptr<redpanda_module> rp_module,
+      std::unique_ptr<transform_module> transform_module,
+      std::unique_ptr<schema_registry_module> sr_module,
       std::unique_ptr<wasi::preview1_module> wasi_module)
       : engine()
       , _modules(std::move(modules))
       , _store_ctx(std::move(s))
       , _vm_ctx(std::move(vm))
       , _user_module_name(user_module_name)
-      , _rp_module(std::move(rp_module))
+      , _rp_module(std::move(transform_module))
+      , _sr_module(std::move(sr_module))
       , _wasi_module(std::move(wasi_module)) {}
     wasmedge_engine(const wasmedge_engine&) = delete;
     wasmedge_engine& operator=(const wasmedge_engine&) = delete;
@@ -490,7 +501,8 @@ private:
     WasmEdgeVM _vm_ctx;
 
     ss::sstring _user_module_name;
-    std::unique_ptr<redpanda_module> _rp_module;
+    std::unique_ptr<transform_module> _rp_module;
+    std::unique_ptr<schema_registry_module> _sr_module;
     std::unique_ptr<wasi::preview1_module> _wasi_module;
 };
 
@@ -523,9 +535,14 @@ public:
         auto vm_ctx = WasmEdgeVM(
           WasmEdge_VMCreate(_config_ctx, store_ctx.get()));
 
-        auto wasmedge_rp_module = create_module(redpanda_module::name);
-        auto rp_module = std::make_unique<redpanda_module>(_sr);
-        register_rp_module(rp_module.get(), wasmedge_rp_module);
+        auto wasmedge_transform_module = create_module(transform_module::name);
+        auto xform_module = std::make_unique<transform_module>();
+        register_transform_module(
+          xform_module.get(), wasmedge_transform_module);
+
+        auto wasmedge_sr_module = create_module(schema_registry_module::name);
+        auto sr_module = std::make_unique<schema_registry_module>(_sr);
+        register_sr_module(sr_module.get(), wasmedge_transform_module);
 
         auto wasmedge_wasi_module = create_module(wasi::preview1_module::name);
         std::vector<ss::sstring> args{_meta.name()};
@@ -538,7 +555,7 @@ public:
 
         (void)_worker;
         result = WasmEdge_VMRegisterModuleFromImport(
-          vm_ctx.get(), wasmedge_rp_module.get());
+          vm_ctx.get(), wasmedge_transform_module.get());
         if (!WasmEdge_ResultOK(result)) {
             vlog(
               wasm_log.warn,
@@ -622,7 +639,7 @@ public:
         }
 
         std::vector<WasmEdgeModule> modules;
-        modules.push_back(std::move(wasmedge_rp_module));
+        modules.push_back(std::move(wasmedge_transform_module));
         modules.push_back(std::move(wasmedge_wasi_module));
 
         co_return std::make_unique<wasmedge_engine>(
@@ -630,7 +647,8 @@ public:
           std::move(modules),
           std::move(store_ctx),
           std::move(vm_ctx),
-          std::move(rp_module),
+          std::move(xform_module),
+          std::move(sr_module),
           std::move(wasi_module));
     }
 

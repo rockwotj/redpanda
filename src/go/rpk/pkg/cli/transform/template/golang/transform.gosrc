@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/rockwotj/redpanda/src/go/sdk"
+	"github.com/redpanda-data/redpanda/src/go/sdk"
 )
 
 func main() {
-        // Register your transform function
+        // Register your transform function. 
+        // This is a good place to perform other setup too.
 	redpanda.OnRecordWritten(doTransform)
 }
 

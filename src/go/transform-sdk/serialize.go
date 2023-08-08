@@ -19,7 +19,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/rockwotj/redpanda/src/go/sdk/internal/rwbuf"
+	"github.com/redpanda-data/redpanda/src/go/sdk/internal/rwbuf"
 )
 
 // Reusable slice of record headers

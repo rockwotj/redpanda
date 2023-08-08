@@ -17,7 +17,7 @@ package redpanda_test
 import (
 	"encoding/json"
 
-	"github.com/rockwotj/redpanda/src/go/sdk"
+	"github.com/redpanda-data/redpanda/src/go/sdk"
 )
 
 // This example shows a filter that outputs only valid JSON into the

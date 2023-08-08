@@ -5,13 +5,14 @@ v_cc_library(
     fwd.h
   SRCS
     "api.cc"
+    "ffi.cc"
     "logger.cc"
     "probe.cc"
+    "schema_registry.cc"
+    "schema_registry_module.cc"
+    "transform_module.cc"
     "wasi.cc"
     "wasmedge.cc"
-    "ffi.cc"
-    "rp_module.cc"
-    "schema_registry.cc"
   DEPS
     wasmedge
     v::storage

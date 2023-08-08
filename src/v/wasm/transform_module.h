@@ -1,11 +1,20 @@
+/*
+ * Copyright 2023 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
 #pragma once
 
 #include "bytes/iobuf.h"
 #include "model/record.h"
-#include "pandaproxy/schema_registry/types.h"
 #include "utils/named_type.h"
 #include "wasm/ffi.h"
-#include "wasm/schema_registry.h"
 
 #include <seastar/util/noncopyable_function.hh>
 
@@ -19,7 +28,7 @@ using batch_handle = named_type<int32_t, struct batch_handle_tag>;
 using record_handle = named_type<int32_t, struct record_handle_tag>;
 
 constexpr std::string_view redpanda_on_record_callback_function_name
-  = "redpanda_on_record";
+  = "redpanda_transform_on_record_written";
 
 struct record_position {
     size_t start_index;
@@ -54,16 +63,16 @@ struct wasm_call_params {
  * This provides an ABI to WASM guests, as well as the mechanism for
  * guest<->host interactions (such as how we call into a wasm host and when).
  */
-class redpanda_module {
+class transform_module {
 public:
-    explicit redpanda_module(schema_registry*);
-    redpanda_module(const redpanda_module&) = delete;
-    redpanda_module& operator=(const redpanda_module&) = delete;
-    redpanda_module(redpanda_module&&) = default;
-    redpanda_module& operator=(redpanda_module&&) = default;
-    ~redpanda_module() = default;
+    transform_module() = default;
+    transform_module(const transform_module&) = delete;
+    transform_module& operator=(const transform_module&) = delete;
+    transform_module(transform_module&&) = default;
+    transform_module& operator=(transform_module&&) = default;
+    ~transform_module() = default;
 
-    static constexpr std::string_view name = "redpanda";
+    static constexpr std::string_view name = "redpanda_transform";
 
     model::record_batch for_each_record(
       const model::record_batch*,
@@ -88,26 +97,6 @@ public:
 
     int32_t write_record(ffi::array<uint8_t>);
 
-    ss::future<int32_t> get_schema_definition_len(
-      pandaproxy::schema_registry::schema_id, uint32_t*);
-
-    ss::future<int32_t> get_schema_definition(
-      pandaproxy::schema_registry::schema_id, ffi::array<uint8_t>);
-
-    ss::future<int32_t> get_subject_schema_len(
-      pandaproxy::schema_registry::subject,
-      pandaproxy::schema_registry::schema_version,
-      uint32_t*);
-
-    ss::future<int32_t> get_subject_schema(
-      pandaproxy::schema_registry::subject,
-      pandaproxy::schema_registry::schema_version,
-      ffi::array<uint8_t>);
-
-    ss::future<int32_t> create_subject_schema(
-      pandaproxy::schema_registry::subject,
-      ffi::array<uint8_t>,
-      pandaproxy::schema_registry::schema_id*);
     // End ABI exports
 
 private:
@@ -120,6 +109,5 @@ private:
       iobuf_const_parser parser, expected_record_metadata);
 
     std::optional<transform_context> _call_ctx;
-    schema_registry* _sr;
 };
 } // namespace wasm

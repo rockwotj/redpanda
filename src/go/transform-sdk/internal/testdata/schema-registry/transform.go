@@ -17,8 +17,8 @@ package main
 import (
 	"bytes"
 
-	"github.com/rockwotj/redpanda/src/go/sdk"
-	"github.com/rockwotj/redpanda/src/go/sdk/sr"
+	"github.com/redpanda-data/redpanda/src/go/sdk"
+	"github.com/redpanda-data/redpanda/src/go/sdk/sr"
 )
 
 var (

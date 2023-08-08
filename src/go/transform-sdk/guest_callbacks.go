@@ -18,7 +18,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/rockwotj/redpanda/src/go/sdk/internal/rwbuf"
+	"github.com/redpanda-data/redpanda/src/go/sdk/internal/rwbuf"
 )
 
 type eventErrorCode int32
@@ -59,13 +59,13 @@ var (
 
 // The ABI that our SDK provides. Redpanda executes this function to determine the protocol contract to execute.
 //
-//export redpanda_abi_version
-func redpandaAbiVersion() int32 {
-	return 2
+//export redpanda_transform_abi_version
+func redpandaTransformAbiVersion() int32 {
+	return 1
 }
 
-//export redpanda_on_record
-func redpandaOnRecord(bh inputBatchHandle, rh inputRecordHandle, recordSize int, currentRelativeOutputOffset int) eventErrorCode {
+//export redpanda_transform_on_record_written
+func redpandaTransformOnRecordWritten(bh inputBatchHandle, rh inputRecordHandle, recordSize int, currentRelativeOutputOffset int) eventErrorCode {
 	if userTransformFunction == nil {
 		println("Invalid configuration, there is no registered user transform function")
 		return evtConfigError

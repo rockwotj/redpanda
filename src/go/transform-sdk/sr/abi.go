@@ -23,17 +23,17 @@ import (
 // These are the host functions that go allows for wasm functions that are imported.
 // See: https://github.com/golang/go/issues/59149
 
-//go:wasmimport redpanda get_schema_definition_len
+//go:wasmimport redpanda_schema_registry get_schema_definition_len
 func getSchemaDefinitionLen(schemaId schemaId, length unsafe.Pointer) int32
 
-//go:wasmimport redpanda get_schema_definition
+//go:wasmimport redpanda_schema_registry get_schema_definition
 func getSchemaDefinition(schemaId schemaId, buf unsafe.Pointer, len int32) int32
 
-//go:wasmimport redpanda get_subject_schema_len
+//go:wasmimport redpanda_schema_registry get_subject_schema_len
 func getSchemaSubjectLen(subject unsafe.Pointer, subjectLen int32, version int32, lenOut unsafe.Pointer) int32
 
-//go:wasmimport redpanda get_subject_schema
+//go:wasmimport redpanda_schema_registry get_subject_schema
 func getSchemaSubject(subject unsafe.Pointer, subjectLen int32, version int32, buf unsafe.Pointer, len int32) int32
 
-//go:wasmimport redpanda create_subject_schema
+//go:wasmimport redpanda_schema_registry create_subject_schema
 func createSubjectSchema(subject unsafe.Pointer, subjectLen int32, buf unsafe.Pointer, len int32, schemaIdOut unsafe.Pointer) int32

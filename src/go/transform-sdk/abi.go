@@ -23,7 +23,7 @@ import (
 // These are the host functions that go allows for wasm functions that are imported.
 // See: https://github.com/golang/go/issues/59149
 
-//go:wasmimport redpanda read_batch_header
+//go:wasmimport redpanda_transform read_batch_header
 func readRecordHeader(
 	h inputBatchHandle,
 	baseOffset unsafe.Pointer,
@@ -38,8 +38,8 @@ func readRecordHeader(
 	baseSequence unsafe.Pointer,
 ) int32
 
-//go:wasmimport redpanda read_record
+//go:wasmimport redpanda_transform read_record
 func readRecord(h inputRecordHandle, buf unsafe.Pointer, len int32) int32
 
-//go:wasmimport redpanda write_record
+//go:wasmimport redpanda_transform write_record
 func writeRecord(buf unsafe.Pointer, len int32) int32

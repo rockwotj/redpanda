@@ -15,7 +15,7 @@
 package main
 
 import (
-	"github.com/rockwotj/redpanda/src/go/sdk"
+	"github.com/redpanda-data/redpanda/src/go/sdk"
 )
 
 func main() {
