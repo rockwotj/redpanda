@@ -15,7 +15,8 @@
 package redpanda
 
 import (
-	"math/rand"
+	randcrypto "crypto/rand"
+	randmath "math/rand"
 	"reflect"
 	"testing"
 	"time"
@@ -31,20 +32,20 @@ var (
 func makeRandomHeaders(n int) []RecordHeader {
 	h := make([]RecordHeader, n)
 	for i := 0; i < n; i++ {
-		k := make([]byte, rand.Intn(32))
-		rand.Read(k)
-		v := make([]byte, rand.Intn(32))
-		rand.Read(v)
+		k := make([]byte, randmath.Intn(32))
+		randcrypto.Read(k)
+		v := make([]byte, randmath.Intn(32))
+		randcrypto.Read(v)
 		h[i] = RecordHeader{Key: k, Value: v}
 	}
 	return h
 }
 
 func makeRandomRecord() Record {
-	k := make([]byte, rand.Intn(32))
-	rand.Read(k)
-	v := make([]byte, rand.Intn(32))
-	rand.Read(v)
+	k := make([]byte, randmath.Intn(32))
+	randcrypto.Read(k)
+	v := make([]byte, randmath.Intn(32))
+	randcrypto.Read(v)
 	return Record{
 		Key:       k,
 		Value:     v,

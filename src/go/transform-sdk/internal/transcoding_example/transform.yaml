@@ -1,0 +1,4 @@
+name: x
+input-topic: avro
+output-topic: json
+language: tinygo
