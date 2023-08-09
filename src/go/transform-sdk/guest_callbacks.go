@@ -18,7 +18,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/redpanda-data/redpanda/src/go/sdk/internal/rwbuf"
+	"github.com/redpanda-data/redpanda/src/go/transform-sdk/internal/rwbuf"
 )
 
 type eventErrorCode int32

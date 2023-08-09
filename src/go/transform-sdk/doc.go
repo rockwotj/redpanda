@@ -20,6 +20,6 @@ an input to an output topic.
 
 Schema registry users can interact with schema registry using a [built-in client].
 
-[built-in client]: https://pkg.go.dev/github.com/redpanda-data/redpanda/src/go/sdk/sr
+[built-in client]: https://pkg.go.dev/github.com/redpanda-data/redpanda/src/go/transform-sdk/sr
 */
 package redpanda

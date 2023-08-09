@@ -17,7 +17,7 @@ package main
 import (
 	"errors"
 
-	"github.com/redpanda-data/redpanda/src/go/sdk"
+	"github.com/redpanda-data/redpanda/src/go/transform-sdk"
 )
 
 func main() {

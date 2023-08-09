@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/sdk/internal/rwbuf"
+	"github.com/redpanda-data/redpanda/src/go/transform-sdk/internal/rwbuf"
 )
 
 var (

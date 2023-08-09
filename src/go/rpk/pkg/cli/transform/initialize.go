@@ -188,12 +188,16 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		out.MaybeDie(err, "unable to install tinygo buildpack: %v", err)
 		g, err := exec.LookPath("go")
 		out.MaybeDie(err, "go is not available on $PATH, please download and install it: https://go.dev/doc/install")
-		c := exec.CommandContext(ctx, g, "mod", "tidy")
-		c.Stderr = os.Stderr
-		c.Stdin = os.Stdin
-		c.Stdout = os.Stdout
-		c.Dir = p.Path
-		out.MaybeDieErr(c.Run())
+		runGoCli := func(args ...string) {
+			c := exec.CommandContext(ctx, g, args...)
+			c.Stderr = os.Stderr
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
+			c.Dir = p.Path
+			out.MaybeDieErr(c.Run())
+		}
+		runGoCli("get", "github.com/redpanda-data/redpanda/src/go/sdk@transform-dev")
+		runGoCli("mod", "tidy")
 		fmt.Println("go modules are tidy 🧹")
 	}
 	return fmt.Errorf("Unknown language %q", p.Lang)

@@ -17,8 +17,8 @@ package main
 import (
 	"bytes"
 
-	"github.com/redpanda-data/redpanda/src/go/sdk"
-	"github.com/redpanda-data/redpanda/src/go/sdk/sr"
+	"github.com/redpanda-data/redpanda/src/go/transform-sdk"
+	"github.com/redpanda-data/redpanda/src/go/transform-sdk/sr"
 )
 
 var (

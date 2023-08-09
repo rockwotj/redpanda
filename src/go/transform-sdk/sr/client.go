@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/redpanda-data/redpanda/src/go/sdk/internal/rwbuf"
+	"github.com/redpanda-data/redpanda/src/go/transform-sdk/internal/rwbuf"
 )
 
 // schemaId is an ID of a schema registered with schema registry
