@@ -654,6 +654,7 @@ public:
         std::vector<WasmEdgeModule> modules;
         modules.push_back(std::move(wasmedge_transform_module));
         modules.push_back(std::move(wasmedge_wasi_module));
+        modules.push_back(std::move(wasmedge_sr_module));
 
         co_return std::make_unique<wasmedge_engine>(
           _meta.name(),
