@@ -141,7 +141,8 @@ configuration::configuration()
       "enable_data_transforms",
       "If WASM powered data transforms are enabled",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
-      false)
+      // ONLY FOR TECH PREVIEW: default to this on
+      true)
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",
