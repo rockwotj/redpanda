@@ -542,7 +542,7 @@ public:
 
         auto wasmedge_sr_module = create_module(schema_registry_module::name);
         auto sr_module = std::make_unique<schema_registry_module>(_sr);
-        register_sr_module(sr_module.get(), wasmedge_transform_module);
+        register_sr_module(sr_module.get(), wasmedge_sr_module);
 
         auto wasmedge_wasi_module = create_module(wasi::preview1_module::name);
         std::vector<ss::sstring> args{_meta.name()};
