@@ -568,6 +568,19 @@ public:
         }
 
         result = WasmEdge_VMRegisterModuleFromImport(
+          vm_ctx.get(), wasmedge_sr_module.get());
+        if (!WasmEdge_ResultOK(result)) {
+            vlog(
+              wasm_log.warn,
+              "Failed to load module: {}",
+              WasmEdge_ResultGetMessage(result));
+            throw wasm_exception(
+              ss::format(
+                "Failed to load module: {}", WasmEdge_ResultGetMessage(result)),
+              errc::load_failure);
+        }
+
+        result = WasmEdge_VMRegisterModuleFromImport(
           vm_ctx.get(), wasmedge_wasi_module.get());
         if (!WasmEdge_ResultOK(result)) {
             vlog(
