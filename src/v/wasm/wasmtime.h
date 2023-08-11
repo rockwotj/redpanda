@@ -13,7 +13,7 @@
 
 namespace wasm::wasmtime {
 
-std::unique_ptr<runtime>
+ss::future<std::unique_ptr<runtime>>
 create_runtime(ssx::thread_worker*, std::unique_ptr<schema_registry>);
 
 } // namespace wasm::wasmtime

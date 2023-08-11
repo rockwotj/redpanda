@@ -16,6 +16,7 @@
 #include "cluster/types.h"
 #include "model/record.h"
 #include "seastarx.h"
+#include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
 #include "units.h"
 #include "utils/mutex.h"
@@ -525,48 +526,54 @@ public:
       cluster::transform_metadata meta,
       std::shared_ptr<wasmtime_module_t> mod,
       schema_registry* sr,
-      ss::logger* l)
+      ss::logger* l,
+      ssx::thread_worker* w)
       : _engine(engine)
       , _module(std::move(mod))
       , _meta(std::move(meta))
       , _sr(sr)
-      , _logger(l) {}
+      , _logger(l)
+      , _worker(w) {}
 
     ss::future<std::unique_ptr<engine>> make_engine() final {
-        handle<wasmtime_store_t, wasmtime_store_delete> store{
-          wasmtime_store_new(_engine, nullptr, nullptr)};
-        auto* context = wasmtime_store_context(store.get());
-        handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
-          wasmtime_linker_new(_engine)};
+        return _worker->submit([this]() -> std::unique_ptr<engine> {
+            handle<wasmtime_store_t, wasmtime_store_delete> store{
+              wasmtime_store_new(_engine, nullptr, nullptr)};
+            auto* context = wasmtime_store_context(store.get());
+            handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
+              wasmtime_linker_new(_engine)};
 
-        auto rp_module = std::make_unique<redpanda_module>(_sr);
-        register_rp_module(rp_module.get(), linker.get());
+            auto rp_module = std::make_unique<redpanda_module>(_sr);
+            register_rp_module(rp_module.get(), linker.get());
 
-        std::vector<ss::sstring> args{_meta.name()};
-        absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.environment;
-        env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
-        env.emplace("REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
-        auto wasi_module = std::make_unique<wasi::preview1_module>(
-          args, env, _logger);
-        register_wasi_module(wasi_module.get(), linker.get());
+            std::vector<ss::sstring> args{_meta.name()};
+            absl::flat_hash_map<ss::sstring, ss::sstring> env
+              = _meta.environment;
+            env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
+            env.emplace(
+              "REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
+            auto wasi_module = std::make_unique<wasi::preview1_module>(
+              args, env, _logger);
+            register_wasi_module(wasi_module.get(), linker.get());
 
-        wasmtime_instance_t instance;
-        wasm_trap_t* trap_ptr = nullptr;
-        handle<wasmtime_error_t, wasmtime_error_delete> error(
-          wasmtime_linker_instantiate(
-            linker.get(), context, _module.get(), &instance, &trap_ptr));
-        handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-        check_error(error.get());
-        check_trap(trap.get());
+            wasmtime_instance_t instance;
+            wasm_trap_t* trap_ptr = nullptr;
+            handle<wasmtime_error_t, wasmtime_error_delete> error(
+              wasmtime_linker_instantiate(
+                linker.get(), context, _module.get(), &instance, &trap_ptr));
+            handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+            check_error(error.get());
+            check_trap(trap.get());
 
-        co_return std::make_unique<wasmtime_engine>(
-          _meta.name(),
-          std::move(linker),
-          std::move(store),
-          _module,
-          std::move(rp_module),
-          std::move(wasi_module),
-          instance);
+            return std::make_unique<wasmtime_engine>(
+              _meta.name(),
+              std::move(linker),
+              std::move(store),
+              _module,
+              std::move(rp_module),
+              std::move(wasi_module),
+              instance);
+        });
     }
 
 private:
@@ -575,6 +582,7 @@ private:
     cluster::transform_metadata _meta;
     schema_registry* _sr;
     ss::logger* _logger;
+    ssx::thread_worker* _worker;
 };
 
 class wasmtime_runtime : public runtime {
@@ -597,13 +605,18 @@ public:
             handle<wasmtime_error_t, wasmtime_error_delete> error{
               wasmtime_module_new(
                 _engine.get(), b.data(), b.size(), &user_module_ptr)};
+            check_error(error.get());
             std::shared_ptr<wasmtime_module_t> user_module{
               user_module_ptr, wasmtime_module_delete};
-            check_error(error.get());
             return user_module;
         });
         co_return std::make_unique<wasmtime_engine_factory>(
-          _engine.get(), std::move(meta), user_module, _sr.get(), logger);
+          _engine.get(),
+          std::move(meta),
+          user_module,
+          _sr.get(),
+          logger,
+          _worker);
     }
 
 private:
@@ -613,8 +626,12 @@ private:
 };
 } // namespace
 
-std::unique_ptr<runtime> create_runtime(
+ss::future<std::unique_ptr<runtime>> create_runtime(
   ssx::thread_worker* V_NONNULL t, std::unique_ptr<schema_registry> sr) {
+    co_await ss::smp::invoke_on_all([] {
+        ss::engine().handle_signal(SIGILL, [] {});
+        ss::engine().handle_signal(SIGFPE, [] {});
+    });
     wasm_config_t* config = wasm_config_new();
 
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_NONE);
@@ -625,10 +642,11 @@ std::unique_ptr<runtime> create_runtime(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     wasmtime_config_max_wasm_stack_set(config, 8_KiB);
     wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
+    // wasmtime_config_debug_info_set(config, true);
 
     handle<wasm_engine_t, &wasm_engine_delete> engine{
       wasm_engine_new_with_config(config)};
-    return std::make_unique<wasmtime_runtime>(
+    co_return std::make_unique<wasmtime_runtime>(
       std::move(engine), t, std::move(sr));
 }
 

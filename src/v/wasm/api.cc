@@ -10,12 +10,12 @@
 #include "wasm/api.h"
 
 #include "wasm/schema_registry.h"
-#include "wasm/wasmedge.h"
+#include "wasm/wasmtime.h"
 
 namespace wasm {
-std::unique_ptr<runtime> runtime::create_default(
+ss::future<std::unique_ptr<runtime>> runtime::create_default(
   ssx::thread_worker* t, pandaproxy::schema_registry::api* schema_reg) {
-    return wasmedge::create_runtime(
+    return wasmtime::create_runtime(
       t, wasm::schema_registry::make_default(schema_reg));
 }
 } // namespace wasm

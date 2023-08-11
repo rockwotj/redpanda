@@ -25,7 +25,7 @@ static ss::logger dummy_logger("wasm_test_logger");
 
 wasm_test_fixture::wasm_test_fixture()
   // TODO: Use a non-default runtime so we can fake schema registry
-  : _runtime(wasm::runtime::create_default(&_worker, nullptr))
+  : _runtime(wasm::runtime::create_default(&_worker, nullptr).get())
   , _engine(nullptr)
   , _meta(cluster::transform_metadata{
       .name = cluster::transform_name(ss::sstring("test_wasm_transform")),

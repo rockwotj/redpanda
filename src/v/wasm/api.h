@@ -71,7 +71,7 @@ public:
     /**
      * Create the default runtime.
      */
-    static std::unique_ptr<runtime>
+    static ss::future<std::unique_ptr<runtime>>
     create_default(ssx::thread_worker*, pandaproxy::schema_registry::api*);
 
     runtime() = default;
