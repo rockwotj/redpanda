@@ -1074,7 +1074,8 @@ void application::wire_up_runtime_services(model::node_id node_id) {
     if (config::shard_local_cfg().enable_data_transforms.value()) {
         syschecks::systemd_message("Creating wasm runtime").get();
         _wasm_runtime = wasm::runtime::create_default(
-          thread_worker.get(), _schema_registry.get());
+                          thread_worker.get(), _schema_registry.get())
+                          .get();
         syschecks::systemd_message("Creating transform service").get();
         set_local_kafka_client_config(
           _data_transforms_client_config, config::node());

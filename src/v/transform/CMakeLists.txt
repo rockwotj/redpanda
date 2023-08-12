@@ -14,6 +14,7 @@ v_cc_library(
     v::storage
     v::cluster
     v::model
+    v::kafka
     v::pandaproxy_schema_registry
     Seastar::seastar
 )

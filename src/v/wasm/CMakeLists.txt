@@ -13,8 +13,10 @@ v_cc_library(
     "transform_module.cc"
     "wasi.cc"
     "wasmedge.cc"
+    "wasmtime.cc"
   DEPS
     wasmedge
+    wasmtime
     v::storage
     v::model
     v::cluster
