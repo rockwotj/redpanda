@@ -1,0 +1,11 @@
+[project]
+name = "admin-rpc"
+description = "A RPC generation tool for Redpanda & RPK from Python3 sources"
+requires-python = ">=3.9,<4.0"
+
+[tool.pyright]
+reportMissingParameterType = true
+reportMissingTypeArgument = true
+reportUnknownVariableType = true
+reportUnknownArgumentType = true
+reportUnusedVariable = false
