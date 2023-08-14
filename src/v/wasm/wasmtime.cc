@@ -24,6 +24,9 @@
 
 #include <seastar/core/posix.hh>
 
+#include <wasmtime/error.h>
+#include <wasmtime/store.h>
+
 #include <csignal>
 #include <pthread.h>
 #include <span>
@@ -33,6 +36,9 @@
 namespace wasm::wasmtime {
 
 namespace {
+
+constexpr uint64_t wasmtime_fuel_amount = 100'000'000;
+
 template<typename T, auto fn>
 struct deleter {
     void operator()(T* ptr) { fn(ptr); }
@@ -390,8 +396,19 @@ public:
     }
 
 private:
+    void reset_fuel() {
+        auto* ctx = wasmtime_store_context(_store.get());
+        uint64_t fuel = 0;
+        wasmtime_context_fuel_remaining(ctx, &fuel);
+        handle<wasmtime_error_t, wasmtime_error_delete> error(
+          wasmtime_context_add_fuel(ctx, wasmtime_fuel_amount - fuel));
+    }
+
     ss::future<> initialize_wasi() {
         return _queue.enqueue<void>([this] {
+            // TODO: Consider having a different amount of fuel for
+            // initialization.
+            reset_fuel();
             auto* ctx = wasmtime_store_context(_store.get());
             wasmtime_extern_t start;
             bool ok = wasmtime_instance_export_get(
@@ -441,6 +458,7 @@ private:
             }
             return _transform_module->for_each_record(
               batch, [this, &ctx, &cb, probe](wasm_call_params params) {
+                  reset_fuel();
                   _wasi_module->set_timestamp(params.current_record_timestamp);
                   auto ml = probe->latency_measurement();
                   wasmtime_val_t result = {
@@ -510,6 +528,9 @@ public:
             handle<wasmtime_store_t, wasmtime_store_delete> store{
               wasmtime_store_new(_engine, nullptr, nullptr)};
             auto* context = wasmtime_store_context(store.get());
+            handle<wasmtime_error_t, wasmtime_error_delete> error(
+              wasmtime_context_add_fuel(context, 0));
+            check_error(error.get());
             handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
               wasmtime_linker_new(_engine)};
 
@@ -531,9 +552,8 @@ public:
 
             wasmtime_instance_t instance;
             wasm_trap_t* trap_ptr = nullptr;
-            handle<wasmtime_error_t, wasmtime_error_delete> error(
-              wasmtime_linker_instantiate(
-                linker.get(), context, _module.get(), &instance, &trap_ptr));
+            error.reset(wasmtime_linker_instantiate(
+              linker.get(), context, _module.get(), &instance, &trap_ptr));
             handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
             check_error(error.get());
             check_trap(trap.get());
@@ -618,7 +638,7 @@ create_runtime(ssx::thread_worker* t, std::unique_ptr<schema_registry> sr) {
 
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_NONE);
     // TODO: Enable fuel consumption
-    wasmtime_config_consume_fuel_set(config, false);
+    wasmtime_config_consume_fuel_set(config, true);
     wasmtime_config_wasm_bulk_memory_set(config, true);
     wasmtime_config_parallel_compilation_set(config, false);
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
