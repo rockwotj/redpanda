@@ -703,9 +703,9 @@ private:
 
 } // namespace
 
-std::unique_ptr<runtime>
+ss::future<std::unique_ptr<runtime>>
 create_runtime(ssx::thread_worker* t, std::unique_ptr<schema_registry> sr) {
-    return std::make_unique<wasmedge_runtime>(t, std::move(sr));
+    co_return std::make_unique<wasmedge_runtime>(t, std::move(sr));
 }
 
 } // namespace wasm::wasmedge
