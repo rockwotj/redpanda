@@ -650,8 +650,7 @@ create_runtime(ssx::thread_worker* t, std::unique_ptr<schema_registry> sr) {
     });
     wasm_config_t* config = wasm_config_new();
 
-    wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_NONE);
-    // TODO: Enable fuel consumption
+    wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_SPEED);
     wasmtime_config_consume_fuel_set(config, true);
     wasmtime_config_wasm_bulk_memory_set(config, true);
     wasmtime_config_parallel_compilation_set(config, false);
