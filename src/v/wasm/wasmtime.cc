@@ -25,6 +25,9 @@
 #include <seastar/core/posix.hh>
 
 #include <wasmtime/error.h>
+#include <wasmtime/extern.h>
+#include <wasmtime/instance.h>
+#include <wasmtime/memory.h>
 #include <wasmtime/store.h>
 
 #include <csignal>
@@ -372,8 +375,19 @@ public:
     std::string_view function_name() const final { return _user_module_name; }
 
     uint64_t memory_usage_size_bytes() const final {
-        // TODO
-        return 0;
+        std::string_view memory_export_name = "memory";
+        auto* ctx = wasmtime_store_context(_store.get());
+        wasmtime_extern_t memory_extern;
+        bool ok = wasmtime_instance_export_get(
+          ctx,
+          &_instance,
+          memory_export_name.data(),
+          memory_export_name.size(),
+          &memory_extern);
+        if (!ok || memory_extern.kind != WASMTIME_EXTERN_MEMORY) {
+            return 0;
+        }
+        return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
     };
 
     ss::future<> start() final { return _queue.start(); }
