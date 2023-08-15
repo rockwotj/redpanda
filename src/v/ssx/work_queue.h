@@ -79,6 +79,11 @@ void work_queue::submit_delayed(
 
 /**
  * A utility for running sequential work on a ss::thread
+ *
+ * Conceptionally calling `enqueue` is the same as ss::async, except that it is
+ * much faster. ss::async creates a ss::thread object which allocates a new
+ * stack and swaps out the stack using some ucontext APIs, so using this queue
+ * we can minimalize the cost of setting up a ss::thread.
  */
 class threaded_work_queue {
 public:
