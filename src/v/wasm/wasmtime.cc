@@ -40,7 +40,7 @@ namespace wasm::wasmtime {
 
 namespace {
 
-constexpr uint64_t wasmtime_fuel_amount = 100'000'000;
+constexpr uint64_t wasmtime_fuel_amount = 1'000'000'000;
 
 template<typename T, auto fn>
 struct deleter {
@@ -398,7 +398,7 @@ public:
 
     ss::future<model::record_batch>
     transform(model::record_batch batch, transform_probe* probe) override {
-        vlog(wasm_log.info, "Transforming batch: {}", batch.header());
+        vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
         if (batch.record_count() == 0) {
             co_return std::move(batch);
         }
