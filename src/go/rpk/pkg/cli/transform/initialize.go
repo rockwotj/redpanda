@@ -196,7 +196,7 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 			c.Dir = p.Path
 			out.MaybeDieErr(c.Run())
 		}
-		runGoCli("get", "github.com/redpanda-data/redpanda/src/go/sdk@transform-dev")
+		runGoCli("get", "github.com/redpanda-data/redpanda/src/go/transform-sdk@transform-dev")
 		runGoCli("mod", "tidy")
 		fmt.Println("go modules are tidy 🧹")
 	}
