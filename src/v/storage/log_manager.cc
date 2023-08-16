@@ -167,6 +167,10 @@ ss::future<> log_manager::clean_close(ss::shared_ptr<storage::log> log) {
 }
 
 ss::future<> log_manager::start() {
+    if (unlikely(config::shard_local_cfg()
+                   .log_disable_housekeeping_for_tests.value())) {
+        co_return;
+    }
     ssx::spawn_with_gate(_open_gate, [this] { return housekeeping(); });
     co_return;
 }
@@ -341,8 +345,7 @@ ss::future<> log_manager::housekeeping_loop() {
                 }
 
                 auto ntp = log_meta.handle->config().ntp();
-                auto log = dynamic_cast<disk_log_impl*>(log_meta.handle.get());
-                auto usage = co_await log->disk_usage(
+                auto usage = co_await log_meta.handle->disk_usage(
                   gc_config(collection_threshold(), _config.retention_bytes()));
 
                 /*
@@ -746,14 +749,7 @@ ss::future<usage_report> log_manager::disk_usage() {
      * TODO: this will be factored out to make the sharing of settings easier to
      * maintain.
      */
-    model::timestamp collection_threshold;
-    if (!_config.delete_retention()) {
-        collection_threshold = model::timestamp(0);
-    } else {
-        collection_threshold = model::timestamp(
-          model::timestamp::now().value()
-          - _config.delete_retention()->count());
-    }
+    auto cfg = default_gc_config();
 
     fragmented_vector<ss::shared_ptr<log>> logs;
     for (auto& it : _logs) {
@@ -763,11 +759,7 @@ ss::future<usage_report> log_manager::disk_usage() {
     co_return co_await ss::map_reduce(
       logs.begin(),
       logs.end(),
-      [this, collection_threshold](ss::shared_ptr<log> l) {
-          auto log = dynamic_cast<disk_log_impl*>(l.get());
-          return log->disk_usage(
-            gc_config(collection_threshold, _config.retention_bytes()));
-      },
+      [cfg](ss::shared_ptr<log> log) { return log->disk_usage(cfg); },
       usage_report{},
       [](usage_report acc, usage_report update) { return acc + update; });
 }
@@ -793,6 +785,18 @@ void log_manager::handle_disk_notification(storage::disk_space_alert alert) {
 void log_manager::trigger_gc() {
     _gc_triggered = true;
     _housekeeping_sem.signal();
+}
+
+gc_config log_manager::default_gc_config() const {
+    model::timestamp collection_threshold;
+    if (!_config.delete_retention()) {
+        collection_threshold = model::timestamp(0);
+    } else {
+        collection_threshold = model::timestamp(
+          model::timestamp::now().value()
+          - _config.delete_retention()->count());
+    }
+    return {collection_threshold, _config.retention_bytes()};
 }
 
 } // namespace storage

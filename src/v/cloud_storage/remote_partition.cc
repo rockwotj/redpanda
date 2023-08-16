@@ -204,9 +204,12 @@ public:
     ss::future<> start(storage::log_reader_config config) {
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
+            _partition_reader_as = config.abort_source;
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
                 vlog(_ctxlog.debug, "abort requested via config.abort_source");
-                dispose_current_reader();
+                if (_reader) {
+                    _partition->evict_segment_reader(std::move(_reader));
+                }
             });
             if (sub) {
                 _as_sub = std::move(*sub);
@@ -264,6 +267,14 @@ public:
 
     bool is_end_of_stream() const override { return _reader == nullptr; }
 
+    void throw_on_external_abort() {
+        _partition->_as.check();
+
+        if (_partition_reader_as) {
+            _partition_reader_as.value().get().check();
+        }
+    }
+
     ss::future<storage_t>
     do_load_slice(model::timeout_clock::time_point deadline) override {
         std::exception_ptr unknown_exception_ptr = nullptr;
@@ -290,6 +301,8 @@ public:
                     co_await set_end_of_stream();
                     co_return storage_t{};
                 }
+
+                throw_on_external_abort();
                 auto reader_delta = _reader->current_delta();
                 if (
                   !_ot_state->empty()
@@ -342,6 +355,8 @@ public:
                 try {
                     auto result = co_await _reader->read_some(
                       deadline, *_ot_state);
+                    throw_on_external_abort();
+
                     if (!result) {
                         vlog(
                           _ctxlog.debug,
@@ -363,6 +378,7 @@ public:
                     }
                     co_return storage_t{std::move(d)};
                 } catch (const stuck_reader_exception& ex) {
+                    throw_on_external_abort();
                     vlog(
                       _ctxlog.warn,
                       "stuck reader: current rp offset: {}, max rp offset: {}",
@@ -467,8 +483,10 @@ private:
             co_return;
         }
         _view_cursor = std::move(cur.value());
-        co_await _view_cursor->maybe_sync_manifest();
-        initialize_reader_state(_view_cursor->manifest().value(), config);
+        co_await _view_cursor->with_manifest(
+          [this, config](const partition_manifest& manifest) {
+              initialize_reader_state(manifest, config);
+          });
         co_return;
     }
 
@@ -654,6 +672,8 @@ private:
     std::unique_ptr<remote_segment_batch_reader> _reader;
     /// Cancellation subscription
     ss::abort_source::subscription _as_sub;
+    /// Reference to the abort source of the partition reader
+    storage::opt_abort_source_t _partition_reader_as;
     /// Guard for the partition gate
     ss::gate::holder _gate_guard;
     model::offset _next_segment_base_offset{};
@@ -758,7 +778,8 @@ uint64_t remote_partition::cloud_log_size() const {
 
 ss::future<> remote_partition::serialize_json_manifest_to_output_stream(
   ss::output_stream<char>& output) const {
-    return _manifest_view->stm_manifest().serialize_json(output);
+    auto tmp = _manifest_view->stm_manifest().clone();
+    co_await tmp.serialize_json(output);
 }
 
 // returns term last kafka offset
@@ -1020,7 +1041,6 @@ struct finalize_data {
     model::initial_revision_id revision;
     cloud_storage_clients::bucket_name bucket;
     cloud_storage_clients::object_key key;
-    cloud_storage_clients::object_tag_formatter tags;
     iobuf serialized_manifest;
     model::offset insync_offset;
 };
@@ -1075,7 +1095,6 @@ ss::future<> finalize_background(remote& api, finalize_data data) {
           data.key,
           std::move(data.serialized_manifest),
           local_rtc,
-          data.tags,
           "manifest");
 
         if (manifest_put_result != upload_result::success) {
@@ -1119,8 +1138,6 @@ void remote_partition::finalize() {
       .bucket = _bucket,
       .key
       = cloud_storage_clients::object_key{stm_manifest.get_manifest_path()()},
-      .tags = cloud_storage::remote::make_partition_manifest_tags(
-        stm_manifest.get_ntp(), stm_manifest.get_revision_id()),
       .serialized_manifest = std::move(serialized_manifest),
       .insync_offset = stm_manifest.get_insync_offset()};
 

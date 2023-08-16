@@ -1222,15 +1222,11 @@ ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
       });
 }
 
-ss::future<> disk_log_impl::maybe_roll(
+ss::future<> disk_log_impl::maybe_roll_unlocked(
   model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
-    // This lock will only rarely be contended.  If it is held, then
-    // we must wait for do_housekeeping to complete before proceeding, because
-    // the log might be in a state mid-roll where it has no appender.
-    // We need to take this irrespective of whether we're actually rolling
-    // or not, in order to ensure that writers wait for a background roll
-    // to complete if one is ongoing.
-    auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
+    vassert(
+      !_segments_rolling_lock.ready(),
+      "Must have taken _segments_rolling_lock");
 
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (_segs.empty()) {
@@ -1253,8 +1249,12 @@ ss::future<> disk_log_impl::maybe_roll(
 
 ss::future<> disk_log_impl::apply_segment_ms() {
     auto gate = _compaction_housekeeping_gate.hold();
-    // do_housekeeping races with maybe_roll to use new_segment.
-    // take a lock to prevent problems
+    // Holding the lock blocks writes to the last open segment.
+    // This is required in order to avoid the logic in this function
+    // racing with an inflight append. Contention on this lock should
+    // be very light, since we wouldn't need to enforce segment.ms
+    // if this partition was high throughput (segment would have rolled
+    // naturally).
     auto lock = co_await _segments_rolling_lock.get_units();
 
     if (_segs.empty()) {
@@ -1529,7 +1529,18 @@ ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
     vassert(!_closed, "truncate_prefix() on closed log - {}", *this);
     return _failure_probes.truncate_prefix().then([this, cfg]() mutable {
         // dispatch the actual truncation
-        return do_truncate_prefix(cfg);
+        return do_truncate_prefix(cfg)
+          .then([this] {
+              /*
+               * after truncation do a quick refresh of cached variables that
+               * are computed during disk usage calculation. this is useful for
+               * providing more timely updates of reclaimable space through the
+               * health report.
+               */
+              return disk_usage_and_reclaimable_space(
+                _manager.default_gc_config());
+          })
+          .discard_result();
     });
 }
 
@@ -2113,6 +2124,11 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
       .local_retention = lcl.total(),
     };
 
+    /*
+     * cache this for access by the health
+     */
+    _reclaimable_local_size_bytes = reclaim.local_retention;
+
     co_return std::make_pair(usage, reclaim);
 }
 
@@ -2585,6 +2601,25 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
     }
 
     co_return res;
+}
+
+size_t disk_log_impl::reclaimable_local_size_bytes() const {
+    /*
+     * circumstances/configuration under which this log will be trimming back to
+     * local retention size may change. catch these before reporting potentially
+     * stale information.
+     */
+    if (!is_cloud_retention_active()) {
+        return 0;
+    }
+    if (config().is_read_replica_mode_enabled()) {
+        // https://github.com/redpanda-data/redpanda/issues/11936
+        return 0;
+    }
+    if (deletion_exempt(config().ntp())) {
+        return 0;
+    }
+    return _reclaimable_local_size_bytes;
 }
 
 } // namespace storage

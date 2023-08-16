@@ -229,6 +229,11 @@ class RpkTool:
         self._tls_cert = tls_cert
         self._tls_enabled = tls_enabled
 
+        # if testing redpanda cloud, override with default superuser
+        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+            self._username, self._password, self._sasl_mechanism = redpanda._superuser
+            self._tls_enabled = True
+
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         def create_topic():
             try:
@@ -939,8 +944,8 @@ class RpkTool:
         return f"{rp_install_path_root}/bin/rpk"
 
     def cluster_maintenance_enable(self, node, wait=False):
-        node_id = self._redpanda.idx(node) if isinstance(node,
-                                                         ClusterNode) else node
+        node_id = self._redpanda.node_id(node) if isinstance(
+            node, ClusterNode) else node
         cmd = [
             self._rpk_binary(), "--api-urls",
             self._admin_host(), "cluster", "maintenance", "enable",
@@ -951,8 +956,8 @@ class RpkTool:
         return self._execute(cmd)
 
     def cluster_maintenance_disable(self, node):
-        node_id = self._redpanda.idx(node) if isinstance(node,
-                                                         ClusterNode) else node
+        node_id = self._redpanda.node_id(node) if isinstance(
+            node, ClusterNode) else node
         cmd = [
             self._rpk_binary(), "--api-urls",
             self._admin_host(), "cluster", "maintenance", "disable",

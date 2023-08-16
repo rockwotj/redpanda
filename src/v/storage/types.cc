@@ -34,10 +34,12 @@ model::offset stm_manager::max_collectible_offset() {
 std::ostream& operator<<(std::ostream& o, const disk& d) {
     fmt::print(
       o,
-      "{{path: {}, free: {}, total: {}}}",
+      "{{path: {}, free: {}, total: {}, alert: {}, fsid: {}}}",
       d.path,
       human::bytes(d.free),
-      human::bytes(d.total));
+      human::bytes(d.total),
+      d.alert,
+      d.fsid);
     return o;
 }
 
@@ -60,6 +62,11 @@ std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
     o << ", over_budget:" << cfg.over_budget;
     o << ", strict_max_bytes:" << cfg.strict_max_bytes;
     o << ", skip_batch_cache:" << cfg.skip_batch_cache;
+    o << ", abortable:" << cfg.abort_source.has_value();
+    o << ", aborted:"
+      << (cfg.abort_source.has_value()
+            ? cfg.abort_source.value().get().abort_requested()
+            : false);
     return o << "}";
 }
 

@@ -70,21 +70,20 @@
 #include "pandaproxy/schema_registry/api.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "raft/types.h"
-#include "redpanda/admin/api-doc/broker.json.h"
-#include "redpanda/admin/api-doc/cluster.json.h"
-#include "redpanda/admin/api-doc/cluster_config.json.h"
-#include "redpanda/admin/api-doc/config.json.h"
-#include "redpanda/admin/api-doc/debug.json.h"
-#include "redpanda/admin/api-doc/features.json.h"
-#include "redpanda/admin/api-doc/hbadger.json.h"
-#include "redpanda/admin/api-doc/partition.json.h"
-#include "redpanda/admin/api-doc/raft.json.h"
-#include "redpanda/admin/api-doc/security.json.h"
-#include "redpanda/admin/api-doc/shadow_indexing.json.h"
-#include "redpanda/admin/api-doc/status.json.h"
-#include "redpanda/admin/api-doc/transaction.json.h"
-#include "redpanda/admin/api-doc/transform.json.h"
-#include "redpanda/admin/api-doc/usage.json.h"
+#include "redpanda/admin/api-doc/broker.json.hh"
+#include "redpanda/admin/api-doc/cluster.json.hh"
+#include "redpanda/admin/api-doc/cluster_config.json.hh"
+#include "redpanda/admin/api-doc/config.json.hh"
+#include "redpanda/admin/api-doc/debug.json.hh"
+#include "redpanda/admin/api-doc/features.json.hh"
+#include "redpanda/admin/api-doc/hbadger.json.hh"
+#include "redpanda/admin/api-doc/partition.json.hh"
+#include "redpanda/admin/api-doc/raft.json.hh"
+#include "redpanda/admin/api-doc/security.json.hh"
+#include "redpanda/admin/api-doc/shadow_indexing.json.hh"
+#include "redpanda/admin/api-doc/status.json.hh"
+#include "redpanda/admin/api-doc/transaction.json.hh"
+#include "redpanda/admin/api-doc/usage.json.hh"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
 #include "security/acl.h"
@@ -831,27 +830,35 @@ map_partition_results(std::vector<cluster::move_cancellation_result> results) {
 }
 
 ss::httpd::broker_json::maintenance_status fill_maintenance_status(
-  const std::optional<cluster::drain_manager::drain_status>& status) {
+  const cluster::broker_state& b_state,
+  const cluster::drain_manager::drain_status& s) {
     ss::httpd::broker_json::maintenance_status ret;
-    if (status) {
-        const auto& s = status.value();
-        ret.draining = true;
-        ret.finished = s.finished;
-        ret.errors = s.errors;
-        ret.partitions = s.partitions.value_or(0);
-        ret.transferring = s.transferring.value_or(0);
-        ret.eligible = s.eligible.value_or(0);
-        ret.failed = s.failed.value_or(0);
-    } else {
-        ret.draining = false;
-        // ensure that the output json has all fields
-        ret.finished = false;
-        ret.errors = false;
-        ret.partitions = 0;
-        ret.transferring = 0;
-        ret.eligible = 0;
-        ret.failed = 0;
-    }
+    ret.draining = b_state.get_maintenance_state()
+                   == model::maintenance_state::active;
+
+    ret.finished = s.finished;
+    ret.errors = s.errors;
+    ret.partitions = s.partitions.value_or(0);
+    ret.transferring = s.transferring.value_or(0);
+    ret.eligible = s.eligible.value_or(0);
+    ret.failed = s.failed.value_or(0);
+
+    return ret;
+}
+ss::httpd::broker_json::maintenance_status
+fill_maintenance_status(const cluster::broker_state& b_state) {
+    ss::httpd::broker_json::maintenance_status ret;
+
+    ret.draining = b_state.get_maintenance_state()
+                   == model::maintenance_state::active;
+    // ensure that the output json has all fields
+    ret.finished = false;
+    ret.errors = false;
+    ret.partitions = 0;
+    ret.transferring = 0;
+    ret.eligible = 0;
+    ret.failed = 0;
+
     return ret;
 }
 
@@ -895,8 +902,7 @@ get_brokers(cluster::controller* const controller) {
               // These fields are defaults that will be overwritten with
               // data from the health report.
               b.is_alive = true;
-              b.maintenance_status = fill_maintenance_status(std::nullopt);
-
+              b.maintenance_status = fill_maintenance_status(nm.state);
               b.internal_rpc_address = nm.broker.rpc_address().host();
               b.internal_rpc_port = nm.broker.rpc_address().port();
 
@@ -921,8 +927,11 @@ get_brokers(cluster::controller* const controller) {
 
               if (r_it != h_report.value().node_reports.end()) {
                   it->second.version = r_it->local_state.redpanda_version;
-                  it->second.maintenance_status = fill_maintenance_status(
-                    r_it->drain_status);
+                  auto nm = members_table.get_node_metadata_ref(r_it->id);
+                  if (nm && r_it->drain_status) {
+                      it->second.maintenance_status = fill_maintenance_status(
+                        nm.value().get().state, r_it->drain_status.value());
+                  }
 
                   auto add_disk = [&ds_list = it->second.disk_space](
                                     const storage::disk& ds) {
@@ -1721,7 +1730,8 @@ admin_server::raft_transfer_leadership_handler(
           fmt::format("Invalid raft group id {}", group_id));
     }
 
-    if (!_shard_table.local().contains(group_id)) {
+    auto shard = _shard_table.local().shard_for(group_id);
+    if (!shard) {
         throw ss::httpd::not_found_exception(
           fmt::format("Raft group {} not found", group_id));
     }
@@ -1746,10 +1756,8 @@ admin_server::raft_transfer_leadership_handler(
       group_id,
       target);
 
-    auto shard = _shard_table.local().shard_for(group_id);
-
     co_return co_await _partition_manager.invoke_on(
-      shard,
+      *shard,
       [group_id, target, this, req = std::move(req)](
         cluster::partition_manager& pm) mutable {
           auto partition = pm.partition_for(group_id);
@@ -2207,7 +2215,7 @@ admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
     }
 
     try {
-        boost::trim_if(raw_license, boost::is_any_of(" \n"));
+        boost::trim_if(raw_license, boost::is_any_of(" \n\r"));
         auto license = security::make_license(raw_license);
         if (license.is_expired()) {
             throw ss::httpd::bad_request_exception(
@@ -2350,12 +2358,6 @@ admin_server::get_broker_handler(std::unique_ptr<ss::http::request> req) {
                                 .local()
                                 .get_node_drain_status(
                                   id, model::time_from_now(5s));
-    if (maybe_drain_status.has_error()) {
-        throw ss::httpd::base_exception(
-          fmt::format(
-            "Unexpected error: {}", maybe_drain_status.error().message()),
-          ss::http::reply::status_type::service_unavailable);
-    }
 
     ss::httpd::broker_json::broker ret;
     ret.node_id = node_meta->broker.id();
@@ -2367,8 +2369,13 @@ admin_server::get_broker_handler(std::unique_ptr<ss::http::request> req) {
     }
     ret.membership_status = fmt::format(
       "{}", node_meta->state.get_membership_state());
-    ret.maintenance_status = fill_maintenance_status(
-      maybe_drain_status.value());
+    ret.maintenance_status = fill_maintenance_status(node_meta->state);
+    if (
+      !maybe_drain_status.has_error()
+      && maybe_drain_status.value().has_value()) {
+        ret.maintenance_status = fill_maintenance_status(
+          node_meta->state, *maybe_drain_status.value());
+    }
 
     co_return ret;
 }

@@ -735,10 +735,6 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         co_return;
     }
 
-    // Block manifest serialization during mutation of the
-    // manifest since it's asynchronous.
-    auto units = co_await _manifest_lock.get_units();
-
     b.for_each_record([this, base_offset = b.base_offset()](model::record&& r) {
         auto key = serde::from_iobuf<cmd_key>(r.release_key());
 
@@ -1002,7 +998,7 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
     if (!disable_safe_add && !_manifest->safe_segment_meta_to_add(meta)) {
         auto last = _manifest->last_segment();
         vlog(
-          _logger.warn,
+          _logger.error,
           "Can't add segment: {}, previous segment: {}",
           meta,
           last);
@@ -1029,7 +1025,7 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
             // the hole.
 
             vlog(
-              _logger.warn,
+              _logger.error,
               "hole in the remote offset range detected! previous last "
               "offset: "
               "{}, new segment base offset: {}",
@@ -1135,7 +1131,7 @@ void archival_metadata_stm::apply_spillover(const spillover_cmd& so) {
           get_start_offset(),
           get_last_offset());
     } else {
-        vlog(_logger.warn, "Can't apply spillover_cmd: {}", so.manifest_meta);
+        vlog(_logger.error, "Can't apply spillover_cmd: {}", so.manifest_meta);
     }
 }
 
@@ -1175,7 +1171,7 @@ archival_metadata_stm::get_segments_to_cleanup() const {
             // manifest in S3 so if we will delete it the data will be lost.
             if (m_name == s_name) {
                 vlog(
-                  _logger.warn,
+                  _logger.error,
                   "The replaced segment name {} collides with the segment {} "
                   "in the manifest. It will be removed to prevent the data "
                   "loss.",

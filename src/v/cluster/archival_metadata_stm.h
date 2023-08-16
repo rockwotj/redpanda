@@ -210,9 +210,6 @@ public:
     command_batch_builder
     batch_start(ss::lowres_clock::time_point deadline, ss::abort_source&);
 
-    /// Acquire the lock that prevents modification of the manifest.
-    auto acquire_manifest_lock() { return _manifest_lock.get_units(); }
-
     enum class state_dirty : uint8_t { dirty, clean };
 
     // If state_dirty::dirty is returned the manifest should be uploaded
@@ -225,6 +222,8 @@ public:
     model::offset get_insync_offset() const { return _insync_offset; }
 
     model::offset get_last_clean_at() const { return _last_clean_at; };
+
+    model::offset max_collectible_offset() override;
 
 private:
     ss::future<std::error_code> do_add_segments(
@@ -241,7 +240,6 @@ private:
 
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
-    model::offset max_collectible_offset() override;
 
     struct segment;
     struct start_offset;
@@ -287,7 +285,6 @@ private:
     prefix_logger _logger;
 
     mutex _lock;
-    mutex _manifest_lock;
 
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
 

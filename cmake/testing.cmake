@@ -21,7 +21,7 @@ message(STATUS "RP_ENABLE_BENCHMARK_TESTS=${RP_ENABLE_BENCHMARK_TESTS}")
 
 function (rp_test)
   set(options
-    FIXTURE_TEST UNIT_TEST BENCHMARK_TEST)
+    FIXTURE_TEST UNIT_TEST BENCHMARK_TEST GTEST)
   set(oneValueArgs BINARY_NAME TIMEOUT PREPARE_COMMAND POST_COMMAND)
   set(multiValueArgs
     INCLUDES
@@ -74,8 +74,8 @@ function (rp_test)
     ${RP_TEST_BINARY_NAME} "${RP_TEST_SOURCES}")
   target_link_libraries(
     ${RP_TEST_BINARY_NAME} PUBLIC "${RP_TEST_LIBRARIES}")
-  if(${BUILD_DEPENDENCIES})
-    add_dependencies(${RP_TEST_BINARY_NAME} ${BUILD_DEPENDENCIES})
+  if (RP_TEST_BUILD_DEPENDENCIES)
+    add_dependencies(${RP_TEST_BINARY_NAME} ${RP_TEST_BUILD_DEPENDENCIES})
   endif()
 
   foreach(i ${RP_TEST_INCLUDES})
@@ -117,10 +117,15 @@ function (rp_test)
     endif()
   endif()
 
+  set(gtest_option "")
+  if (RP_TEST_GTEST)
+      set(gtest_option "--gtest")
+  endif()
+
   if(NOT skip_test)
     add_test (
       NAME ${RP_TEST_BINARY_NAME}
-      COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${prepare_command} ${post_command} ${files_to_copy} ${RP_TEST_ARGS} "
+      COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${gtest_option} ${prepare_command} ${post_command} ${files_to_copy} ${RP_TEST_ARGS} "
       )
     set_tests_properties(${RP_TEST_BINARY_NAME} PROPERTIES LABELS "${RP_TEST_LABELS}")
     if(RP_TEST_TIMEOUT)

@@ -25,7 +25,6 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/fwd.h"
-#include "storage/segment.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
@@ -635,11 +634,6 @@ private:
     ss::condition_variable _leader_cond;
 
     std::optional<ntp_level_probe> _probe{std::nullopt};
-
-    const cloud_storage_clients::object_tag_formatter _segment_tags;
-    const cloud_storage_clients::object_tag_formatter _manifest_tags;
-    const cloud_storage_clients::object_tag_formatter _tx_tags;
-    const cloud_storage_clients::object_tag_formatter _segment_index_tags;
 
     // NTP level adjacent segment merging job
     std::unique_ptr<housekeeping_job> _local_segment_merger;
