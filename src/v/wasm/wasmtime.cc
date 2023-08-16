@@ -40,6 +40,19 @@ namespace wasm::wasmtime {
 
 namespace {
 
+void unblock_signals() {
+    // wasmtime needs to use SIGSEGV, SIGFPE and SIGILL to implement traps,
+    // so we need to unblock them, as by default seastar blocks these
+    // signals when creating the reactor threads (except for shard 0 which
+    // is special and already has this unblocked for some reason).
+    auto wasmtime_signals = ss::make_empty_sigset_mask();
+    ::sigaddset(&wasmtime_signals, SIGSEGV);
+    ::sigaddset(&wasmtime_signals, SIGFPE);
+    ::sigaddset(&wasmtime_signals, SIGILL);
+    int r = ::pthread_sigmask(SIG_UNBLOCK, &wasmtime_signals, nullptr);
+    ss::throw_pthread_error(r);
+}
+
 constexpr uint64_t wasmtime_fuel_amount = 1'000'000'000;
 
 template<typename T, auto fn>
@@ -390,7 +403,15 @@ public:
         return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
     };
 
-    ss::future<> start() final { return _queue.start(); }
+    ss::future<> start() final {
+        co_await _queue.start();
+        co_await _queue.enqueue<void>([] {
+            // It seems that within a new ss::thread that signals are blocked.
+            // so make sure to always unblock them when we startup.
+            unblock_signals();
+            return ss::now();
+        });
+    }
 
     ss::future<> initialize() final { return initialize_wasi(); }
 
@@ -637,17 +658,7 @@ private:
 
 ss::future<std::unique_ptr<runtime>>
 create_runtime(ssx::thread_worker* t, std::unique_ptr<schema_registry> sr) {
-    co_await ss::smp::invoke_on_all([] {
-        // wasmtime needs to use SIGFPE and SIGILL to implement traps,
-        // so we need to unblock them, as by default seastar blocks these
-        // signals when creating the reactor threads (except for shard 0 which
-        // is special and already has this unblocked for some reason).
-        auto wasmtime_signals = ss::make_empty_sigset_mask();
-        ::sigaddset(&wasmtime_signals, SIGFPE);
-        ::sigaddset(&wasmtime_signals, SIGILL);
-        int r = ::pthread_sigmask(SIG_UNBLOCK, &wasmtime_signals, nullptr);
-        ss::throw_pthread_error(r);
-    });
+    co_await ss::smp::invoke_on_all([] { unblock_signals(); });
     wasm_config_t* config = wasm_config_new();
 
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_SPEED);
