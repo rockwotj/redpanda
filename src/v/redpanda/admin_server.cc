@@ -83,6 +83,7 @@
 #include "redpanda/admin/api-doc/shadow_indexing.json.hh"
 #include "redpanda/admin/api-doc/status.json.hh"
 #include "redpanda/admin/api-doc/transaction.json.hh"
+#include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/api-doc/usage.json.hh"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
