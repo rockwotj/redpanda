@@ -12,7 +12,7 @@ function(add_wasm_transform NAME)
   add_custom_target(wasm_testdata_${NAME})
   add_custom_command(TARGET wasm_testdata_${NAME}
                     COMMAND env GOPATH="${GOPATH}" GOROOT="${GOROOT}" 
-                    ${TINYGO_BIN} -o ${WASM_OUTPUT}
+                    ${TINYGO_BIN} build -o ${WASM_OUTPUT}
                     ${NAME}/transform.go
                     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
                     DEPENDS ${MAIN_SRC_ABS})
