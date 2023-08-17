@@ -99,12 +99,14 @@ func (r *RWBuf) WriteBytesWithSize(b []byte) {
 		return
 	}
 	r.WriteVarint(int64(len(b)))
-	r.Write(b)
+	// This cannot fail
+	_, _ = r.Write(b)
 }
 
 func (r *RWBuf) WriteStringWithSize(s string) {
 	r.WriteVarint(int64(len(s)))
-	r.WriteString(s)
+	// This cannot fail
+	_, _ = r.WriteString(s)
 }
 
 // Delay a write of size n, that will be issued using the supplied function,

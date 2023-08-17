@@ -59,11 +59,13 @@ var (
 
 // The ABI that our SDK provides. Redpanda executes this function to determine the protocol contract to execute.
 //
+//lint:ignore U1000 this is not unused, but exposed for our Wasm host environment
 //export redpanda_transform_abi_version
 func redpandaTransformAbiVersion() int32 {
 	return 1
 }
 
+//lint:ignore U1000 this is not unused, but exposed for our Wasm host environment
 //export redpanda_transform_on_record_written
 func redpandaTransformOnRecordWritten(bh inputBatchHandle, rh inputRecordHandle, recordSize int, currentRelativeOutputOffset int) eventErrorCode {
 	if userTransformFunction == nil {
