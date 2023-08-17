@@ -13,6 +13,8 @@
 
 #include "prometheus/prometheus_sanitize.h"
 
+#include <seastar/core/metrics.hh>
+
 namespace transform {
 
 void probe::setup_metrics(ss::sstring transform_name, probe_guages g) {
@@ -50,7 +52,20 @@ void probe::setup_metrics(ss::sstring transform_name, probe_guages g) {
           sm::description("Data transform processor Wasm engine memory usage"),
           labels)
           .aggregate({ss::metrics::shard_label}),
+        sm::make_current_bytes(
+          "processor_read_bytes",
+          [this] { return _read_bytes; },
+          sm::description(),
+          labels)
+          .aggregate({ss::metrics::shard_label}),
+        sm::make_current_bytes(
+          "processor_write_bytes",
+          [this] { return _write_bytes; },
+          sm::description(),
+          labels)
+          .aggregate({ss::metrics::shard_label}),
       });
 }
-
+void probe::increment_write_bytes(uint64_t bytes) { _write_bytes += bytes; }
+void probe::increment_read_bytes(uint64_t bytes) { _read_bytes += bytes; }
 } // namespace transform

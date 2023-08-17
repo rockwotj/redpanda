@@ -26,6 +26,13 @@ struct probe_guages {
 class probe : public wasm::transform_probe {
 public:
     void setup_metrics(ss::sstring transform_name, probe_guages);
+
+    void increment_read_bytes(uint64_t bytes);
+    void increment_write_bytes(uint64_t bytes);
+
+private:
+    uint64_t _read_bytes = 0;
+    uint64_t _write_bytes = 0;
 };
 
 } // namespace transform

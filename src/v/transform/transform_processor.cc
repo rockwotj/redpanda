@@ -64,7 +64,8 @@ extract_batches(model::record_batch_reader::storage_t s) {
 
 ss::future<std::optional<model::offset>> consume_batches(
   std::unique_ptr<model::record_batch_reader::impl> reader,
-  ss::queue<model::record_batch_reader::data_t>* output) {
+  ss::queue<model::record_batch_reader::data_t>* output,
+  probe* p) {
     std::optional<model::offset> latest_offset;
     while (!reader->is_end_of_stream()) {
         auto slice = co_await reader->do_load_slice(model::no_timeout);
@@ -73,6 +74,9 @@ ss::future<std::optional<model::offset>> consume_batches(
             continue;
         }
         latest_offset = model::next_offset(batches.back().last_offset());
+        for (const auto& b : batches) {
+            p->increment_read_bytes(b.size_bytes());
+        }
         co_await output->push_eventually(std::move(batches));
     }
     co_return latest_offset;
@@ -195,7 +199,7 @@ ss::future<> processor::run_consumer() {
             // TODO: Failures should cause backoff
             auto reader = co_await _source->read_batch(offset, &_as);
             auto latest_offset = co_await consume_batches(
-              std::move(reader).release(), &_input_queue);
+              std::move(reader).release(), &_input_queue, _probe);
             if (!latest_offset.has_value() || latest_offset.value() <= offset) {
                 // Wait for a ping before attempting to read after we read and
                 // get nothing.
@@ -231,6 +235,9 @@ ss::future<> processor::run_producer(size_t idx) {
         while (!_as.abort_requested()) {
             auto batches = co_await queue.pop_eventually();
             vlog(_logger.trace, "writing output to {}", tp_ns);
+            for (const auto& b : batches) {
+                _probe->increment_write_bytes(b.size_bytes());
+            }
             co_await sink->write(std::move(batches));
         }
     } catch (const ss::abort_requested_exception&) {
