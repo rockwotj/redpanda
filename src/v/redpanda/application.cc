@@ -1077,6 +1077,11 @@ void application::wire_up_runtime_services(
         _wasm_runtime = wasm::runtime::create_default(
                           thread_worker.get(), _schema_registry.get())
                           .get();
+        _wasm_runtime->start().get();
+        _deferred.emplace_back([this] {
+            _wasm_runtime->stop().get();
+            _wasm_runtime.reset();
+        });
         syschecks::systemd_message("Creating transform service").get();
         set_local_kafka_client_config(
           _data_transforms_client_config, config::node());

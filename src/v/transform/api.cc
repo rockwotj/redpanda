@@ -446,8 +446,10 @@ service::deploy_transform(cluster::transform_metadata meta, iobuf buf) {
     }
     auto _ = _gate.hold();
     auto name = meta.name;
+    vlog(tlog.debug, "deploying transform {}", name);
     bool is_valid = co_await validate_source(
       meta, buf.share(0, buf.size_bytes()));
+    vlog(tlog.debug, "transform {} is valid {}", name, is_valid);
     if (!is_valid) {
         co_return cluster::errc::transform_invalid_source;
     }

@@ -19,10 +19,13 @@
 #include "wasm/logger.h"
 #include "wasm/probe.h"
 #include "wasm/schema_registry_module.h"
+#include "wasm/thread_worker.h"
 #include "wasm/transform_module.h"
 #include "wasm/wasi.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/posix.hh>
+#include <seastar/util/backtrace.hh>
 
 #include <wasmtime/error.h>
 #include <wasmtime/extern.h>
@@ -31,6 +34,7 @@
 #include <wasmtime/store.h>
 
 #include <csignal>
+#include <memory>
 #include <pthread.h>
 #include <span>
 #include <wasm.h>
@@ -39,19 +43,6 @@
 namespace wasm::wasmtime {
 
 namespace {
-
-void unblock_signals() {
-    // wasmtime needs to use SIGSEGV, SIGFPE and SIGILL to implement traps,
-    // so we need to unblock them, as by default seastar blocks these
-    // signals when creating the reactor threads (except for shard 0 which
-    // is special and already has this unblocked for some reason).
-    auto wasmtime_signals = ss::make_empty_sigset_mask();
-    ::sigaddset(&wasmtime_signals, SIGSEGV);
-    ::sigaddset(&wasmtime_signals, SIGFPE);
-    ::sigaddset(&wasmtime_signals, SIGILL);
-    int r = ::pthread_sigmask(SIG_UNBLOCK, &wasmtime_signals, nullptr);
-    ss::throw_pthread_error(r);
-}
 
 constexpr uint64_t wasmtime_fuel_amount = 1'000'000'000;
 
@@ -83,9 +74,7 @@ void check_trap(const wasm_trap_t* trap) {
     wasm_byte_vec_delete(&msg);
     wasm_frame_vec_t trace{.size = 0, .data = nullptr};
     wasm_trap_trace(trap, &trace);
-    for (size_t i = 0; i < trace.size; ++i) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        auto* frame = trace.data[i];
+    for (wasm_frame_t* frame : std::span(trace.data, trace.size)) {
         auto* module_name = wasmtime_frame_module_name(frame);
         auto* function_name = wasmtime_frame_func_name(frame);
         if (module_name && function_name) {
@@ -151,9 +140,7 @@ convert_to_wasmtime(const std::vector<ffi::val_type>& ffi_types) {
 }
 template<typename T>
 wasmtime_val_t convert_to_wasmtime(T value) {
-    if constexpr (ss::is_future<T>::value) {
-        return convert_to_wasmtime(value.get());
-    } else if constexpr (reflection::is_rp_named_type<T>) {
+    if constexpr (reflection::is_rp_named_type<T>) {
         return convert_to_wasmtime(value());
     } else if constexpr (
       std::is_integral_v<T> && sizeof(T) == sizeof(int64_t)) {
@@ -207,7 +194,8 @@ struct host_function<module_func> {
     static void reg(
       wasmtime_linker_t* linker,
       Module* host_module,
-      std::string_view function_name) {
+      std::string_view function_name,
+      ss::alien::instance* alien) {
         std::vector<ffi::val_type> ffi_inputs;
         ffi::transform_types<ArgTypes...>(ffi_inputs);
         std::vector<ffi::val_type> ffi_outputs;
@@ -217,6 +205,10 @@ struct host_function<module_func> {
         // Takes ownership of inputs and outputs
         handle<wasm_functype_t, wasm_functype_delete> functype{
           wasm_functype_new(&inputs, &outputs)};
+        struct func_env {
+            Module* host_module;
+            ss::alien::instance* alien;
+        };
         auto* err = wasmtime_linker_define_func(
           linker,
           Module::name.data(),
@@ -231,7 +223,8 @@ struct host_function<module_func> {
             size_t nargs,
             wasmtime_val_t* results,
             size_t) -> wasm_trap_t* {
-              auto host_module = static_cast<Module*>(env);
+              auto* fenv = static_cast<func_env*>(env);
+              auto* host_module = fenv->host_module;
               constexpr std::string_view memory_export_name = "memory";
               wasmtime_extern_t extern_item;
               bool ok = wasmtime_caller_export_get(
@@ -257,12 +250,28 @@ struct host_function<module_func> {
                       std::apply(
                         module_func,
                         std::tuple_cat(
-                          std::make_tuple(host_module), host_params));
+                          std::make_tuple(host_module),
+                          std::move(host_params)));
+                  } else if constexpr (ss::is_future<ReturnType>::value) {
+                      auto fut = ss::alien::submit_to(
+                        *fenv->alien,
+                        0, // todo run this on the corresponding shard
+                        [host_module,
+                         host_params = std::move(host_params)]() mutable {
+                            return std::apply(
+                              module_func,
+                              std::tuple_cat(
+                                std::make_tuple(host_module), host_params));
+                        });
+                      *results
+                        = convert_to_wasmtime<typename ReturnType::value_type>(
+                          std::move(fut).get());
                   } else {
                       ReturnType host_result = std::apply(
                         module_func,
                         std::tuple_cat(
-                          std::make_tuple(host_module), host_params));
+                          std::make_tuple(host_module),
+                          std::move(host_params)));
                       *results = convert_to_wasmtime<ReturnType>(
                         std::move(host_result));
                   }
@@ -273,8 +282,11 @@ struct host_function<module_func> {
               }
               return nullptr;
           },
-          host_module,
-          nullptr);
+          new func_env(host_module, alien),
+          [](void* env) {
+              auto* fenv = static_cast<func_env*>(env);
+              delete fenv;
+          });
 
         if (err) [[unlikely]] {
             throw wasm::wasm_exception(
@@ -285,10 +297,12 @@ struct host_function<module_func> {
 };
 
 void register_wasi_module(
-  wasi::preview1_module* mod, wasmtime_linker_t* linker) {
+  wasi::preview1_module* mod,
+  wasmtime_linker_t* linker,
+  ss::alien::instance* alien) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&wasi::preview1_module::name>::reg(linker, mod, #name)
+    host_function<&wasi::preview1_module::name>::reg(linker, mod, #name, alien)
     REG_HOST_FN(args_get);
     REG_HOST_FN(args_sizes_get);
     REG_HOST_FN(environ_get);
@@ -337,20 +351,24 @@ void register_wasi_module(
 }
 
 void register_transform_module(
-  transform_module* mod, wasmtime_linker_t* linker) {
+  transform_module* mod,
+  wasmtime_linker_t* linker,
+  ss::alien::instance* alien) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&transform_module::name>::reg(linker, mod, #name)
+    host_function<&transform_module::name>::reg(linker, mod, #name, alien)
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_record);
     REG_HOST_FN(write_record);
 #undef REG_HOST_FN
 }
 void register_sr_module(
-  schema_registry_module* mod, wasmtime_linker_t* linker) {
+  schema_registry_module* mod,
+  wasmtime_linker_t* linker,
+  ss::alien::instance* alien) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&schema_registry_module::name>::reg(linker, mod, #name)
+    host_function<&schema_registry_module::name>::reg(linker, mod, #name, alien)
     REG_HOST_FN(get_schema_definition);
     REG_HOST_FN(get_schema_definition_len);
     REG_HOST_FN(get_subject_schema);
@@ -369,7 +387,8 @@ public:
       std::unique_ptr<transform_module> transform_module,
       std::unique_ptr<schema_registry_module> sr_module,
       std::unique_ptr<wasi::preview1_module> wasi_module,
-      wasmtime_instance_t instance)
+      wasmtime_instance_t instance,
+      ss::sharded<thread_worker>* workers)
       : _user_module_name(std::move(user_module_name))
       , _store(std::move(s))
       , _user_module(std::move(user_module))
@@ -377,7 +396,8 @@ public:
       , _sr_module(std::move(sr_module))
       , _wasi_module(std::move(wasi_module))
       , _linker(std::move(l))
-      , _instance(instance) {}
+      , _instance(instance)
+      , _workers(workers) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
     wasmtime_engine(wasmtime_engine&&) = default;
@@ -403,19 +423,11 @@ public:
         return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
     };
 
-    ss::future<> start() final {
-        co_await _queue.start();
-        co_await _queue.enqueue<void>([] {
-            // It seems that within a new ss::thread that signals are blocked.
-            // so make sure to always unblock them when we startup.
-            unblock_signals();
-            return ss::now();
-        });
-    }
+    ss::future<> start() final { co_return; }
 
     ss::future<> initialize() final { return initialize_wasi(); }
 
-    ss::future<> stop() final { return _queue.stop(); }
+    ss::future<> stop() final { co_return; }
 
     ss::future<model::record_batch>
     transform(model::record_batch batch, transform_probe* probe) override {
@@ -440,7 +452,7 @@ private:
     }
 
     ss::future<> initialize_wasi() {
-        return _queue.enqueue<void>([this] {
+        return _workers->local().submit([this] {
             // TODO: Consider having a different amount of fuel for
             // initialization.
             reset_fuel();
@@ -475,9 +487,7 @@ private:
 
     ss::future<model::record_batch>
     invoke_transform(const model::record_batch* batch, transform_probe* probe) {
-        // TODO: There is a high overhead to starting a thread, this should be
-        // like a background worker instead.
-        return _queue.enqueue<model::record_batch>([this, batch, probe] {
+        return _workers->local().submit([this, batch, probe] {
             auto* ctx = wasmtime_store_context(_store.get());
             wasmtime_extern_t cb;
             bool ok = wasmtime_instance_export_get(
@@ -532,7 +542,6 @@ private:
     }
 
     ss::sstring _user_module_name;
-    ssx::threaded_work_queue _queue;
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
     std::shared_ptr<wasmtime_module_t> _user_module;
     std::unique_ptr<transform_module> _transform_module;
@@ -540,6 +549,7 @@ private:
     std::unique_ptr<wasi::preview1_module> _wasi_module;
     handle<wasmtime_linker_t, wasmtime_linker_delete> _linker;
     wasmtime_instance_t _instance;
+    ss::sharded<thread_worker>* _workers;
 };
 
 class wasmtime_engine_factory : public factory {
@@ -550,59 +560,63 @@ public:
       std::shared_ptr<wasmtime_module_t> mod,
       schema_registry* sr,
       ss::logger* l,
-      ssx::thread_worker* w)
+      ss::sharded<wasm::thread_worker>* w)
       : _engine(engine)
       , _module(std::move(mod))
       , _meta(std::move(meta))
       , _sr(sr)
       , _logger(l)
-      , _worker(w) {}
+      , _workers(w) {}
 
     ss::future<std::unique_ptr<engine>> make_engine() final {
-        return _worker->submit([this]() -> std::unique_ptr<engine> {
-            handle<wasmtime_store_t, wasmtime_store_delete> store{
-              wasmtime_store_new(_engine, nullptr, nullptr)};
-            auto* context = wasmtime_store_context(store.get());
-            handle<wasmtime_error_t, wasmtime_error_delete> error(
-              wasmtime_context_add_fuel(context, 0));
-            check_error(error.get());
-            handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
-              wasmtime_linker_new(_engine)};
+        ss::alien::instance* alien = std::addressof(ss::engine().alien());
+        return _workers->local().submit(
+          [this, alien]() -> std::unique_ptr<engine> {
+              handle<wasmtime_store_t, wasmtime_store_delete> store{
+                wasmtime_store_new(_engine, nullptr, nullptr)};
+              auto* context = wasmtime_store_context(store.get());
+              handle<wasmtime_error_t, wasmtime_error_delete> error(
+                wasmtime_context_add_fuel(context, 0));
+              check_error(error.get());
+              handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
+                wasmtime_linker_new(_engine)};
 
-            auto xform_module = std::make_unique<transform_module>();
-            register_transform_module(xform_module.get(), linker.get());
+              auto xform_module = std::make_unique<transform_module>();
+              register_transform_module(
+                xform_module.get(), linker.get(), alien);
 
-            auto sr_module = std::make_unique<schema_registry_module>(_sr);
-            register_sr_module(sr_module.get(), linker.get());
+              auto sr_module = std::make_unique<schema_registry_module>(_sr);
+              register_sr_module(sr_module.get(), linker.get(), alien);
 
-            std::vector<ss::sstring> args{_meta.name()};
-            absl::flat_hash_map<ss::sstring, ss::sstring> env
-              = _meta.environment;
-            env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
-            env.emplace(
-              "REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
-            auto wasi_module = std::make_unique<wasi::preview1_module>(
-              std::move(args), std::move(env), _logger);
-            register_wasi_module(wasi_module.get(), linker.get());
+              std::vector<ss::sstring> args{_meta.name()};
+              absl::flat_hash_map<ss::sstring, ss::sstring> env
+                = _meta.environment;
+              env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
+              env.emplace(
+                "REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
+              auto wasi_module = std::make_unique<wasi::preview1_module>(
+                std::move(args), std::move(env), _logger);
+              register_wasi_module(wasi_module.get(), linker.get(), alien);
 
-            wasmtime_instance_t instance;
-            wasm_trap_t* trap_ptr = nullptr;
-            error.reset(wasmtime_linker_instantiate(
-              linker.get(), context, _module.get(), &instance, &trap_ptr));
-            handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-            check_error(error.get());
-            check_trap(trap.get());
+              wasmtime_instance_t instance;
+              wasm_trap_t* trap_ptr = nullptr;
+              error.reset(wasmtime_linker_instantiate(
+                linker.get(), context, _module.get(), &instance, &trap_ptr));
+              handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+              check_error(error.get());
+              check_trap(trap.get());
 
-            return std::make_unique<wasmtime_engine>(
-              _meta.name(),
-              std::move(linker),
-              std::move(store),
-              _module,
-              std::move(xform_module),
-              std::move(sr_module),
-              std::move(wasi_module),
-              instance);
-        });
+              return std::make_unique<wasmtime_engine>(
+                _meta.name(),
+                std::move(linker),
+                std::move(store),
+                _module,
+                std::move(xform_module),
+                std::move(sr_module),
+                std::move(wasi_module),
+                instance,
+                _workers);
+          });
     }
 
 private:
@@ -611,68 +625,74 @@ private:
     cluster::transform_metadata _meta;
     schema_registry* _sr;
     ss::logger* _logger;
-    ssx::thread_worker* _worker;
+    ss::sharded<wasm::thread_worker>* _workers;
 };
 
 class wasmtime_runtime : public runtime {
 public:
     wasmtime_runtime(
       handle<wasm_engine_t, &wasm_engine_delete> h,
-      ssx::thread_worker* t,
       std::unique_ptr<schema_registry> sr)
       : _engine(std::move(h))
-      , _worker(t)
       , _sr(std::move(sr)) {}
+
+    ss::future<> start() override {
+        co_await _workers.start();
+        co_await _workers.invoke_on_all(&thread_worker::start);
+    }
+
+    ss::future<> stop() override { return _workers.stop(); }
 
     ss::future<std::unique_ptr<factory>> make_factory(
       cluster::transform_metadata meta,
       iobuf buf,
       ss::logger* logger) override {
-        auto user_module = co_await _worker->submit([this, &buf]() {
-            bytes b = iobuf_to_bytes(buf);
-            wasmtime_module_t* user_module_ptr = nullptr;
-            handle<wasmtime_error_t, wasmtime_error_delete> error{
-              wasmtime_module_new(
-                _engine.get(), b.data(), b.size(), &user_module_ptr)};
-            check_error(error.get());
-            std::shared_ptr<wasmtime_module_t> user_module{
-              user_module_ptr, wasmtime_module_delete};
-            return user_module;
-        });
+        wasm_log.info("submitting task to compile wasm module {}", meta.name);
+        auto user_module = co_await _workers.local().submit(
+          [this, &meta, &buf]() {
+              wasm_log.info("creating compiling wasm module {}", meta.name);
+              bytes b = iobuf_to_bytes(buf);
+              wasmtime_module_t* user_module_ptr = nullptr;
+              handle<wasmtime_error_t, wasmtime_error_delete> error{
+                wasmtime_module_new(
+                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
+              check_error(error.get());
+              std::shared_ptr<wasmtime_module_t> user_module{
+                user_module_ptr, wasmtime_module_delete};
+              return user_module;
+          });
         co_return std::make_unique<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
           user_module,
           _sr.get(),
           logger,
-          _worker);
+          &_workers);
     }
 
 private:
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
-    ssx::thread_worker* _worker;
     std::unique_ptr<schema_registry> _sr;
+    ss::sharded<wasm::thread_worker> _workers;
 };
 
 } // namespace
 
 ss::future<std::unique_ptr<runtime>>
-create_runtime(ssx::thread_worker* t, std::unique_ptr<schema_registry> sr) {
-    co_await ss::smp::invoke_on_all([] { unblock_signals(); });
+create_runtime(ssx::thread_worker*, std::unique_ptr<schema_registry> sr) {
     wasm_config_t* config = wasm_config_new();
 
-    wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_SPEED);
+    wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_NONE);
     wasmtime_config_consume_fuel_set(config, true);
     wasmtime_config_wasm_bulk_memory_set(config, true);
     wasmtime_config_parallel_compilation_set(config, false);
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    wasmtime_config_max_wasm_stack_set(config, 8_KiB);
+    wasmtime_config_max_wasm_stack_set(config, 64_KiB);
     wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
-    // wasmtime_config_debug_info_set(config, true);
 
     handle<wasm_engine_t, &wasm_engine_delete> engine{
       wasm_engine_new_with_config(config)};
     co_return std::make_unique<wasmtime_runtime>(
-      std::move(engine), t, std::move(sr));
+      std::move(engine), std::move(sr));
 }
 } // namespace wasm::wasmtime

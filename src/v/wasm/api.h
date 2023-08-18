@@ -84,13 +84,16 @@ public:
     runtime& operator=(const runtime&) = delete;
     runtime(runtime&&) = delete;
     runtime& operator=(runtime&&) = delete;
+    virtual ~runtime() = default;
+
+    virtual ss::future<> start() { return ss::now(); }
+    virtual ss::future<> stop() { return ss::now(); }
     /**
      * Create a factory for this transform and the corresponding source wasm
      * module.
      */
     virtual ss::future<std::unique_ptr<factory>>
     make_factory(cluster::transform_metadata, iobuf, ss::logger*) = 0;
-    virtual ~runtime() = default;
 };
 
 } // namespace wasm
