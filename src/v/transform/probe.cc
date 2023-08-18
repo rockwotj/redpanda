@@ -55,13 +55,15 @@ void probe::setup_metrics(ss::sstring transform_name, probe_guages g) {
         sm::make_current_bytes(
           "processor_read_bytes",
           [this] { return _read_bytes; },
-          sm::description(),
+          sm::description(
+            "A counter for all the bytes that has been input to a transform"),
           labels)
           .aggregate({ss::metrics::shard_label}),
         sm::make_current_bytes(
           "processor_write_bytes",
           [this] { return _write_bytes; },
-          sm::description(),
+          sm::description("A counter for all the bytes that has been output "
+                          "from a transform"),
           labels)
           .aggregate({ss::metrics::shard_label}),
       });
