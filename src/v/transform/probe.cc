@@ -52,13 +52,13 @@ void probe::setup_metrics(ss::sstring transform_name, probe_guages g) {
           sm::description("Data transform processor Wasm engine memory usage"),
           labels)
           .aggregate({ss::metrics::shard_label}),
-        sm::make_current_bytes(
+        sm::make_counter(
           "processor_read_bytes",
           [this] { return _read_bytes; },
           sm::description(),
           labels)
           .aggregate({ss::metrics::shard_label}),
-        sm::make_current_bytes(
+        sm::make_counter(
           "processor_write_bytes",
           [this] { return _write_bytes; },
           sm::description(),

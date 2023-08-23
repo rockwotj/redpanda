@@ -679,7 +679,7 @@ private:
 } // namespace
 
 ss::future<std::unique_ptr<runtime>>
-create_runtime(ssx::thread_worker*, std::unique_ptr<schema_registry> sr) {
+create_runtime(ssx::thread_worker* t, std::unique_ptr<schema_registry> sr) {
     wasm_config_t* config = wasm_config_new();
 
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_NONE);

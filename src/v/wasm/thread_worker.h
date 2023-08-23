@@ -23,6 +23,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/internal/pollable_fd.hh>
 #include <seastar/core/posix.hh>
+#include <seastar/core/print.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
@@ -143,8 +144,13 @@ public:
 
 private:
     void configure_thread() {
-        ::pthread_setname_np(::pthread_self(), "wasm::thread_worker");
-        auto all_signals = ss::make_full_sigset_mask();
+        auto name = ss::format("wasm-{}", _shard_id);
+        ss::throw_pthread_error(
+          ::pthread_setname_np(::pthread_self(), name.c_str()));
+        auto all_signals = ss::make_empty_sigset_mask();
+        ::sigaddset(&all_signals, SIGILL);
+        ::sigaddset(&all_signals, SIGSEGV);
+        ::sigaddset(&all_signals, SIGFPE);
         ss::throw_pthread_error(
           ::pthread_sigmask(SIG_UNBLOCK, &all_signals, nullptr));
         // pin to core

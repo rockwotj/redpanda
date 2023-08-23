@@ -695,6 +695,9 @@ public:
           logger);
     }
 
+    ss::future<> start() final { co_return; }
+    ss::future<> stop() final { co_return; }
+
 private:
     WasmEdgeConfig _config_ctx;
     ssx::thread_worker* _worker;

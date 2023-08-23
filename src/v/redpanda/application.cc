@@ -1077,7 +1077,6 @@ void application::wire_up_runtime_services(
         _wasm_runtime = wasm::runtime::create_default(
                           thread_worker.get(), _schema_registry.get())
                           .get();
-        _wasm_runtime->start().get();
         _deferred.emplace_back([this] {
             _wasm_runtime->stop().get();
             _wasm_runtime.reset();
@@ -2170,6 +2169,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     controller->set_ready().get();
 
     if (config::shard_local_cfg().enable_data_transforms.value()) {
+        _wasm_runtime->start().get();
         _transform_service.invoke_on_all(&transform::service::start).get();
         vlog(_log.info, "Started data transform service");
     }

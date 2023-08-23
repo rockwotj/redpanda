@@ -86,8 +86,8 @@ public:
     runtime& operator=(runtime&&) = delete;
     virtual ~runtime() = default;
 
-    virtual ss::future<> start() { return ss::now(); }
-    virtual ss::future<> stop() { return ss::now(); }
+    virtual ss::future<> start() = 0;
+    virtual ss::future<> stop() = 0;
     /**
      * Create a factory for this transform and the corresponding source wasm
      * module.
