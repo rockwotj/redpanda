@@ -154,11 +154,11 @@ private:
         ss::throw_pthread_error(
           ::pthread_sigmask(SIG_UNBLOCK, &all_signals, nullptr));
         // pin to core
-        cpu_set_t cs;
-        CPU_ZERO(&cs);
-        CPU_SET(_cpu_id, &cs);
-        auto r = pthread_setaffinity_np(pthread_self(), sizeof(cs), &cs);
-        vassert(r == 0, "Can not pin executor thread to core {}", _cpu_id);
+        // cpu_set_t cs;
+        // CPU_ZERO(&cs);
+        // CPU_SET(_cpu_id, &cs);
+        // auto r = pthread_setaffinity_np(pthread_self(), sizeof(cs), &cs);
+        // vassert(r == 0, "Can not pin executor thread to core {}", _cpu_id);
         wasm_log.info("started wasmtime thread", _shard_id);
     }
     size_t run() {
