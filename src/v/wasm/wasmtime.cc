@@ -648,18 +648,22 @@ public:
       iobuf buf,
       ss::logger* logger) override {
         wasm_log.info("submitting task to compile wasm module {}", meta.name);
-        auto user_module = co_await _workers.local().submit(
-          [this, &meta, &buf]() {
-              wasm_log.info("creating compiling wasm module {}", meta.name);
-              bytes b = iobuf_to_bytes(buf);
-              wasmtime_module_t* user_module_ptr = nullptr;
-              handle<wasmtime_error_t, wasmtime_error_delete> error{
-                wasmtime_module_new(
-                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
-              check_error(error.get());
-              std::shared_ptr<wasmtime_module_t> user_module{
-                user_module_ptr, wasmtime_module_delete};
-              return user_module;
+        auto user_module = co_await _workers.invoke_on(
+          0,
+          // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
+          [this, &meta, &buf](thread_worker& tw) {
+              return tw.submit([this, &meta, &buf] {
+                  wasm_log.info("creating compiling wasm module {}", meta.name);
+                  bytes b = iobuf_to_bytes(buf);
+                  wasmtime_module_t* user_module_ptr = nullptr;
+                  handle<wasmtime_error_t, wasmtime_error_delete> error{
+                    wasmtime_module_new(
+                      _engine.get(), b.data(), b.size(), &user_module_ptr)};
+                  check_error(error.get());
+                  std::shared_ptr<wasmtime_module_t> user_module{
+                    user_module_ptr, wasmtime_module_delete};
+                  return user_module;
+              });
           });
         co_return std::make_unique<wasmtime_engine_factory>(
           _engine.get(),
