@@ -27,6 +27,7 @@
 #include <seastar/core/posix.hh>
 #include <seastar/util/backtrace.hh>
 
+#include <wasmtime/config.h>
 #include <wasmtime/error.h>
 #include <wasmtime/extern.h>
 #include <wasmtime/instance.h>
@@ -648,22 +649,18 @@ public:
       iobuf buf,
       ss::logger* logger) override {
         wasm_log.info("submitting task to compile wasm module {}", meta.name);
-        auto user_module = co_await _workers.invoke_on(
-          0,
-          // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-          [this, &meta, &buf](thread_worker& tw) {
-              return tw.submit([this, &meta, &buf] {
-                  wasm_log.info("creating compiling wasm module {}", meta.name);
-                  bytes b = iobuf_to_bytes(buf);
-                  wasmtime_module_t* user_module_ptr = nullptr;
-                  handle<wasmtime_error_t, wasmtime_error_delete> error{
-                    wasmtime_module_new(
-                      _engine.get(), b.data(), b.size(), &user_module_ptr)};
-                  check_error(error.get());
-                  std::shared_ptr<wasmtime_module_t> user_module{
-                    user_module_ptr, wasmtime_module_delete};
-                  return user_module;
-              });
+        auto user_module = co_await _workers.local().submit(
+          [this, &meta, &buf] {
+              wasm_log.info("creating compiling wasm module {}", meta.name);
+              bytes b = iobuf_to_bytes(buf);
+              wasmtime_module_t* user_module_ptr = nullptr;
+              handle<wasmtime_error_t, wasmtime_error_delete> error{
+                wasmtime_module_new(
+                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
+              check_error(error.get());
+              std::shared_ptr<wasmtime_module_t> user_module{
+                user_module_ptr, wasmtime_module_delete};
+              return user_module;
           });
         co_return std::make_unique<wasmtime_engine_factory>(
           _engine.get(),
@@ -692,7 +689,11 @@ create_runtime(ssx::thread_worker* t, std::unique_ptr<schema_registry> sr) {
     wasmtime_config_parallel_compilation_set(config, false);
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     wasmtime_config_max_wasm_stack_set(config, 64_KiB);
+    // This disables static memory
+    wasmtime_config_static_memory_maximum_size_set(config, 0_KiB);
     wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
+    wasmtime_config_dynamic_memory_reserved_for_growth_set(config, 0_KiB);
+    wasmtime_config_native_unwind_info_set(config, false);
 
     handle<wasm_engine_t, &wasm_engine_delete> engine{
       wasm_engine_new_with_config(config)};
