@@ -660,6 +660,7 @@ public:
               check_error(error.get());
               std::shared_ptr<wasmtime_module_t> user_module{
                 user_module_ptr, wasmtime_module_delete};
+              wasm_log.info("Finished compiling wasm module {}", meta.name);
               return user_module;
           });
         co_return std::make_unique<wasmtime_engine_factory>(

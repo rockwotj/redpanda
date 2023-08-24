@@ -145,20 +145,30 @@ public:
 private:
     void configure_thread() {
         auto name = ss::format("wasm-{}", _shard_id);
-        ss::throw_pthread_error(
-          ::pthread_setname_np(::pthread_self(), name.c_str()));
+        int r = ::pthread_setname_np(::pthread_self(), name.c_str());
+        vassert(
+          r == 0,
+          "cannot set thread name for wasm::thread on shard {}",
+          _shard_id);
         auto all_signals = ss::make_empty_sigset_mask();
         ::sigaddset(&all_signals, SIGILL);
         ::sigaddset(&all_signals, SIGSEGV);
         ::sigaddset(&all_signals, SIGFPE);
-        ss::throw_pthread_error(
-          ::pthread_sigmask(SIG_UNBLOCK, &all_signals, nullptr));
+        r = ::pthread_sigmask(SIG_UNBLOCK, &all_signals, nullptr);
+        vassert(
+          r == 0,
+          "Cannot unmask required signals for wasm::thread on shard {}",
+          _shard_id);
         // pin to core
-        // cpu_set_t cs;
-        // CPU_ZERO(&cs);
-        // CPU_SET(_cpu_id, &cs);
-        // auto r = pthread_setaffinity_np(pthread_self(), sizeof(cs), &cs);
-        // vassert(r == 0, "Can not pin executor thread to core {}", _cpu_id);
+        cpu_set_t cs;
+        CPU_ZERO(&cs);
+        CPU_SET(_cpu_id, &cs);
+        r = pthread_setaffinity_np(pthread_self(), sizeof(cs), &cs);
+        vassert(
+          r == 0,
+          "Can not pin wasm::thread to core {} for shard {}",
+          _cpu_id,
+          _shard_id);
         wasm_log.info("started wasmtime thread", _shard_id);
     }
     size_t run() {
