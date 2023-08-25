@@ -39,12 +39,13 @@ api::api(
   , _max_memory{max_memory}
   , _client_cfg{client_cfg}
   , _cfg{cfg}
-  , _controller(c) {}
+  , _controller(c) {
+    _store = std::make_unique<sharded_store>();
+}
 
 api::~api() noexcept = default;
 
 ss::future<> api::start() {
-    _store = std::make_unique<sharded_store>();
     co_await _store->start(_sg);
     co_await _schema_id_validation_probe.start();
     co_await _schema_id_validation_probe.invoke_on_all(

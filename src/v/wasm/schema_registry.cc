@@ -30,7 +30,10 @@ public:
     schema_registry_impl(
       ppsr::sharded_store* store, ss::sharded<ppsr::seq_writer>* writer)
       : _store(store)
-      , _writer(writer) {}
+      , _writer(writer) {
+        vassert(store, "ppsr::sharded_store should not be nullptr");
+        vassert(writer, "ppsr::seq_writer should not be nullptr");
+    }
 
     bool is_enabled() const override { return true; };
 
