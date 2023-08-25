@@ -26,15 +26,15 @@ import (
 
 var Tinygo = Buildpack{
 	Name:    "tinygo",
-	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/v0.28.1-rpk3",
+	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/v0.29.0-rpk1",
 	shaSums: map[string]map[string]string{
 		"darwin": {
-			"amd64": "07a6210f3cbe3e77f3622ae580e721b2f243b973b349084a2bc18bdf541eb6c4",
-			"arm64": "bb499d1962a4535bf2662d28f04abb8a8deaa9d18667ef62b1c83e703bcc25e4",
+			"amd64": "fc0cf817f85b4d0496511d79d7cc0224ed8bdde3c0633e2c5c657da562633b7b",
+			"arm64": "9fe1f7bbf63405764e0b32b1bb02d2d1753546e5229dc7b43b3ac8d2977bf7e1",
 		},
 		"linux": {
-			"amd64": "9954fef4aaf3e2b6aa0162d5768b3ab0ba1d09325fefa1453a8405cc254d3f75",
-			"arm64": "b42929c8b0a86df915ec3649aac9616acb8e06d9b307c3c90afce73b5cafc046",
+			"amd64": "62546ff97659c0edeb417fe8be6c568de40be3787c56567f75575cd0b5af3d7c",
+			"arm64": "53bf0fb6ed0e06a2dc14578b4f2b220b1f244066f38c8d900be844f389ac30fa",
 		},
 	},
 }
