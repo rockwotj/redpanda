@@ -145,7 +145,7 @@ public:
 
     std::unique_ptr<cluster::controller> controller;
 
-    std::unique_ptr<ssx::thread_worker> thread_worker;
+    std::unique_ptr<ssx::singleton_thread_worker> thread_worker;
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;
