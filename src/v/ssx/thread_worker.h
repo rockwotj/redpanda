@@ -351,8 +351,10 @@ public:
      * start the background thread.
      */
     ss::future<> start(config c) {
-        co_await _impl.start(impl::thread_worker::config{
-          .pin_to_shard_core = true, .name = std::move(c.name)});
+        co_await _impl.start();
+        co_await _impl.invoke_on_all([&c](impl::thread_worker& w) {
+            return w.start({.pin_to_shard_core = true, .name = c.name});
+        });
     }
 
     /**

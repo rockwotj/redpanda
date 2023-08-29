@@ -19,7 +19,6 @@
 #include "wasm/logger.h"
 #include "wasm/probe.h"
 #include "wasm/schema_registry_module.h"
-#include "wasm/thread_worker.h"
 #include "wasm/transform_module.h"
 #include "wasm/wasi.h"
 
@@ -550,7 +549,7 @@ private:
     std::unique_ptr<wasi::preview1_module> _wasi_module;
     handle<wasmtime_linker_t, wasmtime_linker_delete> _linker;
     wasmtime_instance_t _instance;
-    ss::sharded<thread_worker>* _workers;
+    ssx::sharded_thread_worker* _workers;
 };
 
 class wasmtime_engine_factory : public factory {
@@ -637,10 +636,7 @@ public:
       : _engine(std::move(h))
       , _sr(std::move(sr)) {}
 
-    ss::future<> start() override {
-        co_await _workers.start();
-        co_await _workers.invoke_on_all(&thread_worker::start);
-    }
+    ss::future<> start() override { co_await _workers.start({.name = "wasm"}); }
 
     ss::future<> stop() override { return _workers.stop(); }
 
@@ -675,7 +671,7 @@ public:
 private:
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
     std::unique_ptr<schema_registry> _sr;
-    ss::sharded<wasm::thread_worker> _workers;
+    ssx::sharded_thread_worker _workers;
 };
 
 } // namespace
