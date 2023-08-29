@@ -31,7 +31,6 @@
 #include <wasmtime/config.h>
 #include <wasmtime/error.h>
 #include <wasmtime/extern.h>
-#include <wasmtime/func.h>
 #include <wasmtime/instance.h>
 #include <wasmtime/memory.h>
 #include <wasmtime/store.h>
@@ -155,12 +154,13 @@ wasmtime_val_t convert_to_wasmtime(T value) {
 
 class memory : public ffi::memory {
 public:
-    explicit memory(wasmtime_context_t* ctx)
-      : _ctx(ctx)
-      , _underlying() {}
+    explicit memory(wasmtime_context_t* ctx, wasmtime_memory_t* mem)
+      : ffi::memory()
+      , _ctx(ctx)
+      , _underlying(mem) {}
 
     void* translate_raw(size_t guest_ptr, size_t len) final {
-        auto memory_size = wasmtime_memory_data_size(_ctx, &_underlying);
+        auto memory_size = wasmtime_memory_data_size(_ctx, _underlying);
         if ((guest_ptr + len) > memory_size) [[unlikely]] {
             throw wasm_exception(
               ss::format(
@@ -171,14 +171,12 @@ public:
               errc::user_code_failure);
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        return wasmtime_memory_data(_ctx, &_underlying) + guest_ptr;
+        return wasmtime_memory_data(_ctx, _underlying) + guest_ptr;
     }
-
-    void set_underlying_memory(wasmtime_memory_t* m) { _underlying = *m; }
 
 private:
     wasmtime_context_t* _ctx;
-    wasmtime_memory_t _underlying;
+    wasmtime_memory_t* _underlying;
 };
 
 struct host_function_environment {
@@ -189,18 +187,12 @@ struct host_function_environment {
 
 template<auto value>
 struct host_function;
-
 template<
   typename Module,
   typename ReturnType,
   typename... ArgTypes,
   ReturnType (Module::*module_func)(ArgTypes...)>
 struct host_function<module_func> {
-public:
-    /**
-     * Register a host function such that it can be invoked from the Wasmtime
-     * VM.
-     */
     static void reg(
       wasmtime_linker_t* linker,
       host_function_environment* env,
@@ -214,118 +206,88 @@ public:
         // Takes ownership of inputs and outputs
         handle<wasm_functype_t, wasm_functype_delete> functype{
           wasm_functype_new(&inputs, &outputs)};
+        auto* err = wasmtime_linker_define_func(
+          linker,
+          Module::name.data(),
+          Module::name.size(),
+          function_name.data(),
+          function_name.size(),
+          functype.get(),
+          [](
+            void* env,
+            wasmtime_caller_t* caller,
+            const wasmtime_val_t* args,
+            size_t nargs,
+            wasmtime_val_t* results,
+            size_t) -> wasm_trap_t* {
+              auto* fenv = static_cast<host_function_environment*>(env);
+              auto* host_module = static_cast<Module*>(fenv->host_module);
+              constexpr std::string_view memory_export_name = "memory";
+              wasmtime_extern_t extern_item;
+              bool ok = wasmtime_caller_export_get(
+                caller,
+                memory_export_name.data(),
+                memory_export_name.size(),
+                &extern_item);
+              if (!ok || extern_item.kind != WASMTIME_EXTERN_MEMORY)
+                [[unlikely]] {
+                  constexpr std::string_view error = "Missing memory export";
+                  vlog(wasm_log.warn, "{}", error);
+                  return wasmtime_trap_new(error.data(), error.size());
+              }
+              memory mem(
+                wasmtime_caller_context(caller), &extern_item.of.memory);
 
-        handle<wasmtime_error_t, wasmtime_error_delete> error(
-          wasmtime_linker_define_func(
-            linker,
-            Module::name.data(),
-            Module::name.size(),
-            function_name.data(),
-            function_name.size(),
-            functype.get(),
-            &invoke_host_fn,
-            env,
-            /*finalizer=*/nullptr));
-        check_error(error.get());
-    }
+              try {
+                  auto raw = to_raw_values({args, nargs});
 
-private:
-    /**
-     * All the boilerplate setup needed to invoke a host function from the VM.
-     *
-     * Extracts the memory module, and handles exceptions from our host
-     * functions.
-     */
-    static wasm_trap_t* invoke_host_fn(
-      void* env,
-      wasmtime_caller_t* caller,
-      const wasmtime_val_t* args,
-      size_t nargs,
-      wasmtime_val_t* results,
-      size_t nresults) {
-        auto* fenv = static_cast<host_function_environment*>(env);
-        auto* host_module = static_cast<Module*>(fenv->host_module);
-        memory mem(wasmtime_caller_context(caller));
-        wasm_trap_t* trap = extract_memory(caller, &mem);
-        if (trap != nullptr) {
-            return trap;
-        }
-        try {
-            do_invoke_host_fn(
-              host_module,
-              &mem,
-              fenv->alien,
-              fenv->shard_id,
-              {args, nargs},
-              {results, nresults});
-            return nullptr;
-        } catch (const std::exception& e) {
-            vlog(wasm_log.warn, "Failure executing host function: {}", e);
-            std::string_view msg = e.what();
-            return wasmtime_trap_new(msg.data(), msg.size());
-        }
-    }
+                  auto host_params = ffi::extract_parameters<ArgTypes...>(
+                    &mem, raw, 0);
+                  if constexpr (std::is_void_v<ReturnType>) {
+                      std::apply(
+                        module_func,
+                        std::tuple_cat(
+                          std::make_tuple(host_module),
+                          std::move(host_params)));
+                  } else if constexpr (ss::is_future<ReturnType>::value) {
+                      auto fut = ss::alien::submit_to(
+                        *fenv->alien,
+                        fenv->shard_id,
+                        [host_module,
+                         host_params = std::move(host_params)]() mutable {
+                            return std::apply(
+                              module_func,
+                              std::tuple_cat(
+                                std::make_tuple(host_module),
+                                std::move(host_params)));
+                        });
+                      *results
+                        = convert_to_wasmtime<typename ReturnType::value_type>(
+                          std::move(fut).get());
+                  } else {
+                      ReturnType host_result = std::apply(
+                        module_func,
+                        std::tuple_cat(
+                          std::make_tuple(host_module),
+                          std::move(host_params)));
+                      *results = convert_to_wasmtime<ReturnType>(
+                        std::move(host_result));
+                  }
+              } catch (const std::exception& e) {
+                  vlog(wasm_log.warn, "Failure executing host function: {}", e);
+                  std::string_view msg = e.what();
+                  return wasmtime_trap_new(msg.data(), msg.size());
+              }
+              return nullptr;
+          },
+          env,
+          nullptr);
 
-    /**
-     * Translate wasmtime types into our native types, then invoke the
-     * corresponding host function, translating the response types into the
-     * correct types.
-     */
-    static void do_invoke_host_fn(
-      Module* host_module,
-      memory* mem,
-      ss::alien::instance* alien,
-      ss::shard_id shard_id,
-      std::span<const wasmtime_val_t> args,
-      std::span<wasmtime_val_t> results) {
-        auto raw = to_raw_values(args);
-        auto host_params = ffi::extract_parameters<ArgTypes...>(mem, raw, 0);
-        if constexpr (std::is_void_v<ReturnType>) {
-            std::apply(
-              module_func,
-              std::tuple_cat(
-                std::make_tuple(host_module), std::move(host_params)));
-        } else if constexpr (ss::is_future<ReturnType>::value) {
-            auto fut = ss::alien::submit_to(
-              *alien,
-              shard_id,
-              [host_module, host_params = std::move(host_params)]() mutable {
-                  return std::apply(
-                    module_func,
-                    std::tuple_cat(
-                      std::make_tuple(host_module), std::move(host_params)));
-              });
-            results[0] = convert_to_wasmtime<typename ReturnType::value_type>(
-              std::move(fut).get());
-        } else {
-            ReturnType host_result = std::apply(
-              module_func,
-              std::tuple_cat(
-                std::make_tuple(host_module), std::move(host_params)));
-            results[0] = convert_to_wasmtime<ReturnType>(
-              std::move(host_result));
+        if (err) [[unlikely]] {
+            throw wasm::wasm_exception(
+              ss::format("Unable to register {}", function_name),
+              errc::engine_creation_failure);
         }
-    }
-
-    /**
-     * Our ABI contract expects a "memory" export from the module that we can
-     * use to access the VM's memory space.
-     */
-    static wasm_trap_t* extract_memory(wasmtime_caller_t* caller, memory* mem) {
-        constexpr std::string_view memory_export_name = "memory";
-        wasmtime_extern_t extern_item;
-        bool ok = wasmtime_caller_export_get(
-          caller,
-          memory_export_name.data(),
-          memory_export_name.size(),
-          &extern_item);
-        if (!ok || extern_item.kind != WASMTIME_EXTERN_MEMORY) [[unlikely]] {
-            constexpr std::string_view error = "Missing memory export";
-            vlog(wasm_log.warn, "{}", error);
-            return wasmtime_trap_new(error.data(), error.size());
-        }
-        mem->set_underlying_memory(&extern_item.of.memory);
-        return nullptr;
     }
 };
 
@@ -444,7 +406,7 @@ public:
       , _wasi_module(std::move(wasi_module))
       , _linker(std::move(l))
       , _instance(instance)
-      , _alien_thread_pool(workers)
+      , _workers(workers)
       , _host_function_environments(std::move(host_function_environments)) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
@@ -517,7 +479,7 @@ private:
     }
 
     ss::future<> initialize_wasi() {
-        return _alien_thread_pool->submit([this] {
+        return _workers->submit([this] {
             // TODO: Consider having a different amount of fuel for
             // initialization.
             reset_fuel();
@@ -552,7 +514,7 @@ private:
 
     ss::future<transform_result>
     invoke_transform(const model::record_batch* batch) {
-        return _alien_thread_pool->submit([this, batch] {
+        return _workers->submit([this, batch] {
             std::vector<uint64_t> latencies;
             auto* ctx = wasmtime_store_context(_store.get());
             wasmtime_extern_t cb;
@@ -627,7 +589,7 @@ private:
     std::unique_ptr<wasi::preview1_module> _wasi_module;
     handle<wasmtime_linker_t, wasmtime_linker_delete> _linker;
     wasmtime_instance_t _instance;
-    ssx::sharded_thread_worker* _alien_thread_pool;
+    ssx::sharded_thread_worker* _workers;
     std::vector<std::unique_ptr<host_function_environment>>
       _host_function_environments;
 };
@@ -646,12 +608,12 @@ public:
       , _meta(std::move(meta))
       , _sr(sr)
       , _logger(l)
-      , _alien_thread_pool(w) {}
+      , _workers(w) {}
 
     ss::future<std::unique_ptr<engine>> make_engine() final {
         ss::alien::instance* alien = &ss::engine().alien();
         ss::shard_id shard_id = ss::this_shard_id();
-        return _alien_thread_pool->submit(
+        return _workers->submit(
           [this, alien, shard_id]() -> std::unique_ptr<engine> {
               handle<wasmtime_store_t, wasmtime_store_delete> store{
                 wasmtime_store_new(_engine, nullptr, nullptr)};
@@ -702,7 +664,7 @@ public:
                 std::move(wasi_module),
                 std::move(host_function_envs),
                 instance,
-                _alien_thread_pool);
+                _workers);
           });
     }
 
@@ -712,7 +674,7 @@ private:
     model::transform_metadata _meta;
     schema_registry* _sr;
     ss::logger* _logger;
-    ssx::sharded_thread_worker* _alien_thread_pool;
+    ssx::sharded_thread_worker* _workers;
 };
 
 class wasmtime_runtime : public runtime {
@@ -724,11 +686,11 @@ public:
       , _sr(std::move(sr)) {}
 
     ss::future<> start() override {
-        co_await _alien_thread_pool.start({.name = "wasm"});
+        co_await _workers.start({.name = "wasm"});
         co_await ss::smp::invoke_on_all([this] {
-            return _alien_thread_pool.submit([] {
+            return _workers.submit([] {
                 // wasmtime needs some signals for it's handling, make sure we
-                // unblock them.
+                // unblock them
                 auto mask = ss::make_empty_sigset_mask();
                 sigaddset(&mask, SIGSEGV);
                 sigaddset(&mask, SIGILL);
@@ -739,39 +701,36 @@ public:
         });
     }
 
-    ss::future<> stop() override { return _alien_thread_pool.stop(); }
+    ss::future<> stop() override { return _workers.stop(); }
 
     ss::future<std::unique_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
-        auto user_module = co_await _alien_thread_pool.submit(
-          [this, &meta, &buf] {
-              vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
-              // This can be a large contiguous allocation, however it happens
-              // on an alien thread so it bypasses the seastar allocator.
-              bytes b = iobuf_to_bytes(buf);
-              wasmtime_module_t* user_module_ptr = nullptr;
-              handle<wasmtime_error_t, wasmtime_error_delete> error{
-                wasmtime_module_new(
-                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
-              check_error(error.get());
-              std::shared_ptr<wasmtime_module_t> user_module{
-                user_module_ptr, wasmtime_module_delete};
-              wasm_log.info("Finished compiling wasm module {}", meta.name);
-              return user_module;
-          });
+        auto user_module = co_await _workers.submit([this, &meta, &buf] {
+            vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
+            bytes b = iobuf_to_bytes(buf);
+            wasmtime_module_t* user_module_ptr = nullptr;
+            handle<wasmtime_error_t, wasmtime_error_delete> error{
+              wasmtime_module_new(
+                _engine.get(), b.data(), b.size(), &user_module_ptr)};
+            check_error(error.get());
+            std::shared_ptr<wasmtime_module_t> user_module{
+              user_module_ptr, wasmtime_module_delete};
+            wasm_log.info("Finished compiling wasm module {}", meta.name);
+            return user_module;
+        });
         co_return std::make_unique<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
           user_module,
           _sr.get(),
           logger,
-          &_alien_thread_pool);
+          &_workers);
     }
 
 private:
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
     std::unique_ptr<schema_registry> _sr;
-    ssx::sharded_thread_worker _alien_thread_pool;
+    ssx::sharded_thread_worker _workers;
 };
 
 } // namespace
@@ -779,26 +738,17 @@ private:
 std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     wasm_config_t* config = wasm_config_new();
 
-    // Spend more time compiling so that we can have faster code.
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_SPEED);
-    // Fuel allows us to stop execution after some time.
     wasmtime_config_consume_fuel_set(config, true);
-    // We want to enable memcopy and other efficent memcpy operators
     wasmtime_config_wasm_bulk_memory_set(config, true);
-    // Our internal build disables this feature, so we don't need to turn it
-    // off, otherwise we'd want to turn this off by default.
-    // wasmtime_config_parallel_compilation_set(config, false);
-
-    // Set max stack size to generally be as big as a contiguous memory region
-    // we're willing to allocate in Redpanda.
+    wasmtime_config_parallel_compilation_set(config, false);
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     wasmtime_config_max_wasm_stack_set(config, 128_KiB);
-    // This disables static memory, see:
-    // https://docs.wasmtime.dev/contributing-architecture.html#linear-memory
+    // This disables static memory
     wasmtime_config_static_memory_maximum_size_set(config, 0_KiB);
     wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
     wasmtime_config_dynamic_memory_reserved_for_growth_set(config, 0_KiB);
-    // Don't modify the unwind info as registering these symbols causes C++
+    // don't modify the unwind info as registering these symbols causes C++
     // exceptions to grab a lock in libgcc and deadlock the Redpanda process.
     wasmtime_config_native_unwind_info_set(config, false);
 
