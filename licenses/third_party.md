@@ -38,6 +38,7 @@ please keep this up to date with every new library use.
 | seastar         | Apache License 2                   |
 | snappy          | https://github.com/google/snappy/blob/master/COPYING |
 | WasmEdge        | Apache License 2                   |
+| wasmtime        | Apache License 2                   |
 | xml2            | MIT                                |
 | xxhash          | BSD                                |
 | xz:liblzma      | Public Domain                      |
