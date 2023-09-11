@@ -22,6 +22,8 @@
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
 
+#include <seastar/core/chunked_fifo.hh>
+
 #include <algorithm>
 #include <exception>
 #include <optional>
@@ -29,24 +31,20 @@
 #include <vector>
 namespace wasm {
 
-constexpr int32_t SUCCESS = 0;
 constexpr int32_t NO_ACTIVE_TRANSFORM = -1;
-constexpr int32_t INVALID_HANDLE = -2;
-constexpr int32_t INVALID_BUFFER = -3;
+constexpr int32_t INVALID_BUFFER = -2;
 
-model::record_batch transform_module::for_each_record(
-  const model::record_batch* input,
-  ss::noncopyable_function<void(wasm_call_params)> func) {
+ss::future<ss::chunked_fifo<model::record_batch>>
+transform_module::transform(const model::record_batch* input) {
     vassert(
       input->header().attrs.compression() == model::compression::none,
       "wasm transforms expect uncompressed batches");
 
     iobuf_const_parser parser(input->data());
 
-    auto bh = batch_handle(input->header().crc);
-
-    std::vector<record_position> record_positions;
+    ss::chunked_fifo<record_position> record_positions;
     record_positions.reserve(input->record_count());
+    size_t max_record_size = 0;
 
     while (parser.bytes_left() > 0) {
         auto start_index = parser.bytes_consumed();
@@ -54,53 +52,43 @@ model::record_batch transform_module::for_each_record(
         parser.skip(sizeof(model::record_attributes::type));
         auto [timestamp_delta, td] = parser.read_varlong();
         parser.skip(size - sizeof(model::record_attributes::type) - td);
+        size_t record_size = size + amt;
+        max_record_size = std::max(record_size, max_record_size);
         record_positions.push_back(
           {.start_index = start_index,
-           .size = size_t(size + amt),
+           .size = record_size,
            .timestamp_delta = int32_t(timestamp_delta)});
     }
 
     _call_ctx.emplace(transform_context{
       .input = input,
+      .max_input_record_size = max_record_size,
+      .record_positions = std::move(record_positions),
     });
 
-    for (const auto& record_position : record_positions) {
-        _call_ctx->current_record = record_position;
-        auto current_record_timestamp = input->header().first_timestamp()
-                                        + record_position.timestamp_delta;
-        try {
-            func({
-              .batch_handle = bh,
-              .record_handle = record_handle(
-                int32_t(record_position.start_index)),
-              .record_size = int32_t(record_position.size),
-              .current_record_offset = int32_t(_call_ctx->output_record_count),
-              .current_record_timestamp = model::timestamp(
-                current_record_timestamp),
-            });
-        } catch (...) {
-            _call_ctx = std::nullopt;
-            std::rethrow_exception(std::current_exception());
-        }
-    }
+    // Allow the transform to process until it's ready for another batch
+    _input_batch_ready.signal();
+    co_await _waiting_for_next_input_batch.when();
 
-    model::record_batch::compressed_records records = std::move(
-      _call_ctx->output_records);
-    model::record_batch_header header = _call_ctx->input->header();
-    header.size_bytes = int32_t(
-      model::packed_record_batch_header_size + records.size_bytes());
-    header.record_count = _call_ctx->output_record_count;
-    model::record_batch batch(
-      header, std::move(records), model::record_batch::tag_ctor_ng{});
-    batch.header().crc = model::crc_record_batch(batch);
-    batch.header().header_crc = model::internal_header_only_crc(batch.header());
+    ss::chunked_fifo<model::record_batch> batches;
+    for (output_batch& b : _call_ctx->output_batches) {
+        model::record_batch::compressed_records records = std::move(b.records);
+        model::record_batch_header header = _call_ctx->input->header();
+        header.size_bytes = int32_t(
+          model::packed_record_batch_header_size + records.size_bytes());
+        header.record_count = b.record_count;
+        model::record_batch batch(
+          header, std::move(records), model::record_batch::tag_ctor_ng{});
+        batch.header().crc = model::crc_record_batch(batch);
+        batch.header().header_crc = model::internal_header_only_crc(
+          batch.header());
+    }
     _call_ctx = std::nullopt;
-    return batch;
+    co_return std::move(batches);
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-int32_t transform_module::read_batch_header(
-  batch_handle bh,
+ss::future<int32_t> transform_module::read_batch_header(
   int64_t* base_offset,
   int32_t* record_count,
   int32_t* partition_leader_epoch,
@@ -112,11 +100,10 @@ int32_t transform_module::read_batch_header(
   int16_t* producer_epoch,
   int32_t* base_sequence) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
+    _waiting_for_next_input_batch.signal();
+    co_await _input_batch_ready.when();
     if (!_call_ctx) {
-        return NO_ACTIVE_TRANSFORM;
-    }
-    if (bh != _call_ctx->input->header().crc) {
-        return INVALID_HANDLE;
+        co_return NO_ACTIVE_TRANSFORM;
     }
     *base_offset = _call_ctx->input->base_offset();
     *record_count = _call_ctx->input->record_count();
@@ -128,42 +115,51 @@ int32_t transform_module::read_batch_header(
     *producer_id = _call_ctx->input->header().producer_id;
     *producer_epoch = _call_ctx->input->header().producer_epoch;
     *base_sequence = _call_ctx->input->header().base_sequence;
-    return SUCCESS;
+
+    _wasi_module->set_timestamp(_call_ctx->input->header().first_timestamp);
+
+    co_return int32_t(_call_ctx->max_input_record_size);
 }
-int32_t
-transform_module::read_record(record_handle h, ffi::array<uint8_t> buf) {
-    if (!_call_ctx) {
+
+int32_t transform_module::read_record(ffi::array<uint8_t> buf) {
+    if (!_call_ctx || _call_ctx->record_positions.empty()) {
         return NO_ACTIVE_TRANSFORM;
     }
-    if (h != int32_t(_call_ctx->current_record.start_index)) {
-        return INVALID_HANDLE;
-    }
-    if (_call_ctx->current_record.size != buf.size()) {
+    auto current = _call_ctx->record_positions.front();
+    if (current.size < buf.size()) {
         // Buffer wrong size
         return INVALID_BUFFER;
     }
+    _call_ctx->record_positions.pop_front();
+    _wasi_module->set_timestamp(model::timestamp(
+      _call_ctx->input->header().first_timestamp() + current.timestamp_delta));
+    _call_ctx->latest_record_timestamp_delta = current.timestamp_delta;
     iobuf_const_parser parser(_call_ctx->input->data());
-    parser.skip(_call_ctx->current_record.start_index);
+    parser.skip(current.start_index);
     parser.consume_to(buf.size(), buf.data());
     return int32_t(buf.size());
 }
 
-bool transform_module::is_valid_serialized_record(
+transform_module::validation_result
+transform_module::validate_serialized_record(
   iobuf_const_parser parser, expected_record_metadata expected) {
+    bool start_new_batch = false;
     try {
         auto [record_size, amt] = parser.read_varlong();
         if (size_t(record_size) != parser.bytes_left()) {
-            return false;
+            return {.is_valid = false};
         }
         parser.skip(sizeof(model::record_attributes::type));
         auto [timestamp_delta, td] = parser.read_varlong();
         auto [offset_delta, od] = parser.read_varlong();
         if (expected.timestamp != timestamp_delta) {
-            return false;
+            return {.is_valid = false};
         }
-        if (expected.offset != offset_delta) {
-            return false;
+        // It's always valid to start a new batch
+        if (expected.offset != offset_delta && offset_delta != 0) {
+            return {.is_valid = false};
         }
+        start_new_batch = offset_delta == 0;
         auto [key_length, kl] = parser.read_varlong();
         if (key_length > 0) {
             parser.skip(key_length);
@@ -184,32 +180,43 @@ bool transform_module::is_valid_serialized_record(
             }
         }
     } catch (const std::out_of_range& ex) {
-        return false;
+        return {.is_valid = false};
     }
-    return parser.bytes_left() == 0;
+    return {.is_valid = parser.bytes_left() == 0, .new_batch = start_new_batch};
 }
 
 int32_t transform_module::write_record(ffi::array<uint8_t> buf) {
     if (!_call_ctx) {
         return NO_ACTIVE_TRANSFORM;
     }
-    // TODO: Add a limit on the size of output batch to be the output topic's
-    // max batch size.
+    auto& output_batches = _call_ctx->output_batches;
     iobuf b;
     b.append(buf.data(), buf.size());
     expected_record_metadata expected{
       // The delta offset should just be the current record count
-      .offset = _call_ctx->output_record_count,
+      .offset = output_batches.empty() ? 0 : output_batches.back().record_count,
       // We expect the timestamp to not change
-      .timestamp = _call_ctx->current_record.timestamp_delta,
+      .timestamp = _call_ctx->latest_record_timestamp_delta,
     };
-    if (!is_valid_serialized_record(iobuf_const_parser(b), expected)) {
+    auto result = validate_serialized_record(iobuf_const_parser(b), expected);
+    if (!result.is_valid) {
         // Invalid payload
         return INVALID_BUFFER;
+    } else if (result.new_batch) {
+        _call_ctx->output_batches.emplace_back();
     }
-    _call_ctx->output_records.append_fragments(std::move(b));
-    _call_ctx->output_record_count += 1;
+    _call_ctx->output_batches.back().records.append_fragments(std::move(b));
+    _call_ctx->output_batches.back().record_count += 1;
     return int32_t(buf.size());
 }
 
+void transform_module::check_abi_version_1() {}
+
+transform_module::transform_module(wasi::preview1_module* wasi_module)
+  : _wasi_module(wasi_module) {}
+
+void transform_module::stop(const std::exception_ptr& ex) {
+    _input_batch_ready.broken(ex);
+    _waiting_for_next_input_batch.broken(ex);
+}
 } // namespace wasm

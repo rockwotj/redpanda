@@ -13,22 +13,23 @@
 
 #include "bytes/iobuf.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "utils/named_type.h"
 #include "wasm/ffi.h"
+#include "wasm/wasi.h"
 
+#include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/condition-variable.hh>
+#include <seastar/core/future.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <optional>
 #include <string_view>
 
 namespace wasm {
-using batch_handle = named_type<int32_t, struct batch_handle_tag>;
-using record_handle = named_type<int32_t, struct record_handle_tag>;
-
-constexpr std::string_view redpanda_on_record_callback_function_name
-  = "redpanda_transform_on_record_written";
 
 struct record_position {
     size_t start_index;
@@ -37,24 +38,24 @@ struct record_position {
     int32_t timestamp_delta;
 };
 
+struct output_batch {
+    // The serialized output records.
+    iobuf records;
+    // The number of output records we've written.
+    int record_count{0};
+};
+
 // The data needed during a single transformation of a record_batch
 struct transform_context {
     // The input record_batch being transformed.
     const model::record_batch* input;
+    // The largest record size for the input batch.
+    size_t max_input_record_size{0};
+    int32_t latest_record_timestamp_delta;
     // The current record being transformed
-    record_position current_record;
-    // The serialized output records.
-    iobuf output_records;
-    // The number of output records we've written.
-    int output_record_count{0};
-};
-
-struct wasm_call_params {
-    batch_handle batch_handle;
-    record_handle record_handle;
-    int32_t record_size;
-    int32_t current_record_offset;
-    model::timestamp current_record_timestamp;
+    ss::chunked_fifo<record_position> record_positions;
+    // The output batches
+    ss::chunked_fifo<output_batch> output_batches;
 };
 
 /**
@@ -65,29 +66,33 @@ struct wasm_call_params {
  */
 class transform_module {
 public:
-    transform_module() = default;
+    explicit transform_module(wasi::preview1_module* wasi_module);
     transform_module(const transform_module&) = delete;
     transform_module& operator=(const transform_module&) = delete;
-    transform_module(transform_module&&) = default;
-    transform_module& operator=(transform_module&&) = default;
+    transform_module(transform_module&&) = delete;
+    transform_module& operator=(transform_module&&) = delete;
     ~transform_module() = default;
 
     static constexpr std::string_view name = "redpanda_transform";
 
     /**
-     * A helper method for correctly adhering to the ABI contract. Given a
-     * batch, a callback will be triggered with the correct parameters for
-     * the redpanda_transform_on_record_written function that the guest should
-     * expose.
+     * Wait for the transform module to be initialized.
      */
-    model::record_batch for_each_record(
-      const model::record_batch*,
-      ss::noncopyable_function<void(wasm_call_params)>);
+    ss::future<> wait_initialized();
+
+    ss::future<ss::chunked_fifo<model::record_batch>>
+    transform(const model::record_batch*);
+
+    /**
+     * Stops the module aborting any currently running transform.
+     */
+    void stop(const std::exception_ptr& ex);
 
     // Start ABI exports
 
-    int32_t read_batch_header(
-      batch_handle,
+    void check_abi_version_1();
+
+    ss::future<int32_t> read_batch_header(
       int64_t* base_offset,
       int32_t* record_count,
       int32_t* partition_leader_epoch,
@@ -99,7 +104,7 @@ public:
       int16_t* producer_epoch,
       int32_t* base_sequence);
 
-    int32_t read_record(record_handle, ffi::array<uint8_t>);
+    int32_t read_record(ffi::array<uint8_t>);
 
     int32_t write_record(ffi::array<uint8_t>);
 
@@ -111,8 +116,18 @@ private:
         int32_t timestamp;
     };
 
-    bool is_valid_serialized_record(
+    struct validation_result {
+        bool is_valid;
+        bool new_batch;
+    };
+
+    validation_result validate_serialized_record(
       iobuf_const_parser parser, expected_record_metadata);
+
+    wasi::preview1_module* _wasi_module;
+
+    ss::condition_variable _input_batch_ready;
+    ss::condition_variable _waiting_for_next_input_batch;
 
     std::optional<transform_context> _call_ctx;
 };
