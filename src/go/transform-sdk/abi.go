@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build tinygo
+//go:build wasip1
 
 package redpanda
 
@@ -23,13 +23,18 @@ import (
 // These are the host functions that go allows for wasm functions that are imported.
 // See: https://github.com/golang/go/issues/59149
 
+// An imported function to ensure that the broker supports this ABI version.
+//
+//go:wasmimport redpanda_transform check_abi_version_1
+func checkAbiVersion()
+
 // readRecordHeader reads all the data from the batch header into memory.
 //
-// Returns 0 upon success.
+// Returns maximum record size for the batch in bytes (which is useful
+// when you want to allocate a single buffer for the entire batch).
 //
 //go:wasmimport redpanda_transform read_batch_header
-func readRecordHeader(
-	h inputBatchHandle,
+func readBatchHeader(
 	baseOffset unsafe.Pointer,
 	recordCount unsafe.Pointer,
 	partitionLeaderEpoch unsafe.Pointer,
@@ -52,7 +57,7 @@ func readRecordHeader(
 // returns a negative number to indicate an error.
 //
 //go:wasmimport redpanda_transform read_record
-func readRecord(h inputRecordHandle, buf unsafe.Pointer, len int32) int32
+func readNextRecord(buf unsafe.Pointer, len int32) int32
 
 // writeRecord writes a new record by copying the data pointed to. The expected
 // format of `buf` is to be a record serialized according to the kafka protocol's

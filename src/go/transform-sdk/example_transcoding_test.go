@@ -27,7 +27,7 @@ import (
 
 // This example shows a transform that converts CSV into JSON.
 func Example_transcoding() {
-	redpanda.OnRecordWritten(csvToJsonTransform)
+	redpanda.ProcessWrittenRecords(csvToJsonTransform)
 }
 
 type Foo struct {

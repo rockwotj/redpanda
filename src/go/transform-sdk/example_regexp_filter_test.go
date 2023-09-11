@@ -39,7 +39,7 @@ func Example_regularExpressionFilter() {
 	mk, ok := os.LookupEnv("MATCH_VALUE")
 	checkValue = ok && mk == "1"
 
-	redpanda.OnRecordWritten(doRegexFilter)
+	redpanda.ProcessWrittenRecords(doRegexFilter)
 }
 
 func doRegexFilter(e redpanda.WriteEvent) ([]redpanda.Record, error) {

@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	redpanda.OnRecordWritten(panicTransform)
+	redpanda.ProcessWrittenRecords(panicTransform)
 }
 
 func panicTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {

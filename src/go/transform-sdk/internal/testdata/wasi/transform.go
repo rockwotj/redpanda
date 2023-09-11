@@ -24,7 +24,7 @@ import (
 )
 
 func main() {
-	redpanda.OnRecordWritten(wasiTransform)
+	redpanda.ProcessWrittenRecords(wasiTransform)
 }
 
 type WasiInfo struct {

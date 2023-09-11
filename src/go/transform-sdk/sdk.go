@@ -18,17 +18,15 @@ import (
 	"time"
 )
 
-// OnRecordWritten registers a callback to be fired when a record is written to the input topic.
+// ProcessWrittenRecords calls the callback for every record that is written to the input topic.
 //
-// OnRecordWritten should be called in a package's `main` function to register the transform function that will be applied.
-func OnRecordWritten(fn OnRecordWrittenCallback) {
-	userTransformFunction = fn
+// ProcessWrittenRecords should be called in a package's `main` function to register the transform function that will be applied.
+func ProcessWrittenRecords(fn OnRecordWrittenCallback) {
+	process(fn)
 }
 
 // OnRecordWrittenCallback is a callback to transform records after a write event happens in the input topic.
 type OnRecordWrittenCallback func(e WriteEvent) ([]Record, error)
-
-var userTransformFunction OnRecordWrittenCallback = nil
 
 // WriteEvent contains information about the write that took place,
 // namely it contains the record that was written.

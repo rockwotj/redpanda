@@ -14,9 +14,7 @@ for PKG in "${PKGS[@]}"; do
   echo "Building $PKG..."
   # Build using the buildpack, you need to install rpk and initialize
   # a project for this to work first.
-  ~/.local/rpk/buildpacks/tinygo/bin/tinygo build -target wasi -opt=z \
-    -panic print -scheduler none \
-    -o "$PKG.wasm" ./$PKG
+  GOARCH=wasm GOOS=wasip1 go build -o "$PKG.wasm" ./$PKG/transform.go
   echo "done ✔️"
 done
 echo "All packages built 🚀"

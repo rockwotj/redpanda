@@ -5,13 +5,10 @@ execute_process(COMMAND ${CMAKE_COMMAND} -E env
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 function(add_wasm_transform NAME)
-  find_program(TINYGO_BIN "tinygo")
   set(wasm_output "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.wasm")
-  set(tinygo_cmd ${TINYGO_BIN} build -o ${wasm_output} -quiet -target wasi "${NAME}/transform.go")
-  set(gopath ${CMAKE_CURRENT_BINARY_DIR}/${NAME})
+  set(go_cmd ${GO_PROGRAM} build -o ${wasm_output} "${NAME}/transform.go")
   add_custom_command(OUTPUT ${wasm_output}
-                     COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/retry.py
-                     ARGS -- ${CMAKE_COMMAND} -E env PATH="${GOROOT}/bin:$ENV{PATH}" GOPATH="${gopath}" GOFLAGS="-modcacherw" GOROOT="${GOROOT}" ${tinygo_cmd}
+                     COMMAND ${CMAKE_COMMAND} -E env PATH="${GOROOT}/bin:$ENV{PATH}" GOPATH="${GOPATH}" GOROOT="${GOROOT}" ${go_cmd}
                      WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
 		     DEPENDS 
                     "${CMAKE_CURRENT_LIST_DIR}/${NAME}/transform.go"

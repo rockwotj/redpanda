@@ -27,7 +27,7 @@ func Example_identityTransform() {
 
 	// Make sure to register your callback so Redpanda knows which
 	// function to invoke when records are written
-	redpanda.OnRecordWritten(mirrorTransform)
+	redpanda.ProcessWrittenRecords(mirrorTransform)
 }
 
 // This will be called for each record in the source topic.

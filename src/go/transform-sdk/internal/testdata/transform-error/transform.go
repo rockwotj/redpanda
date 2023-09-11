@@ -21,7 +21,7 @@ import (
 )
 
 func main() {
-	redpanda.OnRecordWritten(errTransform)
+	redpanda.ProcessWrittenRecords(errTransform)
 }
 
 func errTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
