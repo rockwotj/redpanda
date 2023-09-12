@@ -36,7 +36,8 @@ public:
     void load_wasm(const std::string& path);
     model::record_batch make_tiny_batch();
     model::record_batch make_tiny_batch(iobuf record_value);
-    model::record_batch transform(const model::record_batch&);
+    // Transform a batch, assuming a single output batch.
+    model::record_batch transform_one(const model::record_batch&);
 
     model::transform_metadata meta() const { return _meta; };
 

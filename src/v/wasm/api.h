@@ -27,7 +27,7 @@ namespace wasm {
  */
 class engine {
 public:
-    virtual ss::future<model::record_batch>
+    virtual ss::future<ss::chunked_fifo<model::record_batch>>
     transform(model::record_batch batch, transform_probe* probe) = 0;
 
     virtual ss::future<> start() = 0;

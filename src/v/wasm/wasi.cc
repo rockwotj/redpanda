@@ -358,7 +358,7 @@ preview1_module::sock_send(fd_t, ffi::array<iovec_t>, uint16_t, uint32_t*) {
 }
 errno_t preview1_module::sock_shutdown(fd_t, uint8_t) { return ERRNO_NOSYS; }
 void preview1_module::proc_exit(int32_t exit_code) {
-    throw std::runtime_error(ss::format("Exiting: {}", exit_code));
+    throw std::runtime_error(ss::format("proc exit: {}", exit_code));
 }
 ss::future<errno_t> preview1_module::sched_yield() {
     co_await ss::yield();

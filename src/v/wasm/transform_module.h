@@ -56,6 +56,13 @@ struct transform_context {
     ss::chunked_fifo<record_position> record_positions;
     // The output batches
     ss::chunked_fifo<output_batch> output_batches;
+    // This callback is triggered before each record is read
+    ss::noncopyable_function<void()> pre_record_callback;
+};
+
+struct transform_args {
+    const model::record_batch* batch;
+    ss::noncopyable_function<void()> pre_record_callback;
 };
 
 /**
@@ -78,11 +85,14 @@ public:
     /**
      * Wait for the transform module to be initialized.
      */
-    ss::future<> wait_initialized();
+    ss::future<> wait_ready();
 
-    ss::future<ss::chunked_fifo<model::record_batch>>
-    transform(const model::record_batch*);
+    ss::future<ss::chunked_fifo<model::record_batch>> transform(transform_args);
 
+    /**
+     * Initializes the module.
+     */
+    void start();
     /**
      * Stops the module aborting any currently running transform.
      */
@@ -124,10 +134,35 @@ private:
     validation_result validate_serialized_record(
       iobuf_const_parser parser, expected_record_metadata);
 
+    /*
+     * Signal that there is a batch available to be processed via _call_ctx
+     * being set.
+     *
+     * Waits until the batch has been transformed and the results are ready in
+     * _call_ctx.
+     *
+     * This should be called by the outside module to transfer batches into the
+     * vm fiber.
+     */
+    ss::future<> signal_batch_ready();
+
+    /*
+     * Signal that a batch has completed processing and wait until another batch
+     * is ready to be processed.
+     *
+     * This should be called by the vm fiber signalling that it's ready to wait
+     * for another batch to transform.
+     */
+    ss::future<> signal_batch_complete();
+
     wasi::preview1_module* _wasi_module;
 
     ss::condition_variable _input_batch_ready;
     ss::condition_variable _waiting_for_next_input_batch;
+    // We expect to be able to reuse VMs (and share them) so instead of using
+    // `broken` for the condition variables we explicitly track a seperate
+    // exception and check it whenever we wait/signal for a batch.
+    std::exception_ptr _abort_ex = nullptr;
 
     std::optional<transform_context> _call_ctx;
 };

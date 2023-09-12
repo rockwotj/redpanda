@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build wasip1
+//go:build wasip1 || tinygo
 
 package redpanda
 

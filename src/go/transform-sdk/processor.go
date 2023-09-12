@@ -76,7 +76,7 @@ func processBatch(userTransformFunction OnRecordWrittenCallback) {
 		unsafe.Pointer(&currentHeader.baseSequence),
 	))
 	if bufSize < 0 {
-		panic("Failed to read batch header errno: " + strconv.Itoa(bufSize))
+		panic("failed to read batch header errno: " + strconv.Itoa(bufSize))
 	}
 
 	// The current size of the batch is used to correctly output the offset for each record
@@ -120,7 +120,7 @@ func processBatch(userTransformFunction OnRecordWrittenCallback) {
 			r.serialize(outbuf)
 			b := outbuf.ReadAll()
 			currentOutputBatchSize += len(b)
-
+			// check if we're over the batch size limit.
 			if currentOutputBatchSize > maxBatchSize {
 				// Reset the offset and start a new batch
 				currentOutputBatchCount = 0

@@ -112,8 +112,10 @@ ss::future<> processor::do_run_transform_loop() {
             _probe->increment_read_bytes(batch.size_bytes());
             auto transformed = co_await _engine->transform(
               std::move(batch), _probe);
-            _probe->increment_write_bytes(transformed.size_bytes());
-            transformed_batches.push_back(std::move(transformed));
+            for (auto& transformed_batch : transformed) {
+                _probe->increment_write_bytes(transformed_batch.size_bytes());
+                transformed_batches.push_back(std::move(transformed_batch));
+            }
         }
         co_await _sinks[0]->write(std::move(transformed_batches));
     }

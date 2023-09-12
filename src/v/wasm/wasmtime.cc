@@ -11,6 +11,7 @@
 #include "wasm/wasmtime.h"
 
 #include "model/record.h"
+#include "model/record_batch_types.h"
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
 #include "wasm/api.h"
@@ -22,8 +23,11 @@
 #include "wasm/transform_module.h"
 #include "wasm/wasi.h"
 
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/posix.hh>
+#include <seastar/core/thread.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/defer.hh>
@@ -36,6 +40,7 @@
 #include <wasmtime/store.h>
 
 #include <csignal>
+#include <exception>
 #include <memory>
 #include <pthread.h>
 #include <span>
@@ -45,6 +50,18 @@
 namespace wasm::wasmtime {
 
 namespace {
+
+class engine_stop_exception final : public std::exception {};
+
+void unblock_signals() {
+    // wasmtime needs some signals for it's handling, make sure we
+    // unblock them.
+    auto mask = ss::make_empty_sigset_mask();
+    sigaddset(&mask, SIGSEGV);
+    sigaddset(&mask, SIGILL);
+    sigaddset(&mask, SIGFPE);
+    ss::throw_pthread_error(::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr));
+}
 
 constexpr uint64_t wasmtime_fuel_amount = 1'000'000'000;
 
@@ -154,13 +171,12 @@ wasmtime_val_t convert_to_wasmtime(T value) {
 
 class memory : public ffi::memory {
 public:
-    explicit memory(wasmtime_context_t* ctx, wasmtime_memory_t* mem)
-      : ffi::memory()
-      , _ctx(ctx)
-      , _underlying(mem) {}
+    explicit memory(wasmtime_context_t* ctx)
+      : _ctx(ctx)
+      , _underlying() {}
 
     void* translate_raw(size_t guest_ptr, size_t len) final {
-        auto memory_size = wasmtime_memory_data_size(_ctx, _underlying);
+        auto memory_size = wasmtime_memory_data_size(_ctx, &_underlying);
         if ((guest_ptr + len) > memory_size) [[unlikely]] {
             throw wasm_exception(
               ss::format(
@@ -171,18 +187,14 @@ public:
               errc::user_code_failure);
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        return wasmtime_memory_data(_ctx, _underlying) + guest_ptr;
+        return wasmtime_memory_data(_ctx, &_underlying) + guest_ptr;
     }
+
+    void set_underlying_memory(wasmtime_memory_t* m) { _underlying = *m; }
 
 private:
     wasmtime_context_t* _ctx;
-    wasmtime_memory_t* _underlying;
-};
-
-struct host_function_environment {
-    void* host_module;
-    ss::alien::instance* alien;
-    ss::shard_id shard_id;
+    wasmtime_memory_t _underlying;
 };
 
 template<auto value>
@@ -194,9 +206,7 @@ template<
   ReturnType (Module::*module_func)(ArgTypes...)>
 struct host_function<module_func> {
     static void reg(
-      wasmtime_linker_t* linker,
-      host_function_environment* env,
-      std::string_view function_name) {
+      wasmtime_linker_t* linker, Module* mod, std::string_view function_name) {
         std::vector<ffi::val_type> ffi_inputs;
         ffi::transform_types<ArgTypes...>(ffi_inputs);
         std::vector<ffi::val_type> ffi_outputs;
@@ -206,101 +216,116 @@ struct host_function<module_func> {
         // Takes ownership of inputs and outputs
         handle<wasm_functype_t, wasm_functype_delete> functype{
           wasm_functype_new(&inputs, &outputs)};
-        auto* err = wasmtime_linker_define_func(
-          linker,
-          Module::name.data(),
-          Module::name.size(),
-          function_name.data(),
-          function_name.size(),
-          functype.get(),
-          [](
-            void* env,
-            wasmtime_caller_t* caller,
-            const wasmtime_val_t* args,
-            size_t nargs,
-            wasmtime_val_t* results,
-            size_t) -> wasm_trap_t* {
-              auto* fenv = static_cast<host_function_environment*>(env);
-              auto* host_module = static_cast<Module*>(fenv->host_module);
-              constexpr std::string_view memory_export_name = "memory";
-              wasmtime_extern_t extern_item;
-              bool ok = wasmtime_caller_export_get(
-                caller,
-                memory_export_name.data(),
-                memory_export_name.size(),
-                &extern_item);
-              if (!ok || extern_item.kind != WASMTIME_EXTERN_MEMORY)
-                [[unlikely]] {
-                  constexpr std::string_view error = "Missing memory export";
-                  vlog(wasm_log.warn, "{}", error);
-                  return wasmtime_trap_new(error.data(), error.size());
-              }
-              memory mem(
-                wasmtime_caller_context(caller), &extern_item.of.memory);
 
-              try {
-                  auto raw = to_raw_values({args, nargs});
+        handle<wasmtime_error_t, wasmtime_error_delete> error(
+          wasmtime_linker_define_func(
+            linker,
+            Module::name.data(),
+            Module::name.size(),
+            function_name.data(),
+            function_name.size(),
+            functype.get(),
+            &invoke_host_fn,
+            mod,
+            /*finalizer=*/nullptr));
+        check_error(error.get());
+    }
 
-                  auto host_params = ffi::extract_parameters<ArgTypes...>(
-                    &mem, raw, 0);
-                  if constexpr (std::is_void_v<ReturnType>) {
-                      std::apply(
-                        module_func,
-                        std::tuple_cat(
-                          std::make_tuple(host_module),
-                          std::move(host_params)));
-                  } else if constexpr (ss::is_future<ReturnType>::value) {
-                      auto fut = ss::alien::submit_to(
-                        *fenv->alien,
-                        fenv->shard_id,
-                        [host_module,
-                         host_params = std::move(host_params)]() mutable {
-                            return std::apply(
-                              module_func,
-                              std::tuple_cat(
-                                std::make_tuple(host_module),
-                                std::move(host_params)));
-                        });
-                      *results
-                        = convert_to_wasmtime<typename ReturnType::value_type>(
-                          std::move(fut).get());
-                  } else {
-                      ReturnType host_result = std::apply(
-                        module_func,
-                        std::tuple_cat(
-                          std::make_tuple(host_module),
-                          std::move(host_params)));
-                      *results = convert_to_wasmtime<ReturnType>(
-                        std::move(host_result));
-                  }
-              } catch (const std::exception& e) {
-                  vlog(wasm_log.warn, "Failure executing host function: {}", e);
-                  std::string_view msg = e.what();
-                  return wasmtime_trap_new(msg.data(), msg.size());
-              }
-              return nullptr;
-          },
-          env,
-          nullptr);
-
-        if (err) [[unlikely]] {
-            throw wasm::wasm_exception(
-              ss::format("Unable to register {}", function_name),
-              errc::engine_creation_failure);
+private:
+    /**
+     * All the boilerplate setup needed to invoke a host function
+     * from the VM.
+     *
+     * Extracts the memory module, and handles exceptions from our
+     * host functions.
+     */
+    static wasm_trap_t* invoke_host_fn(
+      void* env,
+      wasmtime_caller_t* caller,
+      const wasmtime_val_t* args,
+      size_t nargs,
+      wasmtime_val_t* results,
+      size_t nresults) {
+        auto* host_module = static_cast<Module*>(env);
+        memory mem(wasmtime_caller_context(caller));
+        wasm_trap_t* trap = extract_memory(caller, &mem);
+        if (trap != nullptr) {
+            return trap;
         }
+        try {
+            do_invoke_host_fn(
+              host_module, &mem, {args, nargs}, {results, nresults});
+            return nullptr;
+        } catch (const std::exception& e) {
+            vlog(wasm_log.warn, "Failure executing host function: {}", e);
+            std::string_view msg = e.what();
+            return wasmtime_trap_new(msg.data(), msg.size());
+        }
+    }
+
+    /**
+     * Translate wasmtime types into our native types, then invoke
+     * the corresponding host function, translating the response
+     * types into the correct types.
+     */
+    static void do_invoke_host_fn(
+      Module* host_module,
+      memory* mem,
+      std::span<const wasmtime_val_t> args,
+      std::span<wasmtime_val_t> results) {
+        auto raw = to_raw_values(args);
+        auto host_params = ffi::extract_parameters<ArgTypes...>(mem, raw, 0);
+        if constexpr (std::is_void_v<ReturnType>) {
+            std::apply(
+              module_func,
+              std::tuple_cat(
+                std::make_tuple(host_module), std::move(host_params)));
+        } else if constexpr (ss::is_future<ReturnType>::value) {
+            typename ReturnType::value_type host_result
+              = std::apply(
+                  module_func,
+                  std::tuple_cat(
+                    std::make_tuple(host_module), std::move(host_params)))
+                  .get();
+            results[0] = convert_to_wasmtime<typename ReturnType::value_type>(
+              host_result);
+        } else {
+            ReturnType host_result = std::apply(
+              module_func,
+              std::tuple_cat(
+                std::make_tuple(host_module), std::move(host_params)));
+            results[0] = convert_to_wasmtime<ReturnType>(
+              std::move(host_result));
+        }
+    }
+
+    /**
+     * Our ABI contract expects a "memory" export from the module that we can
+     * use to access the VM's memory space.
+     */
+    static wasm_trap_t* extract_memory(wasmtime_caller_t* caller, memory* mem) {
+        constexpr std::string_view memory_export_name = "memory";
+        wasmtime_extern_t extern_item;
+        bool ok = wasmtime_caller_export_get(
+          caller,
+          memory_export_name.data(),
+          memory_export_name.size(),
+          &extern_item);
+        if (!ok || extern_item.kind != WASMTIME_EXTERN_MEMORY) [[unlikely]] {
+            constexpr std::string_view error = "Missing memory export";
+            vlog(wasm_log.warn, "{}", error);
+            return wasmtime_trap_new(error.data(), error.size());
+        }
+        mem->set_underlying_memory(&extern_item.of.memory);
+        return nullptr;
     }
 };
 
-std::unique_ptr<host_function_environment> register_wasi_module(
-  wasi::preview1_module* mod,
-  wasmtime_linker_t* linker,
-  ss::alien::instance* alien,
-  ss::shard_id shard_id) {
-    auto env = std::make_unique<host_function_environment>(
-      mod, alien, shard_id);
+void register_wasi_module(
+  wasi::preview1_module* mod, wasmtime_linker_t* linker) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&wasi::preview1_module::name>::reg(linker, env.get(), #name)
+    host_function<&wasi::preview1_module::name>::reg(linker, mod, #name)
     REG_HOST_FN(args_get);
     REG_HOST_FN(args_sizes_get);
     REG_HOST_FN(environ_get);
@@ -346,42 +371,31 @@ std::unique_ptr<host_function_environment> register_wasi_module(
     REG_HOST_FN(sock_send);
     REG_HOST_FN(sock_shutdown);
 #undef REG_HOST_FN
-    return env;
 }
 
-std::unique_ptr<host_function_environment> register_transform_module(
-  transform_module* mod,
-  wasmtime_linker_t* linker,
-  ss::alien::instance* alien,
-  ss::shard_id shard_id) {
-    auto env = std::make_unique<host_function_environment>(
-      mod, alien, shard_id);
+void register_transform_module(
+  transform_module* mod, wasmtime_linker_t* linker) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&transform_module::name>::reg(linker, env.get(), #name)
+    host_function<&transform_module::name>::reg(linker, mod, #name)
+    REG_HOST_FN(check_abi_version_1);
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_record);
     REG_HOST_FN(write_record);
 #undef REG_HOST_FN
-    return env;
 }
-std::unique_ptr<host_function_environment> register_sr_module(
-  schema_registry_module* mod,
-  wasmtime_linker_t* linker,
-  ss::alien::instance* alien,
-  ss::shard_id shard_id) {
-    auto env = std::make_unique<host_function_environment>(
-      mod, alien, shard_id);
+
+void register_sr_module(
+  schema_registry_module* mod, wasmtime_linker_t* linker) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&schema_registry_module::name>::reg(linker, env.get(), #name)
+    host_function<&schema_registry_module::name>::reg(linker, mod, #name)
     REG_HOST_FN(get_schema_definition);
     REG_HOST_FN(get_schema_definition_len);
     REG_HOST_FN(get_subject_schema);
     REG_HOST_FN(get_subject_schema_len);
     REG_HOST_FN(create_subject_schema);
 #undef REG_HOST_FN
-    return env;
 }
 
 class wasmtime_engine : public engine {
@@ -394,10 +408,7 @@ public:
       std::unique_ptr<transform_module> transform_module,
       std::unique_ptr<schema_registry_module> sr_module,
       std::unique_ptr<wasi::preview1_module> wasi_module,
-      std::vector<std::unique_ptr<host_function_environment>>
-        host_function_environments,
-      wasmtime_instance_t instance,
-      ssx::sharded_thread_worker* workers)
+      wasmtime_instance_t instance)
       : _user_module_name(std::move(user_module_name))
       , _store(std::move(s))
       , _user_module(std::move(user_module))
@@ -405,9 +416,7 @@ public:
       , _sr_module(std::move(sr_module))
       , _wasi_module(std::move(wasi_module))
       , _linker(std::move(l))
-      , _instance(instance)
-      , _workers(workers)
-      , _host_function_environments(std::move(host_function_environments)) {}
+      , _instance(instance) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
     wasmtime_engine(wasmtime_engine&&) = default;
@@ -433,40 +442,37 @@ public:
         return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
     };
 
-    ss::future<> start() final { co_return; }
+    ss::future<> start() final {
+        _transform_module->start();
+        co_return;
+    }
 
     ss::future<> initialize() final { return initialize_wasi(); }
 
-    ss::future<> stop() final { co_return; }
+    ss::future<> stop() final {
+        _transform_module->stop(
+          std::make_exception_ptr(engine_stop_exception()));
+        co_await std::exchange(_main_task, ss::now());
+    }
 
-    struct transform_result {
-        model::record_batch batch;
-        // it's not safe to access seastar state in an alien thread, so make
-        // sure we're passing back the stats we need to record.
-        std::vector<uint64_t> latencies;
-    };
-
-    ss::future<model::record_batch>
+    ss::future<ss::chunked_fifo<model::record_batch>>
     transform(model::record_batch batch, transform_probe* probe) override {
         vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
         if (batch.record_count() == 0) {
-            co_return std::move(batch);
+            ss::chunked_fifo<model::record_batch> batches;
+            co_return std::move(batches);
         }
         if (batch.compressed()) {
             batch = co_await storage::internal::decompress_batch(
               std::move(batch));
         }
-        ss::future<transform_result> fut = co_await ss::coroutine::as_future(
-          invoke_transform(&batch));
+        ss::future<ss::chunked_fifo<model::record_batch>> fut
+          = co_await ss::coroutine::as_future(invoke_transform(&batch, probe));
         if (fut.failed()) {
             probe->transform_error();
             std::rethrow_exception(fut.get_exception());
         }
-        transform_result r = std::move(fut).get();
-        for (uint64_t latency : r.latencies) {
-            probe->record_latency(latency);
-        }
-        co_return std::move(r.batch);
+        co_return std::move(fut).get();
     }
 
 private:
@@ -479,108 +485,80 @@ private:
     }
 
     ss::future<> initialize_wasi() {
-        return _workers->submit([this] {
-            // TODO: Consider having a different amount of fuel for
-            // initialization.
-            reset_fuel();
-            auto* ctx = wasmtime_store_context(_store.get());
-            wasmtime_extern_t start;
-            bool ok = wasmtime_instance_export_get(
-              ctx,
-              &_instance,
-              wasi::preview_1_start_function_name.data(),
-              wasi::preview_1_start_function_name.size(),
-              &start);
-            if (!ok || start.kind != WASMTIME_EXTERN_FUNC) {
-                throw wasm_exception(
-                  "Missing wasi initialization function",
-                  errc::user_code_failure);
-            }
-            vlog(
-              wasm_log.info,
-              "Initializing wasm function {}",
-              _user_module_name);
-            wasm_trap_t* trap_ptr = nullptr;
-            handle<wasmtime_error_t, wasmtime_error_delete> error{
-              wasmtime_func_call(
-                ctx, &start.of.func, nullptr, 0, nullptr, 0, &trap_ptr)};
-            handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-            check_error(error.get());
-            check_trap(trap.get());
-            vlog(
-              wasm_log.info, "Wasm function {} initialized", _user_module_name);
-        });
+        if (!_main_task.available()) {
+            throw wasm_exception(
+              "wasi already initialized", errc::internal_error);
+        }
+        _main_task
+          = ss::async([this]() -> std::exception_ptr {
+                // seastar threads swap context, which has it's own
+                // signals that it masks
+                unblock_signals();
+                // TODO: Consider having a different amount of fuel
+                // for initialization.
+                reset_fuel();
+                auto* ctx = wasmtime_store_context(_store.get());
+                wasmtime_extern_t start;
+                bool ok = wasmtime_instance_export_get(
+                  ctx,
+                  &_instance,
+                  wasi::preview_1_start_function_name.data(),
+                  wasi::preview_1_start_function_name.size(),
+                  &start);
+                if (!ok || start.kind != WASMTIME_EXTERN_FUNC) {
+                    throw wasm_exception(
+                      "Missing main function", errc::user_code_failure);
+                }
+                vlog(
+                  wasm_log.info,
+                  "Initializing wasm function {}",
+                  _user_module_name);
+                wasm_trap_t* trap_ptr = nullptr;
+                handle<wasmtime_error_t, wasmtime_error_delete> error{
+                  wasmtime_func_call(
+                    ctx, &start.of.func, nullptr, 0, nullptr, 0, &trap_ptr)};
+                handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+                try {
+                    check_error(error.get());
+                    check_trap(trap.get());
+                } catch (const engine_stop_exception& ex) {
+                    // This can happen if `stop` is called, so don't
+                    // log in this case.
+                    return std::current_exception();
+                } catch (...) {
+                    auto ex = std::current_exception();
+                    vlog(
+                      wasm_log.warn,
+                      "Wasm function {} error: {}",
+                      _user_module_name,
+                      ex);
+                    return ex;
+                }
+                vlog(
+                  wasm_log.warn,
+                  "Wasm function {} finished",
+                  _user_module_name);
+                return std::make_exception_ptr(
+                  wasm::wasm_exception("vm exited", errc::engine_not_running));
+            }).then_wrapped([this](ss::future<std::exception_ptr> fut) {
+                auto ex = fut.failed() ? fut.get_exception() : fut.get();
+                _transform_module->stop(ex);
+            });
+        co_await _transform_module->wait_ready();
     }
 
-    ss::future<transform_result>
-    invoke_transform(const model::record_batch* batch) {
-        return _workers->submit([this, batch] {
-            std::vector<uint64_t> latencies;
-            auto* ctx = wasmtime_store_context(_store.get());
-            wasmtime_extern_t cb;
-            bool ok = wasmtime_instance_export_get(
-              ctx,
-              &_instance,
-              redpanda_on_record_callback_function_name.data(),
-              redpanda_on_record_callback_function_name.size(),
-              &cb);
-            if (!ok || cb.kind != WASMTIME_EXTERN_FUNC) {
-                throw wasm_exception(
-                  "Missing wasi initialization function",
-                  errc::user_code_failure);
-            }
-            auto transformed = _transform_module->for_each_record(
-              batch, [this, &ctx, &cb, &latencies](wasm_call_params params) {
-                  reset_fuel();
-                  _wasi_module->set_timestamp(params.current_record_timestamp);
-                  auto recorder = ss::defer(
-                    [&latencies,
-                     start_time = transform_probe::hist_t::clock_type::now()] {
-                        latencies.push_back(
-                          std::chrono::duration_cast<
-                            transform_probe::hist_t::duration_type>(
-                            transform_probe::hist_t::clock_type::now()
-                            - start_time)
-                            .count());
-                    });
-                  wasmtime_val_t result = {
-                    .kind = WASMTIME_I32, .of = {.i32 = -1}};
-                  std::array<wasmtime_val_t, 4> args = {
-                    wasmtime_val_t{
-                      .kind = WASMTIME_I32, .of = {.i32 = params.batch_handle}},
-                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_handle}},
-                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_size}},
-                    {.kind = WASMTIME_I32,
-                     .of = {.i32 = params.current_record_offset}}};
-                  wasm_trap_t* trap_ptr = nullptr;
-                  handle<wasmtime_error_t, wasmtime_error_delete> error{
-                    wasmtime_func_call(
-                      ctx,
-                      &cb.of.func,
-                      args.data(),
-                      args.size(),
-                      &result,
-                      /*results_size=*/1,
-                      &trap_ptr)};
-                  handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-                  check_error(error.get());
-                  check_trap(trap.get());
-                  if (result.kind != WASMTIME_I32 || result.of.i32 != 0) {
-                      throw wasm_exception(
-                        ss::format(
-                          "transform execution {} resulted in error {}",
-                          _user_module_name,
-                          result.of.i32),
-                        errc::user_code_failure);
-                  }
-              });
-            return transform_result{
-              .batch = std::move(transformed),
-              .latencies = std::move(latencies),
-            };
-        });
+    ss::future<ss::chunked_fifo<model::record_batch>>
+    invoke_transform(const model::record_batch* batch, transform_probe* p) {
+        std::unique_ptr<transform_probe::hist_t::measurement> measurement;
+        auto result = co_await _transform_module->transform(
+          {.batch = batch, .pre_record_callback = [this, p, &measurement] {
+               reset_fuel();
+               measurement = p->latency_measurement();
+           }});
+        co_return result;
     }
 
+    ss::future<> _main_task = ss::now();
     ss::sstring _user_module_name;
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
     std::shared_ptr<wasmtime_module_t> _user_module;
@@ -589,9 +567,6 @@ private:
     std::unique_ptr<wasi::preview1_module> _wasi_module;
     handle<wasmtime_linker_t, wasmtime_linker_delete> _linker;
     wasmtime_instance_t _instance;
-    ssx::sharded_thread_worker* _workers;
-    std::vector<std::unique_ptr<host_function_environment>>
-      _host_function_environments;
 };
 
 class wasmtime_engine_factory : public factory {
@@ -602,70 +577,75 @@ public:
       std::shared_ptr<wasmtime_module_t> mod,
       schema_registry* sr,
       ss::logger* l,
-      ssx::sharded_thread_worker* w)
+      ssx::sharded_thread_worker* pool)
       : _engine(engine)
       , _module(std::move(mod))
       , _meta(std::move(meta))
       , _sr(sr)
       , _logger(l)
-      , _workers(w) {}
+      , _alien_thread_pool(pool) {}
 
     ss::future<std::unique_ptr<engine>> make_engine() final {
-        ss::alien::instance* alien = &ss::engine().alien();
-        ss::shard_id shard_id = ss::this_shard_id();
-        return _workers->submit(
-          [this, alien, shard_id]() -> std::unique_ptr<engine> {
-              handle<wasmtime_store_t, wasmtime_store_delete> store{
-                wasmtime_store_new(_engine, nullptr, nullptr)};
-              auto* context = wasmtime_store_context(store.get());
-              handle<wasmtime_error_t, wasmtime_error_delete> error(
-                wasmtime_context_add_fuel(context, 0));
-              check_error(error.get());
-              handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
-                wasmtime_linker_new(_engine)};
+        handle<wasmtime_store_t, wasmtime_store_delete> store{
+          wasmtime_store_new(_engine, nullptr, nullptr)};
+        auto* context = wasmtime_store_context(store.get());
+        handle<wasmtime_error_t, wasmtime_error_delete> error(
+          wasmtime_context_add_fuel(context, 0));
+        check_error(error.get());
+        handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
+          wasmtime_linker_new(_engine)};
 
-              std::vector<std::unique_ptr<host_function_environment>>
-                host_function_envs;
+        std::vector<ss::sstring> args{_meta.name()};
+        absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.environment;
+        env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
+        env.emplace("REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
+        // TODO(rockwood): Don't hard code this string, but look it
+        // up from configuration.
+        env.emplace(
+          "REDPANDA_OUTPUT_TOPIC_MAX_BATCH_SIZE", ss::format("{}", 1_MiB));
+        auto wasi_module = std::make_unique<wasi::preview1_module>(
+          std::move(args), std::move(env), _logger);
 
-              auto xform_module = std::make_unique<transform_module>();
-              host_function_envs.push_back(register_transform_module(
-                xform_module.get(), linker.get(), alien, shard_id));
+        auto xform_module = std::make_unique<transform_module>(
+          wasi_module.get());
 
-              auto sr_module = std::make_unique<schema_registry_module>(_sr);
-              host_function_envs.push_back(register_sr_module(
-                sr_module.get(), linker.get(), alien, shard_id));
+        auto sr_module = std::make_unique<schema_registry_module>(_sr);
+        // Register the modules on an alien thread because cranelift
+        // needs largish stacks which aren't available in unit
+        // tests.
+        co_await _alien_thread_pool->submit([sr = sr_module.get(),
+                                             wasi = wasi_module.get(),
+                                             xform = xform_module.get(),
+                                             l = linker.get()] {
+            register_wasi_module(wasi, l);
+            register_transform_module(xform, l);
+            register_sr_module(sr, l);
+        });
 
-              std::vector<ss::sstring> args{_meta.name()};
-              absl::flat_hash_map<ss::sstring, ss::sstring> env
-                = _meta.environment;
-              env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
-              env.emplace(
-                "REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
-              auto wasi_module = std::make_unique<wasi::preview1_module>(
-                std::move(args), std::move(env), _logger);
-              host_function_envs.push_back(register_wasi_module(
-                wasi_module.get(), linker.get(), alien, shard_id));
-
+        // Create the module on an alien thread because cranelift
+        // requires large stacks.
+        wasmtime_instance_t instance = co_await _alien_thread_pool->submit(
+          [this, context, linker = linker.get()] {
               wasmtime_instance_t instance;
               wasm_trap_t* trap_ptr = nullptr;
-              error.reset(wasmtime_linker_instantiate(
-                linker.get(), context, _module.get(), &instance, &trap_ptr));
+              handle<wasmtime_error_t, wasmtime_error_delete> error(
+                wasmtime_linker_instantiate(
+                  linker, context, _module.get(), &instance, &trap_ptr));
               handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
               check_error(error.get());
               check_trap(trap.get());
-
-              return std::make_unique<wasmtime_engine>(
-                _meta.name(),
-                std::move(linker),
-                std::move(store),
-                _module,
-                std::move(xform_module),
-                std::move(sr_module),
-                std::move(wasi_module),
-                std::move(host_function_envs),
-                instance,
-                _workers);
+              return instance;
           });
+
+        co_return std::make_unique<wasmtime_engine>(
+          _meta.name(),
+          std::move(linker),
+          std::move(store),
+          _module,
+          std::move(xform_module),
+          std::move(sr_module),
+          std::move(wasi_module),
+          instance);
     }
 
 private:
@@ -674,7 +654,7 @@ private:
     model::transform_metadata _meta;
     schema_registry* _sr;
     ss::logger* _logger;
-    ssx::sharded_thread_worker* _workers;
+    ssx::sharded_thread_worker* _alien_thread_pool;
 };
 
 class wasmtime_runtime : public runtime {
@@ -686,51 +666,43 @@ public:
       , _sr(std::move(sr)) {}
 
     ss::future<> start() override {
-        co_await _workers.start({.name = "wasm"});
-        co_await ss::smp::invoke_on_all([this] {
-            return _workers.submit([] {
-                // wasmtime needs some signals for it's handling, make sure we
-                // unblock them.
-                auto mask = ss::make_empty_sigset_mask();
-                sigaddset(&mask, SIGSEGV);
-                sigaddset(&mask, SIGILL);
-                sigaddset(&mask, SIGFPE);
-                ss::throw_pthread_error(
-                  ::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr));
-            });
-        });
+        co_await _alien_thread_pool.start({.name = "wasm"});
     }
 
-    ss::future<> stop() override { return _workers.stop(); }
+    ss::future<> stop() override { return _alien_thread_pool.stop(); }
 
     ss::future<std::unique_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
-        auto user_module = co_await _workers.submit([this, &meta, &buf] {
-            vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
-            bytes b = iobuf_to_bytes(buf);
-            wasmtime_module_t* user_module_ptr = nullptr;
-            handle<wasmtime_error_t, wasmtime_error_delete> error{
-              wasmtime_module_new(
-                _engine.get(), b.data(), b.size(), &user_module_ptr)};
-            check_error(error.get());
-            std::shared_ptr<wasmtime_module_t> user_module{
-              user_module_ptr, wasmtime_module_delete};
-            wasm_log.info("Finished compiling wasm module {}", meta.name);
-            return user_module;
-        });
+        auto user_module = co_await _alien_thread_pool.submit(
+          [this, &meta, &buf] {
+              vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
+              // This can be a large contiguous allocation, however
+              // it happens on an alien thread so it bypasses the
+              // seastar allocator.
+              bytes b = iobuf_to_bytes(buf);
+              wasmtime_module_t* user_module_ptr = nullptr;
+              handle<wasmtime_error_t, wasmtime_error_delete> error{
+                wasmtime_module_new(
+                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
+              check_error(error.get());
+              std::shared_ptr<wasmtime_module_t> user_module{
+                user_module_ptr, wasmtime_module_delete};
+              wasm_log.info("Finished compiling wasm module {}", meta.name);
+              return user_module;
+          });
         co_return std::make_unique<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
           user_module,
           _sr.get(),
           logger,
-          &_workers);
+          &_alien_thread_pool);
     }
 
 private:
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
     std::unique_ptr<schema_registry> _sr;
-    ssx::sharded_thread_worker _workers;
+    ssx::sharded_thread_worker _alien_thread_pool;
 };
 
 } // namespace
@@ -745,8 +717,8 @@ std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     // We want to enable memcopy and other efficent memcpy operators
     wasmtime_config_wasm_bulk_memory_set(config, true);
     wasmtime_config_parallel_compilation_set(config, false);
-    // Set max stack size to generally be as big as a contiguous memory region
-    // we're willing to allocate in Redpanda.
+    // Set max stack size to generally be as big as a contiguous memory
+    // region we're willing to allocate in Redpanda.
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     wasmtime_config_max_wasm_stack_set(config, 128_KiB);
     // This disables static memory, see:
@@ -754,8 +726,9 @@ std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     wasmtime_config_static_memory_maximum_size_set(config, 0_KiB);
     wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
     wasmtime_config_dynamic_memory_reserved_for_growth_set(config, 0_KiB);
-    // Don't modify the unwind info as registering these symbols causes C++
-    // exceptions to grab a lock in libgcc and deadlock the Redpanda process.
+    // Don't modify the unwind info as registering these symbols causes
+    // C++ exceptions to grab a lock in libgcc and deadlock the Redpanda
+    // process.
     wasmtime_config_native_unwind_info_set(config, false);
 
     handle<wasm_engine_t, &wasm_engine_delete> engine{

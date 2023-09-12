@@ -12,6 +12,7 @@
 #include "bytes/iobuf_parser.h"
 #include "json/document.h"
 #include "test_utils/fixture.h"
+#include "units.h"
 #include "wasm/tests/wasm_fixture.h"
 
 #include <absl/container/flat_hash_set.h>
@@ -19,7 +20,7 @@
 TEST_F(WasmTestFixture, Wasi) {
     load_wasm("wasi.wasm");
     auto batch = make_tiny_batch();
-    auto result = transform(batch);
+    auto result = transform_one(batch);
     const auto& result_records = result.copy_records();
     ASSERT_EQ(result_records.size(), 1);
     iobuf_const_parser parser(result_records.front().value());
@@ -47,6 +48,7 @@ TEST_F(WasmTestFixture, Wasi) {
       ss::format("REDPANDA_INPUT_TOPIC={}", meta().input_topic.tp()),
       ss::format(
         "REDPANDA_OUTPUT_TOPIC={}", meta().output_topics.begin()->tp()),
+      ss::format("REDPANDA_OUTPUT_TOPIC_MAX_BATCH_SIZE={}", 1_MiB),
     };
     ASSERT_EQ(environment_variables, expected_env);
 

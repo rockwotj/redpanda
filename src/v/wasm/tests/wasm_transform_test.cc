@@ -28,7 +28,7 @@
 TEST_F(WasmTestFixture, IdentityFunction) {
     load_wasm("identity.wasm");
     auto batch = make_tiny_batch();
-    auto transformed = transform(batch);
+    auto transformed = transform_one(batch);
     ASSERT_EQ(transformed.copy_records(), batch.copy_records());
     ASSERT_EQ(transformed, batch);
 }
@@ -43,7 +43,7 @@ TEST_F(WasmTestFixture, CanRestartEngine) {
     engine()->start().get();
     engine()->initialize().get();
     auto batch = make_tiny_batch();
-    auto transformed = transform(batch);
+    auto transformed = transform_one(batch);
     ASSERT_EQ(transformed.copy_records(), batch.copy_records());
     ASSERT_EQ(transformed, batch);
 }
@@ -54,12 +54,12 @@ TEST_F(WasmTestFixture, HandlesSetupPanic) {
 
 TEST_F(WasmTestFixture, HandlesTransformPanic) {
     load_wasm("transform-panic.wasm");
-    EXPECT_THROW(transform(make_tiny_batch()), wasm::wasm_exception);
+    EXPECT_THROW(transform_one(make_tiny_batch()), wasm::wasm_exception);
 }
 
 TEST_F(WasmTestFixture, HandlesTransformErrors) {
     load_wasm("transform-error.wasm");
-    EXPECT_THROW(transform(make_tiny_batch()), wasm::wasm_exception);
+    EXPECT_THROW(transform_one(make_tiny_batch()), wasm::wasm_exception);
 }
 
 TEST_F(WasmTestFixture, CanComputeMemoryUsage) {

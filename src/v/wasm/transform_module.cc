@@ -35,7 +35,8 @@ constexpr int32_t NO_ACTIVE_TRANSFORM = -1;
 constexpr int32_t INVALID_BUFFER = -2;
 
 ss::future<ss::chunked_fifo<model::record_batch>>
-transform_module::transform(const model::record_batch* input) {
+transform_module::transform(transform_args args) {
+    const model::record_batch* input = args.batch;
     vassert(
       input->header().attrs.compression() == model::compression::none,
       "wasm transforms expect uncompressed batches");
@@ -64,11 +65,10 @@ transform_module::transform(const model::record_batch* input) {
       .input = input,
       .max_input_record_size = max_record_size,
       .record_positions = std::move(record_positions),
+      .pre_record_callback = std::move(args.pre_record_callback),
     });
 
-    // Allow the transform to process until it's ready for another batch
-    _input_batch_ready.signal();
-    co_await _waiting_for_next_input_batch.when();
+    co_await signal_batch_ready();
 
     ss::chunked_fifo<model::record_batch> batches;
     for (output_batch& b : _call_ctx->output_batches) {
@@ -82,6 +82,7 @@ transform_module::transform(const model::record_batch* input) {
         batch.header().crc = model::crc_record_batch(batch);
         batch.header().header_crc = model::internal_header_only_crc(
           batch.header());
+        batches.push_back(std::move(batch));
     }
     _call_ctx = std::nullopt;
     co_return std::move(batches);
@@ -100,8 +101,7 @@ ss::future<int32_t> transform_module::read_batch_header(
   int16_t* producer_epoch,
   int32_t* base_sequence) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
-    _waiting_for_next_input_batch.signal();
-    co_await _input_batch_ready.when();
+    co_await signal_batch_complete();
     if (!_call_ctx) {
         co_return NO_ACTIVE_TRANSFORM;
     }
@@ -130,6 +130,7 @@ int32_t transform_module::read_record(ffi::array<uint8_t> buf) {
         // Buffer wrong size
         return INVALID_BUFFER;
     }
+    _call_ctx->pre_record_callback();
     _call_ctx->record_positions.pop_front();
     _wasi_module->set_timestamp(model::timestamp(
       _call_ctx->input->header().first_timestamp() + current.timestamp_delta));
@@ -189,7 +190,7 @@ int32_t transform_module::write_record(ffi::array<uint8_t> buf) {
     if (!_call_ctx) {
         return NO_ACTIVE_TRANSFORM;
     }
-    auto& output_batches = _call_ctx->output_batches;
+    ss::chunked_fifo<output_batch>& output_batches = _call_ctx->output_batches;
     iobuf b;
     b.append(buf.data(), buf.size());
     expected_record_metadata expected{
@@ -203,10 +204,10 @@ int32_t transform_module::write_record(ffi::array<uint8_t> buf) {
         // Invalid payload
         return INVALID_BUFFER;
     } else if (result.new_batch) {
-        _call_ctx->output_batches.emplace_back();
+        output_batches.emplace_back();
     }
-    _call_ctx->output_batches.back().records.append_fragments(std::move(b));
-    _call_ctx->output_batches.back().record_count += 1;
+    output_batches.back().records.append_fragments(std::move(b));
+    output_batches.back().record_count += 1;
     return int32_t(buf.size());
 }
 
@@ -215,8 +216,47 @@ void transform_module::check_abi_version_1() {}
 transform_module::transform_module(wasi::preview1_module* wasi_module)
   : _wasi_module(wasi_module) {}
 
+void transform_module::start() { _abort_ex = nullptr; }
+
 void transform_module::stop(const std::exception_ptr& ex) {
-    _input_batch_ready.broken(ex);
-    _waiting_for_next_input_batch.broken(ex);
+    _abort_ex = ex;
+    if (_input_batch_ready.has_waiters()) {
+        _input_batch_ready.signal();
+    }
+    if (_waiting_for_next_input_batch.has_waiters()) {
+        _waiting_for_next_input_batch.signal();
+    }
 }
+ss::future<> transform_module::wait_ready() {
+    if (_abort_ex) {
+        std::rethrow_exception(_abort_ex);
+    }
+    co_await _waiting_for_next_input_batch.wait();
+    if (_abort_ex) {
+        std::rethrow_exception(_abort_ex);
+    }
+}
+
+ss::future<> transform_module::signal_batch_ready() {
+    if (_abort_ex) {
+        std::rethrow_exception(_abort_ex);
+    }
+    // Allow the transform to process until it's ready for another batch
+    _input_batch_ready.signal();
+    co_await _waiting_for_next_input_batch.when();
+    if (_abort_ex) {
+        std::rethrow_exception(_abort_ex);
+    }
+}
+ss::future<> transform_module::signal_batch_complete() {
+    if (_abort_ex) {
+        std::rethrow_exception(_abort_ex);
+    }
+    _waiting_for_next_input_batch.signal();
+    co_await _input_batch_ready.when();
+    if (_abort_ex) {
+        std::rethrow_exception(_abort_ex);
+    }
+}
+
 } // namespace wasm

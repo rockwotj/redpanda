@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model/record_batch_reader.h"
 #include "model/tests/randoms.h"
 #include "model/transform.h"
 #include "transform/io.h"
@@ -18,6 +19,8 @@
 #include "utils/notification_list.h"
 #include "wasm/api.h"
 #include "wasm/probe.h"
+
+#include <seastar/core/chunked_fifo.hh>
 
 namespace transform::testing {
 
@@ -35,10 +38,8 @@ static const model::transform_metadata my_metadata{
 
 class fake_wasm_engine : public wasm::engine {
 public:
-    ss::future<model::record_batch>
-    transform(model::record_batch batch, wasm::transform_probe*) override {
-        co_return batch;
-    }
+    ss::future<ss::chunked_fifo<model::record_batch>>
+    transform(model::record_batch batch, wasm::transform_probe*) override;
 
     ss::future<> start() override;
     ss::future<> initialize() override;

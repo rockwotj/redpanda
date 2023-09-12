@@ -148,8 +148,14 @@ void WasmTestFixture::load_wasm(const std::string& path) {
     _engine->initialize().get();
 }
 
-model::record_batch WasmTestFixture::transform(const model::record_batch& b) {
-    return _engine->transform(b.copy(), _probe.get()).get();
+model::record_batch
+WasmTestFixture::transform_one(const model::record_batch& b) {
+    auto batches = _engine->transform(b.copy(), _probe.get()).get();
+    if (batches.size() != 1) {
+        throw std::runtime_error(
+          ss::format("expected a single batch, got: {}", batches.size()));
+    }
+    return std::move(*batches.begin());
 }
 model::record_batch WasmTestFixture::make_tiny_batch() {
     return model::test::make_random_batch(model::test::record_batch_spec{

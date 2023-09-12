@@ -68,4 +68,10 @@ uint64_t fake_wasm_engine::memory_usage_size_bytes() const {
 ss::future<> fake_wasm_engine::start() { return ss::now(); }
 ss::future<> fake_wasm_engine::initialize() { return ss::now(); }
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
+ss::future<ss::chunked_fifo<model::record_batch>>
+fake_wasm_engine::transform(model::record_batch batch, wasm::transform_probe*) {
+    ss::chunked_fifo<model::record_batch> batches;
+    batches.emplace_back(std::move(batch));
+    co_return batches;
+}
 } // namespace transform::testing

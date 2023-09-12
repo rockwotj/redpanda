@@ -24,6 +24,8 @@ enum class errc {
     user_code_failure,
     // Engine is not running
     engine_not_running,
+    // Invariant broken
+    internal_error,
 };
 
 struct errc_category final : public std::error_category {
