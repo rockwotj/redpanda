@@ -1,4 +1,4 @@
-// Copyright 2023 Redpanda Data, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -15,13 +15,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(_ afero.Fs, p *config.Params) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) error) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "transform",
-		Aliases: []string{"wasm", "transfrom"}, //nolint:misspell // auto correct a common misspelling
-		Short:   "Develop, deploy and manage Redpanda data transforms",
+		Use:        "transform",
+		Aliases:    []string{"wasm"},
+		SuggestFor: []string{"transfrom"}, //nolint:misspell // this is a suggestion if a user misspells something
+		Short:      "Develop, deploy and manage Redpanda data transforms",
 	}
 	p.InstallKafkaFlags(cmd)
-	// TODO(rockwood): Add commands
+	cmd.AddCommand(
+		newInitializeCommand(fs),
+		newBuildCommand(fs, execFn),
+		newDeployCommand(fs, p),
+		newListCommand(fs, p),
+		newDeleteCommand(fs, p),
+	)
 	return cmd
 }
