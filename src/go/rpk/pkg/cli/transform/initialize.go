@@ -86,7 +86,7 @@ Will initialize a transform project in the foobar directory.
 					suggestion = ""
 				}
 				var err error
-				name, err = out.PromptWithSuggestion(suggestion, "name this transform:")
+				name, err = out.Prompt("name this transform:")
 				out.MaybeDie(err, "unable to determine project name: %v", err)
 			}
 			var lang project.WasmLang

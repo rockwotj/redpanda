@@ -52,7 +52,9 @@
 #include "ssx/metrics.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
+#include "transform/fwd.h"
 #include "utils/stop_signal.h"
+#include "wasm/fwd.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -250,6 +252,7 @@ private:
     std::optional<pandaproxy::schema_registry::configuration>
       _schema_reg_config;
     std::optional<kafka::client::configuration> _schema_reg_client_config;
+    std::optional<kafka::client::configuration> _data_transforms_client_config;
     scheduling_groups_probe _scheduling_groups_probe;
     ss::logger _log;
 
@@ -269,6 +272,11 @@ private:
       _archival_upload_housekeeping;
     std::unique_ptr<monitor_unsafe_log_flag> _monitor_unsafe_log_flag;
     ss::sharded<archival::scrubber> _archival_scrubber;
+
+    std::unique_ptr<wasm::runtime> _wasm_runtime;
+    ss::sharded<transform::service> _transform_service;
+    ss::sharded<transform::rpc::local_service> _transform_rpc_service;
+    ss::sharded<transform::rpc::client> _transform_rpc_client;
 
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();

@@ -12,6 +12,8 @@
 #include "redpanda/admin_server.h"
 
 #include "archival/ntp_archiver_service.h"
+#include "bytes/iobuf.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_partition.h"
@@ -51,6 +53,7 @@
 #include "finjector/hbadger.h"
 #include "finjector/stress_fiber.h"
 #include "json/document.h"
+#include "json/istreamwrapper.h"
 #include "json/schema.h"
 #include "json/stringbuffer.h"
 #include "json/validator.h"
@@ -80,6 +83,7 @@
 #include "redpanda/admin/api-doc/shadow_indexing.json.hh"
 #include "redpanda/admin/api-doc/status.json.hh"
 #include "redpanda/admin/api-doc/transaction.json.hh"
+#include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/api-doc/usage.json.hh"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
@@ -92,6 +96,7 @@
 #include "ssx/future-util.h"
 #include "ssx/metrics.h"
 #include "ssx/sformat.h"
+#include "transform/api.h"
 #include "utils/fragmented_vector.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
@@ -237,7 +242,8 @@ admin_server::admin_server(
   ss::sharded<storage::node>& storage_node,
   ss::sharded<memory_sampling>& memory_sampling_service,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
-  ss::sharded<resources::cpu_profiler>& cpu_profiler)
+  ss::sharded<resources::cpu_profiler>& cpu_profiler,
+  ss::sharded<transform::service>* transform)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -263,6 +269,7 @@ admin_server::admin_server(
   , _memory_sampling_service(memory_sampling_service)
   , _cloud_storage_cache(cloud_storage_cache)
   , _cpu_profiler(cpu_profiler)
+  , _transform_service(transform)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {
     _server.set_content_streaming(true);
@@ -340,6 +347,7 @@ void admin_server::configure_admin_routes() {
     register_self_test_routes();
     register_cluster_routes();
     register_shadow_indexing_routes();
+    register_transform_routes();
 }
 
 namespace {
@@ -697,11 +705,11 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
     // - Assume that the peer is listening on the same port that the client
     //   used to make this request (i.e. the port in Host)
     //
-    // This will work reliably if all node configs have symmetric kafka listener
-    // sections (i.e. all specify the same number of listeners in the same
-    // order, for example all nodes have an internal and an external listener in
-    // that order), and the hostname used for connecting to the admin API
-    // matches one of the hostnames used for a kafka listener.
+    // This will work reliably if all node configs have symmetric kafka
+    // listener sections (i.e. all specify the same number of listeners in the
+    // same order, for example all nodes have an internal and an external
+    // listener in that order), and the hostname used for connecting to the
+    // admin API matches one of the hostnames used for a kafka listener.
     //
     // The generic fallback if the heuristic fails is to use the peer's
     // internal RPC address.  This works if the user is e.g. connecting
@@ -727,7 +735,8 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
         // request was sent to: parse the port out of the Host header
         auto colon = host_hdr.find(":");
         if (colon == ss::sstring::npos) {
-            // Admin is being served on a standard port, leave port string blank
+            // Admin is being served on a standard port, leave port string
+            // blank
         } else {
             port = host_hdr.substr(colon);
         }
@@ -763,7 +772,8 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
         } else {
             vlog(
               logger.debug,
-              "redirect: {} did not match any kafka listeners, redirecting to "
+              "redirect: {} did not match any kafka listeners, redirecting "
+              "to "
               "peer's internal RPC address",
               req_hostname);
             target_host = leader.broker.rpc_address().host();
@@ -1348,8 +1358,8 @@ void config_multi_property_validation(
             // to use the admin API after this request.
             errors["admin_api_require_auth"] = "No superusers defined";
         } else if (!superusers_set.contains(username) && !auth_was_enabled) {
-            // When enabling auth, user making the change must be in the list of
-            // superusers, or they would be locking themselves out.
+            // When enabling auth, user making the change must be in the list
+            // of superusers, or they would be locking themselves out.
             errors["admin_api_require_auth"] = "May only be set by a superuser";
         }
     }
@@ -2015,7 +2025,8 @@ admin_server::kafka_transfer_leadership_handler(
 
     vlog(
       logger.info,
-      "Leadership transfer request for leader of topic-partition {} to node {}",
+      "Leadership transfer request for leader of topic-partition {} to node "
+      "{}",
       ntp,
       target);
 
@@ -2302,7 +2313,8 @@ void admin_server::register_features_routes() {
           if (!_controller->get_feature_table().local().is_active(
                 features::feature::license)) {
               throw ss::httpd::bad_request_exception(
-                "Feature manager reports the cluster is not fully upgraded to "
+                "Feature manager reports the cluster is not fully upgraded "
+                "to "
                 "accept license get requests");
           }
           ss::httpd::features_json::license_response res;
@@ -5449,4 +5461,143 @@ admin_server::sampled_memory_profile_handler(
 
     co_return co_await ss::make_ready_future<ss::json::json_return_type>(
       std::move(resp));
+}
+
+void admin_server::register_transform_routes() {
+    register_route_raw_async<user>(
+      ss::httpd::transform_json::deploy_transform,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return deploy_transform(std::move(req), std::move(rep));
+      });
+    register_route<user>(
+      ss::httpd::transform_json::list_transforms,
+      [this](auto req) { return list_transforms(std::move(req)); });
+    register_route<user>(
+      ss::httpd::transform_json::delete_transform,
+      [this](auto req) { return delete_transform(std::move(req)); });
+}
+
+namespace {
+static json::validator make_transform_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "input_topic": {
+            "type": "string"
+        },
+        "output_topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+        },
+        "env": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        }
+    },
+    "required": ["name", "input_topic", "output_topics"],
+    "additionalProperties": false
+}
+)";
+    return json::validator(schema);
+}
+} // namespace
+
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_transform(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> reply) {
+    if (!_transform_service->local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("data transforms not enabled");
+    }
+    iobuf body;
+    auto out_stream = make_iobuf_ref_output_stream(body);
+    // write the input stream to an iobuf
+    co_await ss::copy(*req->content_stream, out_stream);
+    iobuf_istreambuf ibuf(body);
+    std::istream stream(&ibuf);
+    json::Document doc;
+    json::IStreamWrapper s(stream);
+    // Parse the JSON document, and stop when we read the end of it, after the
+    // json object is where the wasm file is.
+    doc.ParseStream<
+      rapidjson::kParseDefaultFlags | rapidjson::kParseStopWhenDoneFlag>(s);
+    body.trim_front(s.Tell());
+    if (doc.HasParseError()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("JSON parse error: {}", doc.GetParseError()));
+    }
+    auto validator = make_transform_validator();
+    apply_validator(validator, doc);
+
+    auto input_nt = model::topic_namespace(
+      model::kafka_namespace, model::topic(doc["input_topic"].GetString()));
+    std::vector<model::topic_namespace> output_topics;
+    for (const auto& topic : doc["output_topics"].GetArray()) {
+        auto output_nt = model::topic_namespace(
+          model::kafka_namespace, model::topic(topic.GetString()));
+        output_topics.push_back(output_nt);
+    }
+    auto name = model::transform_name(doc["name"].GetString());
+    absl::flat_hash_map<ss::sstring, ss::sstring> env;
+    if (doc.HasMember("env")) {
+        for (const auto& m : doc["env"].GetObject()) {
+            env.insert_or_assign(m.name.GetString(), m.value.GetString());
+        }
+    }
+    cluster::errc ec = co_await _transform_service->local().deploy_transform(
+      {.name = name,
+       .input_topic = input_nt,
+       .output_topics = output_topics,
+       .environment = std::move(env)},
+      std::move(body));
+    co_await throw_on_error(*req, ec, model::controller_ntp);
+    reply->set_status(ss::http::reply::status_type::ok);
+    reply->write_body("json", ss::json::json_void().to_json());
+    co_return std::move(reply);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
+    if (!_transform_service->local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("data transforms not enabled");
+    }
+    using namespace ss::httpd::transform_json;
+    auto transforms = _transform_service->local().list_transforms();
+    std::vector<transform_metadata> output;
+    output.reserve(transforms.size());
+    for (const auto& xform : transforms) {
+        transform_metadata meta;
+        meta.name = xform.name();
+        meta.input_topic = xform.input_topic.tp();
+        for (const auto& out : xform.output_topics) {
+            meta.output_topics.push(out.tp());
+        }
+        output.push_back(std::move(meta));
+    }
+    co_return output;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::delete_transform(std::unique_ptr<ss::http::request> req) {
+    if (!_transform_service->local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("data transforms not enabled");
+    }
+    auto doc = co_await parse_json_body(req.get());
+    auto validator = make_transform_validator();
+    apply_validator(validator, doc);
+    // TODO: Just take the name as input?
+    auto name = doc["name"].GetString();
+    auto ec = co_await _transform_service->local().delete_transform(
+      model::transform_name(name));
+    co_await throw_on_error(*req, ec, model::controller_ntp);
+    co_return ss::json::json_void();
 }

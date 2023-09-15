@@ -92,11 +92,16 @@
 #include "storage/compaction_controller.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
+#include "transform/api.h"
+#include "transform/rpc/client.h"
+#include "transform/rpc/deps.h"
+#include "transform/rpc/service.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
 #include "version.h"
 #include "vlog.h"
+#include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/memory.hh>
@@ -179,6 +184,23 @@ set_sr_kafka_client_defaults(kafka::client::configuration& client_config) {
     if (!client_config.client_identifier.is_overriden()) {
         client_config.client_identifier.set_value(
           std::make_optional<ss::sstring>("schema_registry_client"));
+    }
+}
+
+void set_xform_kafka_client_defaults(
+  kafka::client::configuration& client_config) {
+    if (!client_config.produce_batch_delay.is_overriden()) {
+        client_config.produce_batch_delay.set_value(0ms);
+    }
+    if (!client_config.produce_batch_record_count.is_overriden()) {
+        client_config.produce_batch_record_count.set_value(int32_t(0));
+    }
+    if (!client_config.produce_batch_size_bytes.is_overriden()) {
+        client_config.produce_batch_size_bytes.set_value(int32_t(0));
+    }
+    if (!client_config.client_identifier.is_overriden()) {
+        client_config.client_identifier.set_value(
+          std::make_optional<ss::sstring>("data_transform_client"));
     }
 }
 
@@ -878,7 +900,8 @@ void application::configure_admin_server() {
       std::ref(storage_node),
       std::ref(_memory_sampling),
       std::ref(shadow_index_cache),
-      std::ref(_cpu_profiler))
+      std::ref(_cpu_profiler),
+      std::addressof(_transform_service))
       .get();
 }
 
@@ -1050,6 +1073,48 @@ void application::wire_up_runtime_services(
           std::reference_wrapper(controller));
     }
     construct_single_service(_monitor_unsafe_log_flag, std::ref(feature_table));
+
+    _wasm_runtime = wasm::runtime::create_default(_schema_registry.get());
+    _deferred.emplace_back([this] { _wasm_runtime->stop().get(); });
+
+    set_local_kafka_client_config(
+      _data_transforms_client_config, config::node());
+    set_xform_kafka_client_defaults(*_data_transforms_client_config);
+
+    construct_service(
+      _transform_rpc_service,
+      ss::sharded_parameter([this] {
+          return transform::rpc::topic_metadata_cache::make_default(
+            &metadata_cache);
+      }),
+      ss::sharded_parameter([this] {
+          return transform::rpc::partition_manager::make_default(
+            &shard_table, &partition_manager);
+      }))
+      .get();
+
+    construct_service(
+      _transform_rpc_client,
+      node_id,
+      ss::sharded_parameter([this] {
+          return transform::rpc::partition_leader_cache::make_default(
+            &controller->get_partition_leaders());
+      }),
+      &_connection_cache,
+      &_transform_rpc_service)
+      .get();
+
+    construct_service(
+      _transform_service,
+      _wasm_runtime.get(),
+      node_id,
+      &controller->get_plugin_frontend(),
+      &controller->get_feature_table(),
+      &raft_group_manager,
+      &partition_manager,
+      &_transform_rpc_client,
+      std::reference_wrapper(*_data_transforms_client_config))
+      .get();
 
     configure_admin_server();
 }
@@ -2118,6 +2183,10 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
 
     start_kafka(node_id, app_signal);
     controller->set_ready().get();
+
+    _wasm_runtime->start().get();
+    _transform_service.invoke_on_all(&transform::service::start).get();
+
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
     _monitor_unsafe_log_flag->start().get();
 
@@ -2265,6 +2334,12 @@ void application::start_runtime_services(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(controller->get_ephemeral_credential_frontend())));
+
+          runtime_services.push_back(
+            std::make_unique<transform::rpc::network_service>(
+              sched_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              &_transform_rpc_service));
 
           runtime_services.push_back(
             std::make_unique<cluster::topic_recovery_status_rpc_handler>(

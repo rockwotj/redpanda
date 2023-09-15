@@ -25,6 +25,7 @@
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "storage/node.h"
+#include "transform/fwd.h"
 #include "utils/request_auth.h"
 
 #include <seastar/core/do_with.hh>
@@ -83,7 +84,8 @@ public:
       ss::sharded<storage::node>&,
       ss::sharded<memory_sampling>&,
       ss::sharded<cloud_storage::cache>&,
-      ss::sharded<resources::cpu_profiler>&);
+      ss::sharded<resources::cpu_profiler>&,
+      ss::sharded<transform::service>*);
 
     ss::future<> start();
     ss::future<> stop();
@@ -348,6 +350,15 @@ private:
     void register_self_test_routes();
     void register_cluster_routes();
     void register_shadow_indexing_routes();
+    void register_transform_routes();
+
+    // transform routes
+    ss::future<std::unique_ptr<ss::http::reply>> deploy_transform(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<ss::json::json_return_type>
+      list_transforms(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      delete_transform(std::unique_ptr<ss::http::request>);
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -537,6 +548,7 @@ private:
     ss::sharded<memory_sampling>& _memory_sampling_service;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
     ss::sharded<resources::cpu_profiler>& _cpu_profiler;
+    ss::sharded<transform::service>* _transform_service;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;

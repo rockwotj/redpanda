@@ -12,6 +12,13 @@
 #pragma once
 
 namespace transform {
+template<typename ClockType>
+class manager;
 class processor;
 class probe;
+class service;
+namespace rpc {
+class client;
+class local_service;
+} // namespace rpc
 } // namespace transform

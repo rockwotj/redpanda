@@ -46,8 +46,12 @@ public:
       std::unique_ptr<source>,
       std::vector<std::unique_ptr<sink>>,
       probe*);
-
+    processor(const processor&) = delete;
+    processor(processor&&) = delete;
+    processor& operator=(const processor&) = delete;
+    processor& operator=(processor&&) = delete;
     virtual ~processor() = default;
+
     virtual ss::future<> start();
     virtual ss::future<> stop();
 
@@ -57,9 +61,15 @@ public:
     const model::transform_metadata& meta() const;
 
 private:
-    ss::future<> run_transform_loop();
-    ss::future<> do_run_transform_loop();
-    ss::future<> transform_batches(model::record_batch_reader::data_t);
+    ss::future<> run_transform();
+    ss::future<> run_consumer();
+    ss::future<> run_poll_fallback_loop();
+    ss::future<> run_all_producers();
+    ss::future<> run_producer(size_t);
+
+    void register_source_subscriber();
+    void unregister_source_subscriber();
+    void drain_consumer_pings();
 
     model::transform_id _id;
     model::ntp _ntp;
@@ -70,8 +80,15 @@ private:
     error_callback _error_callback;
     probe* _probe;
 
+    ss::queue<std::monostate> _consumer_pings;
+    ss::queue<model::record_batch_reader::data_t> _input_queue;
+    std::vector<ss::queue<ss::chunked_fifo<model::record_batch>>>
+      _output_queues;
+
     ss::abort_source _as;
     ss::future<> _task;
     prefix_logger _logger;
+    cluster::notification_id_type _source_notification_id
+      = cluster::notification_id_type_invalid;
 };
 } // namespace transform

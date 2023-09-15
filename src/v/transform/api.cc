@@ -32,6 +32,7 @@
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "raft/group_manager.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
@@ -41,12 +42,17 @@
 #include "transform/logger.h"
 #include "transform/rpc/client.h"
 #include "transform/transform_manager.h"
+#include "transform/transform_processor.h"
 #include "units.h"
+#include "utils/mutex.h"
 #include "utils/uuid.h"
+#include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
@@ -100,7 +106,7 @@ iobuf string_to_iobuf(std::string_view s) {
 using tombstone = ss::bool_class<struct tombstone_tag>;
 model::record_batch make_batch(
   const uuid_t& key,
-  const cluster::transform_name& name,
+  const model::transform_name& name,
   std::optional<iobuf> value,
   tombstone is_tombstone) {
     storage::record_batch_builder builder(
@@ -117,17 +123,12 @@ model::record_batch make_batch(
     return std::move(builder).build();
 }
 
-class plugin_registry_adapter : public plugin_registry {
+class plugin_registry_adapter : public registry {
 public:
     plugin_registry_adapter(
-      cluster::plugin_frontend* pf,
-      kafka::client::client* c,
-      cluster::partition_manager* m,
-      ss::gate* g)
+      cluster::plugin_frontend* pf, cluster::partition_manager* m)
       : _pf(pf)
-      , _client(c)
-      , _manager(m)
-      , _gate(g) {}
+      , _manager(m) {}
 
     absl::flat_hash_set<model::partition_id>
     get_leader_partitions(model::topic_namespace_view tp_ns) const override {
@@ -140,82 +141,76 @@ public:
         return p;
     }
 
-    absl::flat_hash_map<cluster::transform_id, cluster::transform_metadata>
+    absl::flat_hash_set<model::transform_id>
     lookup_by_input_topic(model::topic_namespace_view tp_ns) const override {
-        return _pf->lookup_transforms_by_input_topic(tp_ns);
+        auto entries = _pf->lookup_transforms_by_input_topic(tp_ns);
+        absl::flat_hash_set<model::transform_id> result;
+        for (const auto& [id, _] : entries) {
+            result.emplace(id);
+        }
+        return result;
     }
 
-    std::optional<cluster::transform_metadata>
-    lookup_by_id(cluster::transform_id id) const override {
+    std::optional<model::transform_metadata>
+    lookup_by_id(model::transform_id id) const override {
         return _pf->lookup_transform(id);
-    }
-
-    void report_error(
-      cluster::transform_id id,
-      model::partition_id partition_id,
-      cluster::transform_metadata meta) const override {
-        ssx::spawn_with_gate(
-          *_gate, [this, id, partition_id, meta = std::move(meta)]() mutable {
-              constexpr auto timeout = 300ms;
-              return _pf
-                ->fail_transform_partition(
-                  {
-                    .id = id,
-                    .partition_id = partition_id,
-                    .uuid = meta.uuid,
-                  },
-                  model::timeout_clock::now() + timeout)
-                .discard_result();
-          });
-    }
-
-    ss::future<std::optional<iobuf>> fetch_binary(
-      model::offset offset, std::chrono::milliseconds timeout) const override {
-        // Only request a single byte, which essentially ensures we only fetch a
-        // single record (as KIP-74 says we'll always return a single record to
-        // make progress).
-        constexpr int max_fetch_bytes = 1;
-        auto resp = co_await _client->fetch_partition(
-          model::wasm_plugin_internal_tp, offset, max_fetch_bytes, timeout);
-        if (resp.data.error_code == kafka::error_code::offset_out_of_range) {
-            co_return std::nullopt;
-        }
-        check_error_code(resp.data);
-        vassert(resp.data.topics.size() == 1, "unexpected topics size");
-        auto& t = resp.data.topics[0];
-        vassert(t.partitions.size() == 1, "unexpected partitions size");
-        auto& p = t.partitions[0];
-        check_error_code(p);
-        if (!p.records) {
-            co_return std::nullopt;
-        }
-        auto reader = model::make_record_batch_reader<kafka::batch_reader>(
-          std::move(*p.records));
-        auto batches = co_await model::consume_reader_to_memory(
-          std::move(reader), model::no_timeout);
-        if (batches.empty()) {
-            co_return std::nullopt;
-        }
-        vassert(batches.size() == 1, "unexpected batches size");
-        vassert(batches[0].record_count() == 1, "unexpected batch size");
-        auto records = batches[0].copy_records();
-        auto& record = records.front();
-        auto state_header_key = string_to_iobuf("state");
-        for (const auto& header : record.headers()) {
-            if (header.key() == state_header_key) {
-                if (header.value() == string_to_iobuf("tombstone")) {
-                    co_return std::nullopt;
-                }
-            }
-        }
-        co_return record.release_value();
     }
 
 private:
     cluster::plugin_frontend* _pf;
-    kafka::client::client* _client;
     cluster::partition_manager* _manager;
-    ss::gate* _gate;
+};
+
+using runtime_proxy = ss::noncopyable_function<ss::future<
+  ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>(model::transform_metadata)>;
+
+class proc_factory : public processor_factory {
+public:
+    proc_factory(
+      runtime_proxy runtime,
+      std::unique_ptr<source::factory> source_factory,
+      std::unique_ptr<sink::factory> sink_factory)
+      : _runtime(std::move(runtime))
+      , _source_factory(std::move(source_factory))
+      , _sink_factory(std::move(sink_factory)) {}
+
+    ss::future<std::unique_ptr<processor>> create_processor(
+      model::transform_id id,
+      model::ntp ntp,
+      model::transform_metadata meta,
+      processor::error_callback error_cb,
+      probe* p) final {
+        auto u = co_await _mu.get_units();
+        auto& engine = _cache[meta.source_ptr];
+        if (!engine) {
+            auto factory = co_await _runtime(meta);
+            if (!factory) {
+                throw std::runtime_error("unable to fetch binary");
+            }
+            engine = co_await factory->make_engine();
+        }
+        auto src = *_source_factory->create(ntp);
+        const auto& output_topic = meta.output_topics[0];
+        std::vector<std::unique_ptr<sink>> sinks;
+        sinks.push_back(*_sink_factory->create(
+          model::ntp(output_topic.ns, output_topic.tp, ntp.tp.partition)));
+        co_return std::make_unique<processor>(
+          id,
+          ntp,
+          meta,
+          std::move(engine),
+          std::move(error_cb),
+          std::move(src),
+          std::move(sinks),
+          p);
+    }
+
+private:
+    mutex _mu;
+    runtime_proxy _runtime;
+    std::unique_ptr<source::factory> _source_factory;
+    std::unique_ptr<sink::factory> _sink_factory;
+    absl::flat_hash_map<model::offset, std::unique_ptr<wasm::engine>> _cache;
 };
 
 class rpc_client_sink final : public sink {
@@ -344,15 +339,19 @@ ss::future<> service::start() {
         &_partition_manager->local());
     std::unique_ptr<sink::factory> sink_factory
       = std::make_unique<rpc_client_factory>(&_transform_client->local());
-    _manager = std::make_unique<manager>(
-      _runtime,
+
+    _manager = std::make_unique<manager<ss::lowres_clock>>(
       std::make_unique<plugin_registry_adapter>(
-        &_plugins->local(),
-        _client.get(),
-        &_partition_manager->local(),
-        &_gate),
-      std::move(source_factory),
-      std::move(sink_factory));
+        &_plugins->local(), &_partition_manager->local()),
+      std::make_unique<proc_factory>(
+        [this](model::transform_metadata meta) {
+            return container().invoke_on(
+              0, [meta = std::move(meta)](service& s) mutable {
+                  return s.make_factory(std::move(meta));
+              });
+        },
+        std::move(source_factory),
+        std::move(sink_factory)));
 
     try {
         co_await _client->connect();
@@ -370,7 +369,7 @@ ss::future<> service::start() {
 }
 void service::register_notifications() {
     _plugin_notification_id = _plugins->local().register_for_updates(
-      [this](cluster::transform_id id) { _manager->on_plugin_change(id); });
+      [this](model::transform_id id) { _manager->on_plugin_change(id); });
     _leader_notification_id
       = _leaders->local().register_leadership_notification(
         [this](
@@ -440,7 +439,7 @@ void service::unregister_notifications() {
 }
 
 ss::future<cluster::errc>
-service::deploy_transform(cluster::transform_metadata meta, iobuf buf) {
+service::deploy_transform(model::transform_metadata meta, iobuf buf) {
     if (!_features->local().is_active(features::feature::wasm_transforms)) {
         co_return cluster::errc::feature_disabled;
     }
@@ -466,7 +465,7 @@ service::deploy_transform(cluster::transform_metadata meta, iobuf buf) {
 }
 
 ss::future<cluster::errc>
-service::delete_transform(cluster::transform_name name) {
+service::delete_transform(model::transform_name name) {
     if (!_features->local().is_active(features::feature::wasm_transforms)) {
         co_return cluster::errc::feature_disabled;
     }
@@ -486,9 +485,9 @@ service::delete_transform(cluster::transform_name name) {
     co_return cluster::errc::success;
 }
 
-std::vector<cluster::transform_metadata> service::list_transforms() {
+std::vector<model::transform_metadata> service::list_transforms() {
     auto transforms = _plugins->local().all_transforms();
-    std::vector<cluster::transform_metadata> output;
+    std::vector<model::transform_metadata> output;
     output.reserve(transforms.size());
     for (auto& [_, v] : transforms) {
         output.push_back(std::move(v));
@@ -500,7 +499,7 @@ ss::future<> service::create_internal_source_topic() {
     auto _ = _gate.hold();
     constexpr std::string_view retain_forever = "-1";
     kafka::creatable_topic req{
-      .name = model::wasm_plugin_internal_topic,
+      .name = model::wasm_plugin_internal_tp.topic,
       .num_partitions = 1,
       // TODO: The health manager will fix this, but should probably just create it correctly according to config.
       .replication_factor = 1,
@@ -532,7 +531,7 @@ ss::future<> service::create_internal_source_topic() {
 }
 
 ss::future<std::pair<uuid_t, model::offset>>
-service::write_source(cluster::transform_name name, iobuf buf) {
+service::write_source(model::transform_name name, iobuf buf) {
     // TODO: Do this lazily
     co_await create_internal_source_topic();
     auto key = uuid_t::create();
@@ -544,7 +543,7 @@ service::write_source(cluster::transform_name name, iobuf buf) {
     co_return std::make_pair(key, resp.base_offset);
 }
 ss::future<>
-service::write_source_tombstone(uuid_t key, cluster::transform_name name) {
+service::write_source_tombstone(uuid_t key, model::transform_name name) {
     // TODO: Do this lazily
     co_await create_internal_source_topic();
     model::record_batch batch = make_batch(
@@ -554,7 +553,7 @@ service::write_source_tombstone(uuid_t key, cluster::transform_name name) {
     check_error_code(resp);
 }
 ss::future<bool>
-service::validate_source(cluster::transform_metadata meta, iobuf buf) {
+service::validate_source(model::transform_metadata meta, iobuf buf) {
     // TODO: This size isn't exactly correct as it doesn't account for the
     // "serialized" as a batch size
     if (buf.size_bytes() > max_wasm_binary_size) {
@@ -580,6 +579,82 @@ service::validate_source(cluster::transform_metadata meta, iobuf buf) {
     }
     co_await engine->stop();
     co_return is_valid;
+}
+
+ss::future<std::optional<iobuf>>
+service::fetch_binary(model::offset offset, std::chrono::milliseconds timeout) {
+    // Only request a single byte, which essentially ensures we only fetch a
+    // single record (as KIP-74 says we'll always return a single record to
+    // make progress).
+    constexpr int max_fetch_bytes = 1;
+    auto resp = co_await _client->fetch_partition(
+      model::wasm_plugin_internal_tp, offset, max_fetch_bytes, timeout);
+    if (resp.data.error_code == kafka::error_code::offset_out_of_range) {
+        co_return std::nullopt;
+    }
+    check_error_code(resp.data);
+    vassert(resp.data.topics.size() == 1, "unexpected topics size");
+    auto& t = resp.data.topics[0];
+    vassert(t.partitions.size() == 1, "unexpected partitions size");
+    auto& p = t.partitions[0];
+    check_error_code(p);
+    if (!p.records) {
+        co_return std::nullopt;
+    }
+    auto reader = model::make_record_batch_reader<kafka::batch_reader>(
+      std::move(*p.records));
+    auto batches = co_await model::consume_reader_to_memory(
+      std::move(reader), model::no_timeout);
+    if (batches.empty()) {
+        co_return std::nullopt;
+    }
+    vassert(batches.size() == 1, "unexpected batches size");
+    vassert(batches[0].record_count() == 1, "unexpected batch size");
+    auto records = batches[0].copy_records();
+    auto& record = records.front();
+    auto state_header_key = string_to_iobuf("state");
+    for (const auto& header : record.headers()) {
+        if (header.key() == state_header_key) {
+            if (header.value() == string_to_iobuf("tombstone")) {
+                co_return std::nullopt;
+            }
+        }
+    }
+    co_return record.release_value();
+}
+
+namespace {
+class proxy_factory final : public wasm::factory {
+public:
+    explicit proxy_factory(std::unique_ptr<wasm::factory> factory)
+      : _factory(std::move(factory)) {}
+
+    ss::future<std::unique_ptr<wasm::engine>> make_engine() final {
+        return _factory->make_engine();
+    }
+
+private:
+    std::unique_ptr<wasm::factory> _factory;
+};
+} // namespace
+
+ss::future<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>
+service::make_factory(model::transform_metadata meta) {
+    auto units = co_await _mu.get_units();
+    auto& factory = _factory_cache[meta.source_ptr];
+    if (factory) {
+        co_return ss::make_foreign(factory);
+    }
+    vlog(tlog.info, "compiling wasm for {} at {}", meta.name, meta.source_ptr);
+    constexpr auto timeout = 10s;
+    auto binary = co_await fetch_binary(meta.source_ptr, timeout);
+    if (!binary) {
+        co_return nullptr;
+    }
+    auto shared = ss::make_shared<proxy_factory>(
+      co_await _runtime->make_factory(meta, *std::move(binary), &tlog));
+    factory = ss::static_pointer_cast<wasm::factory, proxy_factory>(shared);
+    co_return ss::make_foreign(factory);
 }
 
 } // namespace transform

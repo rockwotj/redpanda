@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/types.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/transform.h"
@@ -69,6 +70,14 @@ public:
     virtual ss::future<model::offset> load_latest_offset() = 0;
     virtual ss::future<model::record_batch_reader>
     read_batch(model::offset, ss::abort_source*) = 0;
+
+    virtual cluster::notification_id_type
+    register_on_write_notification(ss::noncopyable_function<void()> cb)
+      = 0;
+
+    virtual void
+    unregister_on_write_notification(cluster::notification_id_type id)
+      = 0;
 
     using factory = detail::factory<source>;
 };

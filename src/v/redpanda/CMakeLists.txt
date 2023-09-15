@@ -12,6 +12,7 @@ set(swags
   cluster
   debug
   usage
+  transform
   shadow_indexing)
 
 set(swag_files)
@@ -54,6 +55,7 @@ v_cc_library(
     v::pandaproxy_schema_registry
     v::migrations
     v::storage_resource_mgmt
+    v::transform
     v::version 
   )
 

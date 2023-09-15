@@ -80,8 +80,8 @@ private:
     // the backoff policy for this processor for when we attempt to restart
     // the processor. If it's been enough time since our last restart of the
     // processor we will reset this.
-    rpc::backoff_policy _backoff
-      = rpc::make_exponential_backoff_policy<ClockType>(
+    ::rpc::backoff_policy _backoff
+      = ::rpc::make_exponential_backoff_policy<ClockType>(
         base_duration, max_duration);
 };
 
@@ -246,6 +246,7 @@ template<typename ClockType>
 ss::future<> manager<ClockType>::stop() {
     vlog(tlog.info, "Stopping transform manager...");
     co_await _queue.shutdown();
+    vlog(tlog.info, "Stopped queue");
     co_await _processors->clear();
     vlog(tlog.info, "Stopped transform manager.");
 }
@@ -383,7 +384,14 @@ ss::future<> manager<ClockType>::create_processor(
   model::transform_metadata meta,
   ss::lw_shared_ptr<probe> p) {
     auto fut = co_await ss::coroutine::as_future(
-      _processor_factory->create_processor(id, ntp, meta, p.get()));
+      _processor_factory->create_processor(
+        id,
+        ntp,
+        meta,
+        [this](auto id, model::ntp ntp, model::transform_metadata meta) {
+            on_transform_error(id, std::move(ntp), std::move(meta));
+        },
+        p.get()));
     if (fut.failed()) {
         vlog(
           tlog.warn,

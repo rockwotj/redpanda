@@ -14,6 +14,7 @@
 #include "model/record_batch_types.h"
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
+#include "utils/mutex.h"
 #include "wasm/api.h"
 #include "wasm/errc.h"
 #include "wasm/ffi.h"
@@ -256,6 +257,9 @@ private:
             do_invoke_host_fn(
               host_module, &mem, {args, nargs}, {results, nresults});
             return nullptr;
+        } catch (const engine_stop_exception&) {
+            constexpr std::string_view stop_msg = "engine stopped";
+            return wasmtime_trap_new(stop_msg.data(), stop_msg.size());
         } catch (const std::exception& e) {
             vlog(wasm_log.warn, "Failure executing host function: {}", e);
             std::string_view msg = e.what();
@@ -444,15 +448,20 @@ public:
 
     ss::future<> start() final {
         _transform_module->start();
+        _mu = {};
         co_return;
     }
 
     ss::future<> initialize() final { return initialize_wasi(); }
 
     ss::future<> stop() final {
+        _mu.broken();
+        vlog(wasm_log.info, "Stopping wasm engine...");
         _transform_module->stop(
           std::make_exception_ptr(engine_stop_exception()));
+        vlog(wasm_log.info, "Signaled stop, waiting for _main to exit");
         co_await std::exchange(_main_task, ss::now());
+        vlog(wasm_log.info, "_main_task exitted");
     }
 
     ss::future<ss::chunked_fifo<model::record_batch>>
@@ -549,6 +558,7 @@ private:
 
     ss::future<ss::chunked_fifo<model::record_batch>>
     invoke_transform(const model::record_batch* batch, transform_probe* p) {
+        auto u = co_await _mu.get_units();
         std::unique_ptr<transform_probe::hist_t::measurement> measurement;
         auto result = co_await _transform_module->transform(
           {.batch = batch, .pre_record_callback = [this, p, &measurement] {
@@ -558,6 +568,7 @@ private:
         co_return result;
     }
 
+    mutex _mu;
     ss::future<> _main_task = ss::now();
     ss::sstring _user_module_name;
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
@@ -613,24 +624,22 @@ public:
         // Register the modules on an alien thread because cranelift
         // needs largish stacks which aren't available in unit
         // tests.
-        co_await _alien_thread_pool->submit([sr = sr_module.get(),
-                                             wasi = wasi_module.get(),
-                                             xform = xform_module.get(),
-                                             l = linker.get()] {
-            register_wasi_module(wasi, l);
-            register_transform_module(xform, l);
-            register_sr_module(sr, l);
-        });
-
-        // Create the module on an alien thread because cranelift
-        // requires large stacks.
         wasmtime_instance_t instance = co_await _alien_thread_pool->submit(
-          [this, context, linker = linker.get()] {
+          [this,
+           context,
+           sr = sr_module.get(),
+           wasi = wasi_module.get(),
+           xform = xform_module.get(),
+           l = linker.get()] {
+              register_wasi_module(wasi, l);
+              register_transform_module(xform, l);
+              register_sr_module(sr, l);
+
               wasmtime_instance_t instance;
               wasm_trap_t* trap_ptr = nullptr;
               handle<wasmtime_error_t, wasmtime_error_delete> error(
                 wasmtime_linker_instantiate(
-                  linker, context, _module.get(), &instance, &trap_ptr));
+                  l, context, _module.get(), &instance, &trap_ptr));
               handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
               check_error(error.get());
               check_trap(trap.get());
@@ -673,23 +682,27 @@ public:
 
     ss::future<std::unique_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
-        auto user_module = co_await _alien_thread_pool.submit(
-          [this, &meta, &buf] {
-              vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
-              // This can be a large contiguous allocation, however
-              // it happens on an alien thread so it bypasses the
-              // seastar allocator.
-              bytes b = iobuf_to_bytes(buf);
-              wasmtime_module_t* user_module_ptr = nullptr;
-              handle<wasmtime_error_t, wasmtime_error_delete> error{
-                wasmtime_module_new(
-                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
-              check_error(error.get());
-              std::shared_ptr<wasmtime_module_t> user_module{
-                user_module_ptr, wasmtime_module_delete};
-              wasm_log.info("Finished compiling wasm module {}", meta.name);
-              return user_module;
-          });
+        auto user_module = co_await _alien_thread_pool.submit([this,
+                                                               &meta,
+                                                               &buf] {
+            vlog(
+              wasm_log.info,
+              "Starting compilation for wasm module {}",
+              meta.name);
+            // This can be a large contiguous allocation, however
+            // it happens on an alien thread so it bypasses the
+            // seastar allocator.
+            bytes b = iobuf_to_bytes(buf);
+            wasmtime_module_t* user_module_ptr = nullptr;
+            handle<wasmtime_error_t, wasmtime_error_delete> error{
+              wasmtime_module_new(
+                _engine.get(), b.data(), b.size(), &user_module_ptr)};
+            check_error(error.get());
+            std::shared_ptr<wasmtime_module_t> user_module{
+              user_module_ptr, wasmtime_module_delete};
+            vlog(wasm_log.info, "Finished compiling wasm module {}", meta.name);
+            return user_module;
+        });
         co_return std::make_unique<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
@@ -716,7 +729,7 @@ std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     wasmtime_config_consume_fuel_set(config, true);
     // We want to enable memcopy and other efficent memcpy operators
     wasmtime_config_wasm_bulk_memory_set(config, true);
-    wasmtime_config_parallel_compilation_set(config, false);
+    // wasmtime_config_parallel_compilation_set(config, false);
     // Set max stack size to generally be as big as a contiguous memory
     // region we're willing to allocate in Redpanda.
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)

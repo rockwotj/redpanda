@@ -20,20 +20,22 @@
 #include "kafka/client/client.h"
 #include "kafka/client/fwd.h"
 #include "model/metadata.h"
+#include "model/transform.h"
 #include "raft/fwd.h"
 #include "raft/group_manager.h"
 #include "transform/fwd.h"
+#include "transform/transform_manager.h"
 #include "utils/uuid.h"
 #include "wasm/api.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 
 #include <memory>
 
 namespace transform {
 
-class manager;
 /**
  * The transform service is responsible for intersecting the current state of
  * plugins and topics and ensuring that the corresponding wasm transform is
@@ -41,7 +43,7 @@ class manager;
  *
  * Instance on every shard.
  */
-class service {
+class service : public ss::peering_sharded_service<service> {
 public:
     service(
       wasm::runtime* rt,
@@ -93,8 +95,18 @@ private:
       write_source(model::transform_name, iobuf);
     ss::future<> write_source_tombstone(uuid_t, model::transform_name);
 
+    ss::future<std::optional<iobuf>>
+    fetch_binary(model::offset offset, std::chrono::milliseconds timeout);
+
+    ss::future<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>
+      make_factory(model::transform_metadata);
+
     void register_notifications();
     void unregister_notifications();
+
+    mutex _mu;
+    absl::flat_hash_map<model::offset, ss::shared_ptr<wasm::factory>>
+      _factory_cache;
 
     wasm::runtime* _runtime;
     model::node_id _self;
@@ -105,7 +117,9 @@ private:
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<rpc::client>* _transform_client;
     std::unique_ptr<kafka::client::client> _client;
-    std::unique_ptr<manager> _manager;
+    std::unique_ptr<manager<ss::lowres_clock>> _manager;
+    std::unique_ptr<processor_factory> _proc_factory;
+
     ss::gate _gate;
 
     cluster::notification_id_type _leader_notification_id;

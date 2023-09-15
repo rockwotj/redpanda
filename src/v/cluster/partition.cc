@@ -328,6 +328,7 @@ ss::future<result<kafka_result>> partition::replicate(
     if (!res) {
         co_return ret_t(res.error());
     }
+    notify_write_completion();
     co_return ret_t(
       kafka_result{kafka::offset(get_offset_translator_state()->from_log_offset(
         res.value().last_offset)())});
@@ -396,7 +397,8 @@ kafka_stages partition::replicate_in_stages(
     }
 
     if (_rm_stm) {
-        return _rm_stm->replicate_in_stages(bid, std::move(r), opts);
+        return wrap_in_write_notification_on_completion(
+          _rm_stm->replicate_in_stages(bid, std::move(r), opts));
     }
 
     auto res = _raft->replicate_in_stages(std::move(r), opts);
@@ -410,8 +412,34 @@ kafka_stages partition::replicate_in_stages(
             get_offset_translator_state()->from_log_offset(old_offset)());
           return ret_t(kafka_result{new_offset});
       });
-    return kafka_stages(
-      std::move(res.request_enqueued), std::move(replicate_finished));
+    return wrap_in_write_notification_on_completion(
+      {std::move(res.request_enqueued), std::move(replicate_finished)});
+}
+
+kafka_stages
+partition::wrap_in_write_notification_on_completion(kafka_stages stages) {
+    return {
+      std::move(stages.request_enqueued),
+      std::move(stages.replicate_finished).then([this](auto result) {
+          notify_write_completion();
+          return result;
+      })};
+}
+
+void partition::notify_write_completion() const {
+    for (const auto& [id, cb] : _write_notifications) {
+        cb();
+    }
+}
+cluster::notification_id_type
+partition::register_on_write_notification(ss::noncopyable_function<void()> cb) {
+    _write_notifications.emplace(++_latest_id, std::move(cb));
+    return _latest_id;
+}
+
+void partition::unregister_on_write_notification(
+  cluster::notification_id_type id) {
+    _write_notifications.erase(id);
 }
 
 ss::future<> partition::start() {
