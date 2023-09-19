@@ -29,26 +29,27 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/posix.hh>
+#include <seastar/core/print.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/backtrace.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
 
-#include <wasmtime/config.h>
 #include <wasmtime/error.h>
-#include <wasmtime/extern.h>
-#include <wasmtime/instance.h>
-#include <wasmtime/memory.h>
-#include <wasmtime/store.h>
+#include <wasmtime/func.h>
 
 #include <csignal>
 #include <exception>
 #include <memory>
 #include <pthread.h>
 #include <span>
+#include <utility>
+#include <variant>
 #include <wasm.h>
 #include <wasmtime.h>
 
@@ -222,21 +223,123 @@ struct host_function<module_func> {
         handle<wasm_functype_t, wasm_functype_delete> functype{
           wasm_functype_new(&inputs, &outputs)};
 
-        handle<wasmtime_error_t, wasmtime_error_delete> error(
-          wasmtime_linker_define_func(
-            linker,
-            Module::name.data(),
-            Module::name.size(),
-            function_name.data(),
-            function_name.size(),
-            functype.get(),
-            &invoke_host_fn,
-            mod,
-            /*finalizer=*/nullptr));
-        check_error(error.get());
+        if constexpr (ss::is_future<ReturnType>::value) {
+            handle<wasmtime_error_t, wasmtime_error_delete> error(
+              wasmtime_linker_define_func_async(
+                linker,
+                Module::name.data(),
+                Module::name.size(),
+                function_name.data(),
+                function_name.size(),
+                functype.get(),
+                &invoke_async_host_fn,
+                mod,
+                /*finalizer=*/nullptr));
+            check_error(error.get());
+        } else {
+            handle<wasmtime_error_t, wasmtime_error_delete> error(
+              wasmtime_linker_define_func(
+                linker,
+                Module::name.data(),
+                Module::name.size(),
+                function_name.data(),
+                function_name.size(),
+                functype.get(),
+                &invoke_sync_host_fn,
+                mod,
+                /*finalizer=*/nullptr));
+            check_error(error.get());
+        }
     }
 
 private:
+    using async_call_done = ss::bool_class<struct async_call_done_tag>;
+
+    struct async_context {
+        Module* host_module;
+        std::unique_ptr<memory> mem;
+        async_call_done done;
+        wasm_trap_t* error = nullptr;
+    };
+
+    static wasm_trap_t*
+    do_invoke_async_host_fn(void* env, wasmtime_caller_t*, bool* done) {
+        auto* ctx = static_cast<async_context*>(env);
+        *done = ctx->done == async_call_done::yes;
+        return ctx->error;
+    }
+
+    /**
+     * A continuation that only reports an error
+     */
+    static wasm_trap_t*
+    do_invoke_trapped_async_host_fn(void* env, wasmtime_caller_t*, bool*) {
+        return static_cast<wasm_trap_t*>(env);
+    }
+
+    /**
+     * Invoke an async function.
+     */
+    static wasmtime_async_continuation_t* invoke_async_host_fn(
+      void* env,
+      wasmtime_caller_t* caller,
+      const wasmtime_val_t* args,
+      size_t nargs,
+      wasmtime_val_t* results,
+      size_t) {
+        auto* host_module = static_cast<Module*>(env);
+        auto mem = std::make_unique<memory>(wasmtime_caller_context(caller));
+        wasm_trap_t* trap = extract_memory(caller, mem.get());
+        if (trap != nullptr) {
+            return wasmtime_async_continuation_new(
+              &do_invoke_trapped_async_host_fn, trap, nullptr);
+        }
+
+        auto raw = to_raw_values({args, nargs});
+        auto host_params = ffi::extract_parameters<ArgTypes...>(
+          mem.get(), raw, 0);
+        ss::future<> host_future_result = ss::now();
+        if constexpr (std::is_void_v<typename ReturnType::value_type>) {
+            host_future_result = ss::futurize_apply(
+              module_func,
+              std::tuple_cat(
+                std::make_tuple(host_module), std::move(host_params)));
+        } else {
+            host_future_result
+              = ss::futurize_apply(
+                  module_func,
+                  std::tuple_cat(
+                    std::make_tuple(host_module), std::move(host_params)))
+                  .then([results](
+                          typename ReturnType::value_type host_future_result) {
+                      *results
+                        = convert_to_wasmtime<typename ReturnType::value_type>(
+                          host_future_result);
+                  });
+        }
+        // NOLINTNEXTLINE(*owning-memory)
+        auto* ctx = new async_context(
+          host_module, std::move(mem), async_call_done::no, nullptr);
+
+        // TODO: plumb this up to the engine so we can await the future.
+        host_module->set_pending_async_call(
+          std::move(host_future_result).then_wrapped([ctx](ss::future<> fut) {
+              ctx->done = async_call_done::yes;
+              if (fut.failed()) {
+                  auto msg = ss::format(
+                    "Failure executing host function: {}",
+                    std::move(fut).get_exception());
+                  ctx->error = wasmtime_trap_new(msg.data(), msg.size());
+              }
+          }));
+
+        return wasmtime_async_continuation_new(
+          &do_invoke_async_host_fn, ctx, [](void* ctx) {
+              // NOLINTNEXTLINE(*owning-memory)
+              delete static_cast<async_context*>(ctx);
+          });
+    }
+
     /**
      * All the boilerplate setup needed to invoke a host function
      * from the VM.
@@ -244,7 +347,7 @@ private:
      * Extracts the memory module, and handles exceptions from our
      * host functions.
      */
-    static wasm_trap_t* invoke_host_fn(
+    static wasm_trap_t* invoke_sync_host_fn(
       void* env,
       wasmtime_caller_t* caller,
       const wasmtime_val_t* args,
@@ -265,9 +368,9 @@ private:
             constexpr std::string_view stop_msg = "engine stopped";
             return wasmtime_trap_new(stop_msg.data(), stop_msg.size());
         } catch (const std::exception& e) {
-            vlog(wasm_log.warn, "Failure executing host function: {}", e);
-            std::string_view msg = e.what();
-            return wasmtime_trap_new(msg.data(), msg.size());
+            auto stop_msg = ss::format(
+              "Failure executing host function: {}", e);
+            return wasmtime_trap_new(stop_msg.data(), stop_msg.size());
         }
     }
 
@@ -410,6 +513,7 @@ class wasmtime_engine : public engine {
 public:
     wasmtime_engine(
       ss::sstring user_module_name,
+      std::unique_ptr<ffi::async_pending_host_call> phc,
       handle<wasmtime_linker_t, wasmtime_linker_delete> l,
       handle<wasmtime_store_t, wasmtime_store_delete> s,
       std::shared_ptr<wasmtime_module_t> user_module,
@@ -418,6 +522,7 @@ public:
       std::unique_ptr<wasi::preview1_module> wasi_module,
       wasmtime_instance_t instance)
       : _user_module_name(std::move(user_module_name))
+      , _pending_host_call(std::move(phc))
       , _store(std::move(s))
       , _user_module(std::move(user_module))
       , _transform_module(std::move(transform_module))
@@ -463,36 +568,21 @@ public:
 
     ss::future<> initialize() final {
         auto ready_fut = _transform_module->wait_ready();
-        _vm_thread_gate.enter();
-        ssx::background
-          = ss::async([this] {
-                std::exception_ptr ex;
-                try {
-                    initialize_wasi();
-                    ex = std::make_exception_ptr(wasm::wasm_exception(
-                      "main exited", errc::engine_not_running));
-                } catch (...) {
-                    ex = std::current_exception();
-                }
+        _main_task = ss::futurize_invoke([this] {
+                         return initialize_wasi();
+                     }).then_wrapped([this](ss::future<> fut) {
+            if (fut.failed()) {
                 vlog(
                   wasm_log.debug,
                   "finishing up _start function from wasi and "
                   "stopping module, {} "
                   "{} {}",
-                  ex,
+                  fut.get_exception(),
                   ss::thread::running_in_thread(),
                   uintptr_t(_transform_module.get()));
-                _transform_module->stop();
-                vlog(
-                  wasm_log.debug,
-                  "finished up stopping the transform module: {} {}",
-                  uintptr_t(_transform_module.get()),
-                  ss::thread::running_in_thread());
-            }).then([this]() mutable {
-                vlog(wasm_log.debug, "main thread finished");
-                _vm_thread_gate.leave();
-                vlog(wasm_log.debug, "main thread finished");
-            });
+            }
+            _transform_module->stop();
+        });
         co_await std::move(ready_fut);
     }
 
@@ -501,20 +591,11 @@ public:
         vlog(wasm_log.info, "Stopping wasm engine...");
         _transform_module->abort(
           std::make_exception_ptr(engine_stop_exception()));
-        auto fut = _vm_thread_gate.close();
-        while (_vm_thread_gate.get_count() > 0) {
-            vlog(
-              wasm_log.info,
-              "Sleepy wasm engine {}",
-              _vm_thread_gate.get_count());
-            co_await ss::maybe_yield();
-        }
-        co_await std::move(fut);
+        co_await std::exchange(_main_task, ss::now());
         vlog(
           wasm_log.trace,
-          "_main_task exitted: {}",
+          "_main_task exited: {}",
           ss::thread::running_in_thread());
-        co_return;
     }
 
     ss::future<ss::chunked_fifo<model::record_batch>>
@@ -546,7 +627,7 @@ private:
           wasmtime_context_add_fuel(ctx, wasmtime_fuel_amount - fuel));
     }
 
-    void initialize_wasi() {
+    ss::future<> initialize_wasi() {
         // seastar threads swap context, which has it's own
         // signals that it masks
         unblock_signals();
@@ -566,10 +647,20 @@ private:
               "Missing main function", errc::user_code_failure);
         }
         vlog(wasm_log.info, "Initializing wasm function {}", _user_module_name);
+        handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut{
+          wasmtime_func_call_async(ctx, &start.of.func)};
+        while (!wasmtime_call_future_poll(fut.get())) {
+            if (_pending_host_call->pending_call) {
+                co_await std::exchange(
+                  _pending_host_call->pending_call, std::nullopt)
+                  .value();
+                continue;
+            }
+            co_await ss::coroutine::maybe_yield();
+        }
         wasm_trap_t* trap_ptr = nullptr;
-        handle<wasmtime_error_t, wasmtime_error_delete> error{
-          wasmtime_func_call(
-            ctx, &start.of.func, nullptr, 0, nullptr, 0, &trap_ptr)};
+        handle<wasmtime_error_t, wasmtime_error_delete> error(
+          wasmtime_call_future_get_results(fut.get(), &trap_ptr));
         handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
         try {
             check_error(error.get());
@@ -577,7 +668,7 @@ private:
         } catch (const engine_stop_exception& ex) {
             // This can happen if `stop` is called, so don't
             // log in this case.
-            return;
+            co_return;
         } catch (...) {
             auto ex = std::current_exception();
             vlog(
@@ -603,8 +694,9 @@ private:
     }
 
     mutex _mu;
-    ss::gate _vm_thread_gate;
+    ss::future<> _main_task = ss::now();
     ss::sstring _user_module_name;
+    std::unique_ptr<ffi::async_pending_host_call> _pending_host_call;
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
     std::shared_ptr<wasmtime_module_t> _user_module;
     std::unique_ptr<transform_module> _transform_module;
@@ -641,6 +733,9 @@ public:
         handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
           wasmtime_linker_new(_engine)};
 
+        auto pending_host_call
+          = std::make_unique<ffi::async_pending_host_call>();
+
         std::vector<ss::sstring> args{_meta.name()};
         absl::flat_hash_map<ss::sstring, ss::sstring> env = _meta.environment;
         env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
@@ -650,12 +745,13 @@ public:
         env.emplace(
           "REDPANDA_OUTPUT_TOPIC_MAX_BATCH_SIZE", ss::format("{}", 1_MiB));
         auto wasi_module = std::make_unique<wasi::preview1_module>(
-          std::move(args), std::move(env), _logger);
+          pending_host_call.get(), std::move(args), std::move(env), _logger);
 
         auto xform_module = std::make_unique<transform_module>(
-          wasi_module.get());
+          pending_host_call.get(), wasi_module.get());
 
-        auto sr_module = std::make_unique<schema_registry_module>(_sr);
+        auto sr_module = std::make_unique<schema_registry_module>(
+          pending_host_call.get(), _sr);
         // Register the modules on an alien thread because cranelift
         // needs largish stacks which aren't available in unit
         // tests.
@@ -673,7 +769,7 @@ public:
               wasmtime_instance_t instance;
               wasm_trap_t* trap_ptr = nullptr;
               handle<wasmtime_error_t, wasmtime_error_delete> error(
-                wasmtime_linker_instantiate(
+                wasmtime_linker_instantiate_async(
                   l, context, _module.get(), &instance, &trap_ptr));
               handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
               check_error(error.get());
@@ -683,6 +779,7 @@ public:
 
         co_return std::make_unique<wasmtime_engine>(
           _meta.name(),
+          std::move(pending_host_call),
           std::move(linker),
           std::move(store),
           _module,
@@ -767,6 +864,9 @@ std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_SPEED);
     // Fuel allows us to stop execution after some time.
     wasmtime_config_consume_fuel_set(config, true);
+    wasmtime_config_async_support_set(config, true);
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+    // wasmtime_config_async_stack_size_set(config, 64_KiB);
     // We want to enable memcopy and other efficent memcpy operators
     wasmtime_config_wasm_bulk_memory_set(config, true);
     // wasmtime_config_parallel_compilation_set(config, false);

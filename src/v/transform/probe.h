@@ -16,10 +16,15 @@
 
 namespace transform {
 
+struct probe_guages {
+    std::function<uint64_t()> num_processors_callback;
+    std::function<uint64_t()> engine_memory_usage_callback;
+};
+
 /** A per transform probe. */
 class probe : public wasm::transform_probe {
 public:
-    void setup_metrics(ss::sstring transform_name);
+    void setup_metrics(ss::sstring transform_name, probe_guages);
 
     void increment_read_bytes(uint64_t bytes);
     void increment_write_bytes(uint64_t bytes);

@@ -73,7 +73,8 @@ struct transform_args {
  */
 class transform_module {
 public:
-    explicit transform_module(wasi::preview1_module* wasi_module);
+    transform_module(
+      ffi::async_pending_host_call*, wasi::preview1_module* wasi_module);
     transform_module(const transform_module&) = delete;
     transform_module& operator=(const transform_module&) = delete;
     transform_module(transform_module&&) = delete;
@@ -104,11 +105,13 @@ public:
      */
     void abort(const std::exception_ptr& ex);
 
+    void set_pending_async_call(ss::future<> fut);
+
     // Start ABI exports
 
     void check_abi_version_1();
 
-    int32_t read_batch_header(
+    ss::future<int32_t> read_batch_header(
       int64_t* base_offset,
       int32_t* record_count,
       int32_t* partition_leader_epoch,
@@ -159,7 +162,7 @@ private:
      * This should be called by the vm fiber signalling that it's ready to wait
      * for another batch to transform.
      */
-    void signal_batch_complete();
+    ss::future<> signal_batch_complete();
 
     wasi::preview1_module* _wasi_module;
 
@@ -171,5 +174,6 @@ private:
     std::exception_ptr _abort_ex = nullptr;
 
     std::optional<transform_context> _call_ctx;
+    ffi::async_pending_host_call* _pending_call;
 };
 } // namespace wasm

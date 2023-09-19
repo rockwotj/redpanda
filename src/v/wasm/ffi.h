@@ -25,6 +25,14 @@
 namespace wasm::ffi {
 
 /**
+ * A holder for an async host call so that it can be reported back up to the
+ * engine and properly awaited upon.
+ */
+struct async_pending_host_call {
+    std::optional<ss::future<>> pending_call;
+};
+
+/**
  * An container for a sequence of T from the Wasm VM guest.
  *
  * This can be used in exposed functions, and the parameter translation will

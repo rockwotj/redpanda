@@ -102,8 +102,10 @@ constexpr int32_t SCHEMA_REGISTRY_ERROR = -2;
 
 } // namespace
 
-schema_registry_module::schema_registry_module(schema_registry* sr)
-  : _sr(sr) {}
+schema_registry_module::schema_registry_module(
+  ffi::async_pending_host_call* pc, schema_registry* sr)
+  : _sr(sr)
+  , _pending_call(pc) {}
 
 ss::future<int32_t> schema_registry_module::get_schema_definition_len(
   pandaproxy::schema_registry::schema_id schema_id, uint32_t* size_out) {
@@ -207,4 +209,7 @@ ss::future<int32_t> schema_registry_module::create_subject_schema(
     co_return SUCCESS;
 }
 
+void schema_registry_module::set_pending_async_call(ss::future<> fut) {
+    _pending_call->pending_call = std::move(fut);
+}
 } // namespace wasm

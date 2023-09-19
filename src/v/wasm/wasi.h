@@ -96,7 +96,10 @@ public:
     // Create a wasi module using the args and environ to initialize the runtime
     // with.
     preview1_module(
-      std::vector<ss::sstring>, const environ_map_t&, ss::logger*);
+      ffi::async_pending_host_call*,
+      std::vector<ss::sstring>,
+      const environ_map_t&,
+      ss::logger*);
     preview1_module(const preview1_module&) = delete;
     preview1_module& operator=(const preview1_module&) = delete;
     preview1_module(preview1_module&&) = default;
@@ -105,6 +108,8 @@ public:
 
     // Set the current timestamp that clocks will return.
     void set_timestamp(model::timestamp);
+
+    void set_pending_async_call(ss::future<> fut);
 
     static constexpr std::string_view name = "wasi_snapshot_preview1";
 
@@ -215,6 +220,7 @@ private:
     std::vector<ss::sstring> _environ;
     log_writer _stdout_log_writer;
     log_writer _stderr_log_writer;
+    ffi::async_pending_host_call* _pending_call;
 };
 
 } // namespace wasm::wasi

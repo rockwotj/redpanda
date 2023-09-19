@@ -167,7 +167,30 @@ public:
         auto it = id_index.find(id);
         if (it == id_index.end()) {
             auto probe = ss::make_lw_shared<transform::probe>();
-            probe->setup_metrics(meta.name);
+            probe->setup_metrics(
+              meta.name,
+              {
+                .num_processors_callback =
+                  [this, id]() {
+                      auto& by_id = _underlying.template get<id_index_t>();
+                      auto [begin, end] = by_id.equal_range(id);
+                      uint64_t sum = 0;
+                      for (; begin != end; ++begin) {
+                          sum += begin->processor()->is_running() ? 1 : 0;
+                      }
+                      return sum;
+                  },
+                .engine_memory_usage_callback =
+                  [this, id]() {
+                      auto& by_id = _underlying.template get<id_index_t>();
+                      auto [begin, end] = by_id.equal_range(id);
+                      uint64_t sum = 0;
+                      for (; begin != end; ++begin) {
+                          sum += begin->processor()->memory_usage();
+                      }
+                      return sum;
+                  },
+              });
             return probe;
         }
         return it->probe();

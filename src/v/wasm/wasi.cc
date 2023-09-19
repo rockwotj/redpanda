@@ -84,10 +84,14 @@ uint32_t log_writer::flush() {
 }
 
 preview1_module::preview1_module(
-  std::vector<ss::sstring> args, const environ_map_t& environ, ss::logger* l)
+  ffi::async_pending_host_call* pending_call,
+  std::vector<ss::sstring> args,
+  const environ_map_t& environ,
+  ss::logger* l)
   : _args(std::move(args))
   , _stdout_log_writer(log_writer::make_for_stdout(_args.front(), l))
-  , _stderr_log_writer(log_writer::make_for_stderr(_args.front(), l)) {
+  , _stderr_log_writer(log_writer::make_for_stderr(_args.front(), l))
+  , _pending_call(pending_call) {
     _environ.reserve(environ.size());
     for (const auto& [k, v] : environ) {
         if (k.find("=") != ss::sstring::npos) {
@@ -365,4 +369,7 @@ ss::future<errno_t> preview1_module::sched_yield() {
     co_return ERRNO_SUCCESS;
 }
 // NOLINTEND(bugprone-easily-swappable-parameters)
+void preview1_module::set_pending_async_call(ss::future<> fut) {
+    _pending_call->pending_call = std::move(fut);
+}
 } // namespace wasm::wasi

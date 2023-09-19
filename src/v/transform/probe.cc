@@ -17,7 +17,7 @@
 
 namespace transform {
 
-void probe::setup_metrics(ss::sstring transform_name) {
+void probe::setup_metrics(ss::sstring transform_name, probe_guages g) {
     wasm::transform_probe::setup_metrics(transform_name);
     namespace sm = ss::metrics;
 
@@ -40,6 +40,18 @@ void probe::setup_metrics(ss::sstring transform_name) {
           [this] { return _write_bytes; },
           sm::description("A counter for all the bytes that has been output "
                           "from a transform"),
+          labels)
+          .aggregate({ss::metrics::shard_label}),
+        sm::make_gauge(
+          "processors_running",
+          std::move(g.num_processors_callback),
+          sm::description("Data transform processor instances"),
+          labels)
+          .aggregate({ss::metrics::shard_label}),
+        sm::make_gauge(
+          "processors_engine_memory_usage_bytes",
+          std::move(g.engine_memory_usage_callback),
+          sm::description("Data transform processor Wasm engine memory usage"),
           labels)
           .aggregate({ss::metrics::shard_label}),
       });

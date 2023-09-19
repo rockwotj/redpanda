@@ -59,6 +59,7 @@ public:
     model::transform_id id() const;
     const model::ntp& ntp() const;
     const model::transform_metadata& meta() const;
+    uint64_t memory_usage() const;
 
 private:
     ss::future<> run_transform();

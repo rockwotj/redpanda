@@ -24,7 +24,7 @@ namespace wasm {
  */
 class schema_registry_module {
 public:
-    explicit schema_registry_module(schema_registry*);
+    schema_registry_module(ffi::async_pending_host_call*, schema_registry*);
     schema_registry_module(const schema_registry_module&) = delete;
     schema_registry_module& operator=(const schema_registry_module&) = delete;
     schema_registry_module(schema_registry_module&&) = default;
@@ -32,6 +32,8 @@ public:
     ~schema_registry_module() = default;
 
     static constexpr std::string_view name = "redpanda_schema_registry";
+
+    void set_pending_async_call(ss::future<> fut);
 
     // Start ABI exports
 
@@ -60,5 +62,6 @@ public:
 
 private:
     schema_registry* _sr;
+    ffi::async_pending_host_call* _pending_call;
 };
 } // namespace wasm

@@ -91,7 +91,7 @@ transform_module::transform(transform_args args) {
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-int32_t transform_module::read_batch_header(
+ss::future<int32_t> transform_module::read_batch_header(
   int64_t* base_offset,
   int32_t* record_count,
   int32_t* partition_leader_epoch,
@@ -103,9 +103,9 @@ int32_t transform_module::read_batch_header(
   int16_t* producer_epoch,
   int32_t* base_sequence) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
-    signal_batch_complete();
+    co_await signal_batch_complete();
     if (!_call_ctx) {
-        return NO_ACTIVE_TRANSFORM;
+        co_return NO_ACTIVE_TRANSFORM;
     }
     *base_offset = _call_ctx->input->base_offset();
     *record_count = _call_ctx->input->record_count();
@@ -120,7 +120,7 @@ int32_t transform_module::read_batch_header(
 
     _wasi_module->set_timestamp(_call_ctx->input->header().first_timestamp);
 
-    return int32_t(_call_ctx->max_input_record_size);
+    co_return int32_t(_call_ctx->max_input_record_size);
 }
 
 int32_t transform_module::read_record(ffi::array<uint8_t> buf) {
@@ -215,8 +215,11 @@ int32_t transform_module::write_record(ffi::array<uint8_t> buf) {
 
 void transform_module::check_abi_version_1() {}
 
-transform_module::transform_module(wasi::preview1_module* wasi_module)
-  : _wasi_module(wasi_module) {}
+transform_module::transform_module(
+  ffi::async_pending_host_call* pending_call,
+  wasi::preview1_module* wasi_module)
+  : _wasi_module(wasi_module)
+  , _pending_call(pending_call) {}
 
 void transform_module::start() {
     vlog(wasm_log.debug, "reset transform_module");
@@ -294,7 +297,7 @@ ss::future<> transform_module::signal_batch_ready() {
         std::rethrow_exception(_abort_ex);
     }
 }
-void transform_module::signal_batch_complete() {
+ss::future<> transform_module::signal_batch_complete() {
     if (_abort_ex) {
         vlog(
           wasm_log.debug,
@@ -306,7 +309,7 @@ void transform_module::signal_batch_complete() {
     vlog(wasm_log.debug, "signal batch complete {}", uintptr_t(this));
     _waiting_for_next_input_batch.signal();
     vassert(!_input_batch_ready.has_waiters(), "has waiters!");
-    _input_batch_ready.wait().get();
+    co_await _input_batch_ready.wait();
     if (_abort_ex) {
         vlog(
           wasm_log.debug,
@@ -320,4 +323,7 @@ void transform_module::signal_batch_complete() {
 transform_module::~transform_module() {
     vlog(wasm_log.debug, "~transform_module {}", uintptr_t(this));
 };
+void transform_module::set_pending_async_call(ss::future<> fut) {
+    _pending_call->pending_call = std::move(fut);
+}
 } // namespace wasm
