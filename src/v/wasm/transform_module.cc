@@ -22,7 +22,9 @@
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/thread.hh>
 
 #include <algorithm>
 #include <exception>
@@ -89,7 +91,7 @@ transform_module::transform(transform_args args) {
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-ss::future<int32_t> transform_module::read_batch_header(
+int32_t transform_module::read_batch_header(
   int64_t* base_offset,
   int32_t* record_count,
   int32_t* partition_leader_epoch,
@@ -101,9 +103,9 @@ ss::future<int32_t> transform_module::read_batch_header(
   int16_t* producer_epoch,
   int32_t* base_sequence) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
-    co_await signal_batch_complete();
+    signal_batch_complete();
     if (!_call_ctx) {
-        co_return NO_ACTIVE_TRANSFORM;
+        return NO_ACTIVE_TRANSFORM;
     }
     *base_offset = _call_ctx->input->base_offset();
     *record_count = _call_ctx->input->record_count();
@@ -118,7 +120,7 @@ ss::future<int32_t> transform_module::read_batch_header(
 
     _wasi_module->set_timestamp(_call_ctx->input->header().first_timestamp);
 
-    co_return int32_t(_call_ctx->max_input_record_size);
+    return int32_t(_call_ctx->max_input_record_size);
 }
 
 int32_t transform_module::read_record(ffi::array<uint8_t> buf) {
@@ -216,47 +218,106 @@ void transform_module::check_abi_version_1() {}
 transform_module::transform_module(wasi::preview1_module* wasi_module)
   : _wasi_module(wasi_module) {}
 
-void transform_module::start() { _abort_ex = nullptr; }
+void transform_module::start() {
+    vlog(wasm_log.debug, "reset transform_module");
+    _abort_ex = nullptr;
+}
 
-void transform_module::stop(const std::exception_ptr& ex) {
+void transform_module::abort(const std::exception_ptr& ex) {
+    vlog(
+      wasm_log.debug,
+      "aborting transform mod {} {}",
+      uintptr_t(this),
+      ss::thread::running_in_thread());
     _abort_ex = ex;
     if (_input_batch_ready.has_waiters()) {
+        vlog(
+          wasm_log.debug,
+          "signalling for input_batch_ready on abort: {} {}",
+          uintptr_t(this),
+          ss::thread::running_in_thread());
         _input_batch_ready.signal();
     }
     if (_waiting_for_next_input_batch.has_waiters()) {
+        vlog(
+          wasm_log.debug,
+          "signalling for _waiting_for_next_input_batch on abort: {} {}",
+          uintptr_t(this),
+          ss::thread::running_in_thread());
+        _waiting_for_next_input_batch.signal();
+    }
+}
+void transform_module::stop() {
+    vlog(
+      wasm_log.debug,
+      "stopping transform mod {} {}",
+      uintptr_t(this),
+      ss::thread::running_in_thread());
+    // this will fail
+    // vassert(!_input_batch_ready.has_waiters(), "has waiters!");
+    _abort_ex = std::make_exception_ptr(ss::abort_requested_exception());
+    if (_waiting_for_next_input_batch.has_waiters()) {
+        vlog(
+          wasm_log.debug,
+          "signalling for _waiting_for_next_input_batch on stop: {} {}",
+          uintptr_t(this),
+          ss::thread::running_in_thread());
         _waiting_for_next_input_batch.signal();
     }
 }
 ss::future<> transform_module::wait_ready() {
     if (_abort_ex) {
+        vlog(wasm_log.debug, "wait ready throwing {}", uintptr_t(this));
         std::rethrow_exception(_abort_ex);
     }
+    vlog(wasm_log.debug, "wait ready {}", uintptr_t(this));
+    vassert(!_waiting_for_next_input_batch.has_waiters(), "has waiters!");
     co_await _waiting_for_next_input_batch.wait();
     if (_abort_ex) {
+        vlog(wasm_log.debug, "wait ready throwing {}", uintptr_t(this));
         std::rethrow_exception(_abort_ex);
     }
 }
 
 ss::future<> transform_module::signal_batch_ready() {
     if (_abort_ex) {
+        vlog(wasm_log.debug, "signal batch ready throwing {}", uintptr_t(this));
         std::rethrow_exception(_abort_ex);
     }
+    vlog(wasm_log.debug, "signal batch ready {}", uintptr_t(this));
     // Allow the transform to process until it's ready for another batch
     _input_batch_ready.signal();
-    co_await _waiting_for_next_input_batch.when();
+    vassert(!_waiting_for_next_input_batch.has_waiters(), "has waiters!");
+    co_await _waiting_for_next_input_batch.wait();
     if (_abort_ex) {
+        vlog(wasm_log.debug, "signal batch ready throwing {}", uintptr_t(this));
         std::rethrow_exception(_abort_ex);
     }
 }
-ss::future<> transform_module::signal_batch_complete() {
+void transform_module::signal_batch_complete() {
     if (_abort_ex) {
+        vlog(
+          wasm_log.debug,
+          "signal_batch_complete throwing {} {}",
+          ss::thread::running_in_thread(),
+          uintptr_t(this));
         std::rethrow_exception(_abort_ex);
     }
+    vlog(wasm_log.debug, "signal batch complete {}", uintptr_t(this));
     _waiting_for_next_input_batch.signal();
-    co_await _input_batch_ready.when();
+    vassert(!_input_batch_ready.has_waiters(), "has waiters!");
+    _input_batch_ready.wait().get();
     if (_abort_ex) {
+        vlog(
+          wasm_log.debug,
+          "signal_batch_complete throwing {} {}",
+          uintptr_t(this),
+          ss::thread::running_in_thread());
         std::rethrow_exception(_abort_ex);
     }
 }
 
+transform_module::~transform_module() {
+    vlog(wasm_log.debug, "~transform_module {}", uintptr_t(this));
+};
 } // namespace wasm

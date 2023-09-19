@@ -78,7 +78,7 @@ public:
     transform_module& operator=(const transform_module&) = delete;
     transform_module(transform_module&&) = delete;
     transform_module& operator=(transform_module&&) = delete;
-    ~transform_module() = default;
+    ~transform_module();
 
     static constexpr std::string_view name = "redpanda_transform";
 
@@ -93,16 +93,22 @@ public:
      * Initializes the module.
      */
     void start();
+
     /**
-     * Stops the module aborting any currently running transform.
+     * stop waiting transform
      */
-    void stop(const std::exception_ptr& ex);
+    void stop();
+
+    /**
+     * abort running transform
+     */
+    void abort(const std::exception_ptr& ex);
 
     // Start ABI exports
 
     void check_abi_version_1();
 
-    ss::future<int32_t> read_batch_header(
+    int32_t read_batch_header(
       int64_t* base_offset,
       int32_t* record_count,
       int32_t* partition_leader_epoch,
@@ -153,7 +159,7 @@ private:
      * This should be called by the vm fiber signalling that it's ready to wait
      * for another batch to transform.
      */
-    ss::future<> signal_batch_complete();
+    void signal_batch_complete();
 
     wasi::preview1_module* _wasi_module;
 

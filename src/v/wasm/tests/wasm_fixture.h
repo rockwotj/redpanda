@@ -42,6 +42,7 @@ public:
     model::transform_metadata meta() const { return _meta; };
 
     wasm::engine* engine() { return _engine.get(); }
+    wasm::transform_probe* probe() { return _probe.get(); }
 
     std::vector<pandaproxy::schema_registry::subject_schema>
     registered_schemas() const;

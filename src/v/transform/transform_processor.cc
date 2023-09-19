@@ -99,6 +99,7 @@ ss::future<> processor::start() {
         vlog(_logger.warn, "error starting processor engine: {}", ex);
         _error_callback(_id, _ntp, _meta);
     }
+    vlog(_logger.info, "started processor!");
     register_source_subscriber();
     _task = ss::when_all_succeed(
               run_consumer(),

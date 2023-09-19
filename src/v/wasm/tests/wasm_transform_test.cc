@@ -48,6 +48,16 @@ TEST_F(WasmTestFixture, CanRestartEngine) {
     ASSERT_EQ(transformed, batch);
 }
 
+TEST_F(WasmTestFixture, CanShutdownWhileWaiting) {
+    load_wasm("identity.wasm");
+    auto batch = make_tiny_batch();
+    auto transform = engine()->transform(std::move(batch), probe());
+    engine()->stop().get();
+    transform.wait();
+    EXPECT_TRUE(transform.failed());
+    transform.ignore_ready_future();
+}
+
 TEST_F(WasmTestFixture, HandlesSetupPanic) {
     EXPECT_THROW(load_wasm("setup-panic.wasm"), wasm::wasm_exception);
 }
@@ -99,7 +109,7 @@ TEST_F(WasmTestFixture, SchemaRegistry) {
     auto avro = generate_example_avro_record(schemas[0].schema.def());
     record_value.append(avro.data(), avro.size());
     auto batch = make_tiny_batch(std::move(record_value));
-    auto transformed = transform(batch);
+    auto transformed = transform_one(batch);
     auto records = transformed.copy_records();
     ASSERT_EQ(records.size(), 1);
     EXPECT_EQ(

@@ -48,8 +48,7 @@ private:
     error_reporter_fn _error_reporter;
     ss::future<> _tail = ss::now();
     ss::abort_source _as;
-    uint64_t _delayed_id = 0;
-    absl::flat_hash_map<uint64_t, ss::future<>> _delayed_tasks;
+    ss::gate _gate;
 };
 
 template<typename Clock>

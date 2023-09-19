@@ -181,14 +181,11 @@ public:
       processor::error_callback error_cb,
       probe* p) final {
         auto u = co_await _mu.get_units();
-        auto& engine = _cache[meta.source_ptr];
-        if (!engine) {
-            auto factory = co_await _runtime(meta);
-            if (!factory) {
-                throw std::runtime_error("unable to fetch binary");
-            }
-            engine = co_await factory->make_engine();
+        auto factory = co_await _runtime(meta);
+        if (!factory) {
+            throw std::runtime_error("unable to fetch binary");
         }
+        auto engine = co_await factory->make_engine();
         auto src = *_source_factory->create(ntp);
         const auto& output_topic = meta.output_topics[0];
         std::vector<std::unique_ptr<sink>> sinks;
@@ -604,7 +601,7 @@ service::fetch_binary(model::offset offset, std::chrono::milliseconds timeout) {
     auto reader = model::make_record_batch_reader<kafka::batch_reader>(
       std::move(*p.records));
     auto batches = co_await model::consume_reader_to_memory(
-      std::move(reader), model::no_timeout);
+      std::move(reader), ss::lowres_clock::now() + timeout);
     if (batches.empty()) {
         co_return std::nullopt;
     }

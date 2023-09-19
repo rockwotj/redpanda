@@ -12,6 +12,7 @@
 
 #include "model/record.h"
 #include "model/record_batch_types.h"
+#include "ssx/future-util.h"
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
 #include "utils/mutex.h"
@@ -28,10 +29,13 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/posix.hh>
+#include <seastar/core/reactor.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/later.hh>
 
 #include <wasmtime/config.h>
 #include <wasmtime/error.h>
@@ -426,7 +430,12 @@ public:
     wasmtime_engine(wasmtime_engine&&) = default;
     wasmtime_engine& operator=(wasmtime_engine&&) = default;
 
-    ~wasmtime_engine() override = default;
+    ~wasmtime_engine() override {
+        vlog(
+          wasm_log.debug,
+          "deleting transform module: {}",
+          uintptr_t(_transform_module.get()));
+    };
 
     std::string_view function_name() const final { return _user_module_name; }
 
@@ -452,16 +461,60 @@ public:
         co_return;
     }
 
-    ss::future<> initialize() final { return initialize_wasi(); }
+    ss::future<> initialize() final {
+        auto ready_fut = _transform_module->wait_ready();
+        _vm_thread_gate.enter();
+        ssx::background
+          = ss::async([this] {
+                std::exception_ptr ex;
+                try {
+                    initialize_wasi();
+                    ex = std::make_exception_ptr(wasm::wasm_exception(
+                      "main exited", errc::engine_not_running));
+                } catch (...) {
+                    ex = std::current_exception();
+                }
+                vlog(
+                  wasm_log.debug,
+                  "finishing up _start function from wasi and "
+                  "stopping module, {} "
+                  "{} {}",
+                  ex,
+                  ss::thread::running_in_thread(),
+                  uintptr_t(_transform_module.get()));
+                _transform_module->stop();
+                vlog(
+                  wasm_log.debug,
+                  "finished up stopping the transform module: {} {}",
+                  uintptr_t(_transform_module.get()),
+                  ss::thread::running_in_thread());
+            }).then([this]() mutable {
+                vlog(wasm_log.debug, "main thread finished");
+                _vm_thread_gate.leave();
+                vlog(wasm_log.debug, "main thread finished");
+            });
+        co_await std::move(ready_fut);
+    }
 
     ss::future<> stop() final {
         _mu.broken();
         vlog(wasm_log.info, "Stopping wasm engine...");
-        _transform_module->stop(
+        _transform_module->abort(
           std::make_exception_ptr(engine_stop_exception()));
-        vlog(wasm_log.info, "Signaled stop, waiting for _main to exit");
-        co_await std::exchange(_main_task, ss::now());
-        vlog(wasm_log.info, "_main_task exitted");
+        auto fut = _vm_thread_gate.close();
+        while (_vm_thread_gate.get_count() > 0) {
+            vlog(
+              wasm_log.info,
+              "Sleepy wasm engine {}",
+              _vm_thread_gate.get_count());
+            co_await ss::maybe_yield();
+        }
+        co_await std::move(fut);
+        vlog(
+          wasm_log.trace,
+          "_main_task exitted: {}",
+          ss::thread::running_in_thread());
+        co_return;
     }
 
     ss::future<ss::chunked_fifo<model::record_batch>>
@@ -493,67 +546,48 @@ private:
           wasmtime_context_add_fuel(ctx, wasmtime_fuel_amount - fuel));
     }
 
-    ss::future<> initialize_wasi() {
-        if (!_main_task.available()) {
+    void initialize_wasi() {
+        // seastar threads swap context, which has it's own
+        // signals that it masks
+        unblock_signals();
+        // TODO: Consider having a different amount of fuel
+        // for initialization.
+        reset_fuel();
+        auto* ctx = wasmtime_store_context(_store.get());
+        wasmtime_extern_t start;
+        bool ok = wasmtime_instance_export_get(
+          ctx,
+          &_instance,
+          wasi::preview_1_start_function_name.data(),
+          wasi::preview_1_start_function_name.size(),
+          &start);
+        if (!ok || start.kind != WASMTIME_EXTERN_FUNC) {
             throw wasm_exception(
-              "wasi already initialized", errc::internal_error);
+              "Missing main function", errc::user_code_failure);
         }
-        _main_task
-          = ss::async([this]() -> std::exception_ptr {
-                // seastar threads swap context, which has it's own
-                // signals that it masks
-                unblock_signals();
-                // TODO: Consider having a different amount of fuel
-                // for initialization.
-                reset_fuel();
-                auto* ctx = wasmtime_store_context(_store.get());
-                wasmtime_extern_t start;
-                bool ok = wasmtime_instance_export_get(
-                  ctx,
-                  &_instance,
-                  wasi::preview_1_start_function_name.data(),
-                  wasi::preview_1_start_function_name.size(),
-                  &start);
-                if (!ok || start.kind != WASMTIME_EXTERN_FUNC) {
-                    throw wasm_exception(
-                      "Missing main function", errc::user_code_failure);
-                }
-                vlog(
-                  wasm_log.info,
-                  "Initializing wasm function {}",
-                  _user_module_name);
-                wasm_trap_t* trap_ptr = nullptr;
-                handle<wasmtime_error_t, wasmtime_error_delete> error{
-                  wasmtime_func_call(
-                    ctx, &start.of.func, nullptr, 0, nullptr, 0, &trap_ptr)};
-                handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-                try {
-                    check_error(error.get());
-                    check_trap(trap.get());
-                } catch (const engine_stop_exception& ex) {
-                    // This can happen if `stop` is called, so don't
-                    // log in this case.
-                    return std::current_exception();
-                } catch (...) {
-                    auto ex = std::current_exception();
-                    vlog(
-                      wasm_log.warn,
-                      "Wasm function {} error: {}",
-                      _user_module_name,
-                      ex);
-                    return ex;
-                }
-                vlog(
-                  wasm_log.warn,
-                  "Wasm function {} finished",
-                  _user_module_name);
-                return std::make_exception_ptr(
-                  wasm::wasm_exception("vm exited", errc::engine_not_running));
-            }).then_wrapped([this](ss::future<std::exception_ptr> fut) {
-                auto ex = fut.failed() ? fut.get_exception() : fut.get();
-                _transform_module->stop(ex);
-            });
-        co_await _transform_module->wait_ready();
+        vlog(wasm_log.info, "Initializing wasm function {}", _user_module_name);
+        wasm_trap_t* trap_ptr = nullptr;
+        handle<wasmtime_error_t, wasmtime_error_delete> error{
+          wasmtime_func_call(
+            ctx, &start.of.func, nullptr, 0, nullptr, 0, &trap_ptr)};
+        handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+        try {
+            check_error(error.get());
+            check_trap(trap.get());
+        } catch (const engine_stop_exception& ex) {
+            // This can happen if `stop` is called, so don't
+            // log in this case.
+            return;
+        } catch (...) {
+            auto ex = std::current_exception();
+            vlog(
+              wasm_log.warn,
+              "Wasm function {} error: {}",
+              _user_module_name,
+              ex);
+            std::rethrow_exception(ex);
+        }
+        vlog(wasm_log.warn, "Wasm function {} finished", _user_module_name);
     }
 
     ss::future<ss::chunked_fifo<model::record_batch>>
@@ -569,7 +603,7 @@ private:
     }
 
     mutex _mu;
-    ss::future<> _main_task = ss::now();
+    ss::gate _vm_thread_gate;
     ss::sstring _user_module_name;
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
     std::shared_ptr<wasmtime_module_t> _user_module;
@@ -597,6 +631,7 @@ public:
       , _alien_thread_pool(pool) {}
 
     ss::future<std::unique_ptr<engine>> make_engine() final {
+        vlog(wasm_log.debug, "creating...");
         handle<wasmtime_store_t, wasmtime_store_delete> store{
           wasmtime_store_new(_engine, nullptr, nullptr)};
         auto* context = wasmtime_store_context(store.get());
@@ -675,13 +710,18 @@ public:
       , _sr(std::move(sr)) {}
 
     ss::future<> start() override {
+        vlog(wasm_log.debug, "starting runtime...");
         co_await _alien_thread_pool.start({.name = "wasm"});
     }
 
-    ss::future<> stop() override { return _alien_thread_pool.stop(); }
+    ss::future<> stop() override {
+        return _alien_thread_pool.stop();
+        vlog(wasm_log.debug, "stopped runtime...");
+    }
 
     ss::future<std::unique_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
+        vlog(wasm_log.debug, "compiling...");
         auto user_module = co_await _alien_thread_pool.submit([this,
                                                                &meta,
                                                                &buf] {
