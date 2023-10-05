@@ -47,8 +47,8 @@ struct output_batch {
 
 // The data needed during a single transformation of a record_batch
 struct transform_context {
-    // The input record_batch being transformed.
-    const model::record_batch* input;
+    model::record_batch_header batch_header;
+    iobuf batch_data;
     // The largest record size for the input batch.
     size_t max_input_record_size{0};
     int32_t latest_record_timestamp_delta;
@@ -57,12 +57,12 @@ struct transform_context {
     // The output batches
     ss::chunked_fifo<output_batch> output_batches;
     // This callback is triggered before each record is read
-    ss::noncopyable_function<void()> pre_record_callback;
+    ss::noncopyable_function<ss::future<>()> pre_record_callback;
 };
 
 struct transform_args {
-    const model::record_batch* batch;
-    ss::noncopyable_function<void()> pre_record_callback;
+    model::record_batch batch;
+    ss::noncopyable_function<ss::future<>()> pre_record_callback;
 };
 
 /**
@@ -123,7 +123,7 @@ public:
       int16_t* producer_epoch,
       int32_t* base_sequence);
 
-    int32_t read_record(ffi::array<uint8_t>);
+    ss::future<int32_t> read_record(ffi::array<uint8_t>);
 
     int32_t write_record(ffi::array<uint8_t>);
 

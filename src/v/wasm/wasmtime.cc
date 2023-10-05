@@ -10,6 +10,7 @@
  */
 #include "wasm/wasmtime.h"
 
+#include "bytes/iobuf.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "ssx/future-util.h"
@@ -42,6 +43,7 @@
 
 #include <wasmtime/error.h>
 #include <wasmtime/func.h>
+#include <wasmtime/module.h>
 
 #include <csignal>
 #include <exception>
@@ -535,12 +537,7 @@ public:
     wasmtime_engine(wasmtime_engine&&) = default;
     wasmtime_engine& operator=(wasmtime_engine&&) = default;
 
-    ~wasmtime_engine() override {
-        vlog(
-          wasm_log.debug,
-          "deleting transform module: {}",
-          uintptr_t(_transform_module.get()));
-    };
+    ~wasmtime_engine() override = default;
 
     std::string_view function_name() const final { return _user_module_name; }
 
@@ -588,14 +585,9 @@ public:
 
     ss::future<> stop() final {
         _mu.broken();
-        vlog(wasm_log.info, "Stopping wasm engine...");
         _transform_module->abort(
           std::make_exception_ptr(engine_stop_exception()));
         co_await std::exchange(_main_task, ss::now());
-        vlog(
-          wasm_log.trace,
-          "_main_task exited: {}",
-          ss::thread::running_in_thread());
     }
 
     ss::future<ss::chunked_fifo<model::record_batch>>
@@ -610,7 +602,8 @@ public:
               std::move(batch));
         }
         ss::future<ss::chunked_fifo<model::record_batch>> fut
-          = co_await ss::coroutine::as_future(invoke_transform(&batch, probe));
+          = co_await ss::coroutine::as_future(
+            invoke_transform(std::move(batch), probe));
         if (fut.failed()) {
             probe->transform_error();
             std::rethrow_exception(fut.get_exception());
@@ -620,6 +613,7 @@ public:
 
 private:
     void reset_fuel() {
+        return;
         auto* ctx = wasmtime_store_context(_store.get());
         uint64_t fuel = 0;
         wasmtime_context_fuel_remaining(ctx, &fuel);
@@ -628,9 +622,6 @@ private:
     }
 
     ss::future<> initialize_wasi() {
-        // seastar threads swap context, which has it's own
-        // signals that it masks
-        unblock_signals();
         // TODO: Consider having a different amount of fuel
         // for initialization.
         reset_fuel();
@@ -665,11 +656,10 @@ private:
         try {
             check_error(error.get());
             check_trap(trap.get());
-        } catch (const engine_stop_exception& ex) {
-            // This can happen if `stop` is called, so don't
-            // log in this case.
-            co_return;
         } catch (...) {
+            if (_main_task.available()) {
+                co_return;
+            }
             auto ex = std::current_exception();
             vlog(
               wasm_log.warn,
@@ -682,13 +672,18 @@ private:
     }
 
     ss::future<ss::chunked_fifo<model::record_batch>>
-    invoke_transform(const model::record_batch* batch, transform_probe* p) {
+    invoke_transform(model::record_batch batch, transform_probe* p) {
         auto u = co_await _mu.get_units();
+        auto batch_measurement = p->batch_latency_measurement();
         std::unique_ptr<transform_probe::hist_t::measurement> measurement;
         auto result = co_await _transform_module->transform(
-          {.batch = batch, .pre_record_callback = [this, p, &measurement] {
+          {.batch = std::move(batch),
+           .pre_record_callback = [this, p, &measurement] {
                reset_fuel();
-               measurement = p->latency_measurement();
+               measurement = nullptr;
+               return ss::maybe_yield().then([p, &measurement] {
+                   measurement = p->record_latency_measurement();
+               });
            }});
         co_return result;
     }
@@ -706,7 +701,7 @@ private:
     wasmtime_instance_t _instance;
 };
 
-class wasmtime_engine_factory : public factory {
+class wasmtime_engine_factory final : public factory {
 public:
     wasmtime_engine_factory(
       wasm_engine_t* engine,
@@ -714,21 +709,23 @@ public:
       std::shared_ptr<wasmtime_module_t> mod,
       schema_registry* sr,
       ss::logger* l,
-      ssx::sharded_thread_worker* pool)
+      ssx::sharded_thread_worker* pool,
+      uint64_t size)
       : _engine(engine)
       , _module(std::move(mod))
       , _meta(std::move(meta))
       , _sr(sr)
       , _logger(l)
-      , _alien_thread_pool(pool) {}
+      , _alien_thread_pool(pool)
+      , _size(size) {}
 
+    uint64_t size() final { return _size; }
     ss::future<std::unique_ptr<engine>> make_engine() final {
-        vlog(wasm_log.debug, "creating...");
         handle<wasmtime_store_t, wasmtime_store_delete> store{
           wasmtime_store_new(_engine, nullptr, nullptr)};
         auto* context = wasmtime_store_context(store.get());
-        handle<wasmtime_error_t, wasmtime_error_delete> error(
-          wasmtime_context_add_fuel(context, 0));
+        handle<wasmtime_error_t, wasmtime_error_delete> error(nullptr);
+        //   wasmtime_context_add_fuel(context, 0));
         check_error(error.get());
         handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
           wasmtime_linker_new(_engine)};
@@ -796,6 +793,7 @@ private:
     schema_registry* _sr;
     ss::logger* _logger;
     ssx::sharded_thread_worker* _alien_thread_pool;
+    uint64_t _size;
 };
 
 class wasmtime_runtime : public runtime {
@@ -809,6 +807,7 @@ public:
     ss::future<> start() override {
         vlog(wasm_log.debug, "starting runtime...");
         co_await _alien_thread_pool.start({.name = "wasm"});
+        co_await ss::smp::invoke_on_all(&unblock_signals);
     }
 
     ss::future<> stop() override {
@@ -819,34 +818,40 @@ public:
     ss::future<std::unique_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
         vlog(wasm_log.debug, "compiling...");
-        auto user_module = co_await _alien_thread_pool.submit([this,
-                                                               &meta,
-                                                               &buf] {
-            vlog(
-              wasm_log.info,
-              "Starting compilation for wasm module {}",
-              meta.name);
-            // This can be a large contiguous allocation, however
-            // it happens on an alien thread so it bypasses the
-            // seastar allocator.
-            bytes b = iobuf_to_bytes(buf);
-            wasmtime_module_t* user_module_ptr = nullptr;
-            handle<wasmtime_error_t, wasmtime_error_delete> error{
-              wasmtime_module_new(
-                _engine.get(), b.data(), b.size(), &user_module_ptr)};
-            check_error(error.get());
-            std::shared_ptr<wasmtime_module_t> user_module{
-              user_module_ptr, wasmtime_module_delete};
-            vlog(wasm_log.info, "Finished compiling wasm module {}", meta.name);
-            return user_module;
-        });
+        auto [user_module, size] = co_await _alien_thread_pool.submit(
+          [this, &meta, &buf] {
+              vlog(
+                wasm_log.info,
+                "Starting compilation for wasm module {}",
+                meta.name);
+              // This can be a large contiguous allocation, however
+              // it happens on an alien thread so it bypasses the
+              // seastar allocator.
+              bytes b = iobuf_to_bytes(buf);
+              wasmtime_module_t* user_module_ptr = nullptr;
+              handle<wasmtime_error_t, wasmtime_error_delete> error{
+                wasmtime_module_new(
+                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
+              check_error(error.get());
+              std::shared_ptr<wasmtime_module_t> user_module{
+                user_module_ptr, wasmtime_module_delete};
+              uint64_t start = 0, end = 0;
+              wasmtime_module_image_range(user_module.get(), &start, &end);
+              vlog(
+                wasm_log.info,
+                "Finished compiling wasm module {} size: {}",
+                meta.name,
+                end - start);
+              return std::make_pair(user_module, end - start);
+          });
         co_return std::make_unique<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
           user_module,
           _sr.get(),
           logger,
-          &_alien_thread_pool);
+          &_alien_thread_pool,
+          size);
     }
 
 private:
@@ -863,7 +868,7 @@ std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     // Spend more time compiling so that we can have faster code.
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_SPEED);
     // Fuel allows us to stop execution after some time.
-    wasmtime_config_consume_fuel_set(config, true);
+    wasmtime_config_consume_fuel_set(config, false);
     wasmtime_config_async_support_set(config, true);
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     // wasmtime_config_async_stack_size_set(config, 64_KiB);

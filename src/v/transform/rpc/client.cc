@@ -54,7 +54,7 @@
 namespace transform::rpc {
 
 namespace {
-constexpr auto timeout = std::chrono::seconds(1);
+constexpr auto timeout = std::chrono::seconds(3);
 
 cluster::errc map_errc(std::error_code ec) {
     if (ec.category() == cluster::error_category()) {
@@ -85,6 +85,9 @@ cluster::errc map_errc(std::error_code ec) {
     }
     return cluster::errc::timeout;
 }
+
+constexpr size_t max_outbound_requests = 10;
+
 } // namespace
 
 client::client(
@@ -92,13 +95,15 @@ client::client(
   std::unique_ptr<partition_leader_cache> l,
   ss::sharded<::rpc::connection_cache>* c,
   ss::sharded<local_service>* s)
-  : _self(self)
+  : _sem(max_outbound_requests, "client")
+  , _self(self)
   , _leaders(std::move(l))
   , _connections(c)
   , _local_service(s) {}
 
 ss::future<cluster::errc> client::produce(
   model::topic_partition tp, ss::chunked_fifo<model::record_batch> batches) {
+    auto u = co_await ss::get_units(_sem, 1);
     vlog(log.trace, "producing {} batches to {}", batches.size(), tp);
     auto leader = _leaders->get_leader_node(
       model::topic_namespace_view(model::kafka_namespace, tp.topic),

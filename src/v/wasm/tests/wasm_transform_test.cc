@@ -16,6 +16,8 @@
 #include "wasm/errc.h"
 #include "wasm/tests/wasm_fixture.h"
 
+#include <seastar/core/abort_source.hh>
+
 #include <absl/strings/str_cat.h>
 #include <avro/Compiler.hh>
 #include <avro/Encoder.hh>
@@ -59,17 +61,19 @@ TEST_F(WasmTestFixture, CanShutdownWhileWaiting) {
 }
 
 TEST_F(WasmTestFixture, HandlesSetupPanic) {
-    EXPECT_THROW(load_wasm("setup-panic.wasm"), wasm::wasm_exception);
+    EXPECT_THROW(load_wasm("setup-panic.wasm"), ss::abort_requested_exception);
 }
 
 TEST_F(WasmTestFixture, HandlesTransformPanic) {
     load_wasm("transform-panic.wasm");
-    EXPECT_THROW(transform_one(make_tiny_batch()), wasm::wasm_exception);
+    EXPECT_THROW(
+      transform_one(make_tiny_batch()), ss::abort_requested_exception);
 }
 
 TEST_F(WasmTestFixture, HandlesTransformErrors) {
     load_wasm("transform-error.wasm");
-    EXPECT_THROW(transform_one(make_tiny_batch()), wasm::wasm_exception);
+    EXPECT_THROW(
+      transform_one(make_tiny_batch()), ss::abort_requested_exception);
 }
 
 TEST_F(WasmTestFixture, CanComputeMemoryUsage) {

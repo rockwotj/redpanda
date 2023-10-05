@@ -33,6 +33,7 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/group_manager.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
@@ -217,15 +218,31 @@ public:
       , _client(c) {}
 
     ss::future<> write(ss::chunked_fifo<model::record_batch> batches) override {
-        auto resp = co_await _client->produce(_ntp.tp, std::move(batches));
-        if (resp != cluster::errc::success) {
-            // TODO: A better exception type or return a status code.
-            throw std::runtime_error(
-              ss::format("failure to produce transform data: {}", resp));
+        cluster::errc ec = cluster::errc::timeout;
+        int attempts = 0;
+        // Poor man's retries
+        while (is_retryable(ec) && ++attempts < 3) {
+            ec = co_await _client->produce(_ntp.tp, std::move(batches));
+        }
+        if (ec != cluster::errc::success) {
+            throw std::runtime_error(ss::format(
+              "failure to produce transform data: {}",
+              cluster::error_category().message(int(ec))));
         }
     }
 
 private:
+    static bool is_retryable(cluster::errc ec) {
+        switch (ec) {
+        case cluster::errc::replication_error:
+        case cluster::errc::timeout:
+        case cluster::errc::not_leader:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     model::ntp _ntp;
     rpc::client* _client;
 };
@@ -326,7 +343,23 @@ service::service(
   , _transform_client(transform_client)
   , _client(std::make_unique<kafka::client::client>(
       config::to_yaml(client_config, config::redact_secrets::no)))
-  , _manager(nullptr) {}
+  , _manager(nullptr) {
+    namespace sm = ss::metrics;
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("transform_executable"),
+      {
+        sm::make_gauge(
+          "memory",
+          [this]() {
+              uint64_t sum = 0;
+              for (const auto& entry : _factory_cache) {
+                  sum += entry.second->size();
+              }
+              return sum;
+          })
+          .aggregate({ss::metrics::shard_label}),
+      });
+}
 
 service::~service() = default;
 
@@ -442,8 +475,10 @@ service::deploy_transform(model::transform_metadata meta, iobuf buf) {
     }
     auto _ = _gate.hold();
     auto name = meta.name;
-    bool is_valid = co_await validate_source(
-      meta, buf.share(0, buf.size_bytes()));
+    bool is_valid = co_await ss::smp::submit_to(
+      ss::smp::count - 1, [this, &meta, &buf]() {
+          return validate_source(meta, buf.share(0, buf.size_bytes()));
+      });
     if (!is_valid) {
         co_return cluster::errc::transform_invalid_source;
     }
@@ -630,6 +665,8 @@ public:
         return _factory->make_engine();
     }
 
+    uint64_t size() final { return _factory->size(); }
+
 private:
     std::unique_ptr<wasm::factory> _factory;
 };
@@ -638,9 +675,9 @@ private:
 ss::future<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>
 service::make_factory(model::transform_metadata meta) {
     auto units = co_await _mu.get_units();
-    auto& factory = _factory_cache[meta.source_ptr];
-    if (factory) {
-        co_return ss::make_foreign(factory);
+    auto it = _factory_cache.find(meta.source_ptr);
+    if (it != _factory_cache.end()) {
+        co_return ss::make_foreign(it->second);
     }
     vlog(tlog.info, "compiling wasm for {} at {}", meta.name, meta.source_ptr);
     constexpr auto timeout = 10s;
@@ -650,8 +687,10 @@ service::make_factory(model::transform_metadata meta) {
     }
     auto shared = ss::make_shared<proxy_factory>(
       co_await _runtime->make_factory(meta, *std::move(binary), &tlog));
-    factory = ss::static_pointer_cast<wasm::factory, proxy_factory>(shared);
-    co_return ss::make_foreign(factory);
+    auto [inserted, _] = _factory_cache.insert_or_assign(
+      meta.source_ptr,
+      ss::static_pointer_cast<wasm::factory, proxy_factory>(shared));
+    co_return ss::make_foreign(inserted->second);
 }
 
 } // namespace transform

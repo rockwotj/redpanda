@@ -354,6 +354,7 @@ ss::future<> manager<ClockType>::handle_transform_error(
     if (!entry) {
         co_return;
     }
+    entry->probe()->increment_failure();
     co_await entry->processor()->stop();
     auto delay = entry->backoff()->next_backoff_duration();
     vlog(

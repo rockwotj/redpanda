@@ -23,6 +23,7 @@
 #include "model/transform.h"
 #include "raft/fwd.h"
 #include "raft/group_manager.h"
+#include "ssx/metrics.h"
 #include "transform/fwd.h"
 #include "transform/transform_manager.h"
 #include "utils/uuid.h"
@@ -122,6 +123,8 @@ private:
 
     ss::gate _gate;
 
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
     cluster::notification_id_type _leader_notification_id;
     cluster::notification_id_type _partition_manage_notification_id;
     cluster::notification_id_type _partition_unmanage_notification_id;

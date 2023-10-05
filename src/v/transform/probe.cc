@@ -29,6 +29,12 @@ void probe::setup_metrics(ss::sstring transform_name, probe_guages g) {
       prometheus_sanitize::metrics_name("transform"),
       {
         sm::make_counter(
+          "processor_failures",
+          [this] { return _failures; },
+          sm::description("A counter for when a transform processor fails"),
+          labels)
+          .aggregate({ss::metrics::shard_label}),
+        sm::make_counter(
           "processor_read_bytes",
           [this] { return _read_bytes; },
           sm::description(
@@ -58,4 +64,5 @@ void probe::setup_metrics(ss::sstring transform_name, probe_guages g) {
 }
 void probe::increment_write_bytes(uint64_t bytes) { _write_bytes += bytes; }
 void probe::increment_read_bytes(uint64_t bytes) { _read_bytes += bytes; }
+void probe::increment_failure() { ++_failures; }
 } // namespace transform

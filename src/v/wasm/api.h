@@ -61,6 +61,7 @@ public:
     factory(factory&&) = delete;
     factory& operator=(factory&&) = delete;
     virtual ss::future<std::unique_ptr<engine>> make_engine() = 0;
+    virtual uint64_t size() = 0;
     virtual ~factory() = default;
 };
 

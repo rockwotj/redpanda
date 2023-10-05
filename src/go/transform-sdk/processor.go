@@ -89,7 +89,7 @@ func processBatch(userTransformFunction OnRecordWrittenCallback) {
 		amt := int(readNextRecord(unsafe.Pointer(inbuf.WriterBufPtr()), int32(bufSize)))
 		inbuf.AdvanceWriter(amt)
 		if amt < 0 {
-			panic("reading record failed with errno: " + strconv.Itoa(amt))
+			panic("reading record failed with errno: " + strconv.Itoa(amt) + " buffer size: " + strconv.Itoa(bufSize))
 		}
 		err := e.record.deserialize(inbuf)
 		if err != nil {

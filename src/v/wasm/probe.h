@@ -36,10 +36,12 @@ public:
     transform_probe& operator=(transform_probe&&) = delete;
     ~transform_probe() = default;
 
-    std::unique_ptr<hist_t::measurement> latency_measurement() {
-        return _transform_latency.auto_measure();
+    std::unique_ptr<hist_t::measurement> record_latency_measurement() {
+        return _record_latency.auto_measure();
     }
-    void record_latency(uint64_t v) { _transform_latency.record(v); }
+    std::unique_ptr<hist_t::measurement> batch_latency_measurement() {
+        return _batch_latency.auto_measure();
+    }
     void transform_error() { ++_transform_errors; }
 
     void setup_metrics(ss::sstring transform_name);
@@ -52,6 +54,7 @@ protected:
 
 private:
     uint64_t _transform_errors{0};
-    hist_t _transform_latency;
+    hist_t _record_latency;
+    hist_t _batch_latency;
 };
 } // namespace wasm

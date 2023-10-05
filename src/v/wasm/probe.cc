@@ -36,7 +36,14 @@ void transform_probe::setup_metrics(ss::sstring transform_name) {
           sm::description("A histogram of the latency in seconds of "
                           "transforming a single record"),
           labels,
-          [this] { return _transform_latency.public_histogram_logform(); })
+          [this] { return _record_latency.public_histogram_logform(); })
+          .aggregate({ss::metrics::shard_label}),
+        sm::make_histogram(
+          "batch_latency_sec",
+          sm::description("A histogram of the latency in seconds of "
+                          "transforming a single batch"),
+          labels,
+          [this] { return _batch_latency.public_histogram_logform(); })
           .aggregate({ss::metrics::shard_label}),
         sm::make_counter(
           "errors",

@@ -18,6 +18,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
+#include "ssx/semaphore.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/service.h"
 
@@ -60,6 +61,7 @@ private:
     ss::future<produce_reply>
       do_remote_produce(model::node_id, produce_request);
 
+    ssx::semaphore _sem;
     model::node_id _self;
     // need partition_leaders_table to know which node owns the partitions
     std::unique_ptr<partition_leader_cache> _leaders;
