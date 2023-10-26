@@ -140,6 +140,8 @@ ss::future<int32_t> transform_module_v2::read_next_record(
   uint8_t* attributes,
   int64_t* timestamp,
   model::offset* offset,
+  uint32_t* header_count,
+  ffi::array<uint32_t> payload_offsets,
   ffi::array<uint8_t> buf) {
     if (!_call_ctx || _call_ctx->records.empty()) {
         co_return NO_ACTIVE_TRANSFORM;
@@ -147,7 +149,7 @@ ss::future<int32_t> transform_module_v2::read_next_record(
     co_await ss::coroutine::maybe_yield();
 
     auto record = _call_ctx->records.front();
-    if (buf.size() < record.payload_size) {
+    if (buf.size() < record.payload_size || payload_offsets.size() < 2) {
         vlog(
           wasm_log.debug,
           "read_record invalid buffer size: {} < {}",
@@ -168,9 +170,30 @@ ss::future<int32_t> transform_module_v2::read_next_record(
     // Drop the metadata we already parsed
     _call_ctx->batch_data.trim_front(record.metadata_size);
     // Copy out the payload
+    uint32_t payload_offset = 0;
+    ffi::writer w(buf);
     {
         iobuf_const_parser parser(_call_ctx->batch_data);
-        parser.consume_to(record.payload_size, buf.data());
+        auto [key, kl] = parser.read_varlong();
+        w.append(parser, key);
+        payload_offsets[0] = key;
+        payload_offset += key;
+        auto [val, vl] = parser.read_varlong();
+        w.append(parser, val);
+        payload_offset += val;
+        payload_offsets[1] = val;
+        auto [hc, hcl] = parser.read_varlong();
+        *header_count = hc;
+        hc = (hc + 1) * 2;
+        for (uint32_t j = 2; j < hc; ++j) {
+            if (j >= payload_offsets.size()) {
+                co_return INVALID_BUFFER;
+            }
+            auto [h, hl] = parser.read_varlong();
+            w.append(parser, h);
+            payload_offsets[j] = h;
+            payload_offset += h;
+        }
     }
     // Skip over the payload
     _call_ctx->batch_data.trim_front(record.payload_size);
@@ -178,21 +201,56 @@ ss::future<int32_t> transform_module_v2::read_next_record(
     // Call back so we can refuel.
     _call_ctx->record_callback();
 
-    co_return int32_t(record.payload_size);
+    co_return int32_t(payload_offset);
 }
 
-int32_t transform_module_v2::write_record(ffi::array<uint8_t> buf) {
+namespace {
+void append_vint_to_iobuf(iobuf& b, int64_t v) {
+    auto vb = vint::to_bytes(v);
+    b.append(vb.data(), vb.size());
+}
+} // namespace
+
+int32_t transform_module_v2::write_record(
+  ffi::array<uint32_t> payload_offsets, ffi::array<uint8_t> payload) {
     if (!_call_ctx) {
         return NO_ACTIVE_TRANSFORM;
     }
+    if (payload_offsets.size() % 2 != 0 || payload_offsets.size() < 2) {
+        wasm_log.warn("invalid offset size: {}", payload_offsets.size());
+        return INVALID_BUFFER;
+    }
     iobuf b;
-    b.append(buf.data(), buf.size());
+    // Write key + value
+    for (size_t i = 0; i < 2; ++i) {
+        uint32_t len = payload_offsets[i];
+        append_vint_to_iobuf(b, int64_t(len));
+        if (payload.size() < len) {
+            wasm_log.warn("not enough data left: {} < {}", payload.size(), len);
+            return INVALID_BUFFER;
+        }
+        b.append(payload.data(), len);
+        payload = payload.subspan(len);
+    }
+    // Write headers
+    append_vint_to_iobuf(b, int64_t((payload_offsets.size() - 2) / 2));
+    for (uint32_t len : payload_offsets.subspan(2)) {
+        append_vint_to_iobuf(b, int64_t(len));
+        if (payload.size() < len) {
+            wasm_log.warn(
+              "not enough h data left: {} < {}", payload.size(), len);
+            return INVALID_BUFFER;
+        }
+        b.append(payload.data(), len);
+        payload = payload.subspan(len);
+    }
     auto d = model::transformed_data::create_validated(std::move(b));
     if (!d) {
+        wasm_log.warn("oops");
         return INVALID_BUFFER;
     }
     _call_ctx->output_data.push_back(*std::move(d));
-    return int32_t(buf.size());
+    return 0;
 }
 
 void transform_module_v2::start() {

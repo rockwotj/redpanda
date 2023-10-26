@@ -68,8 +68,11 @@ func readNextRecord(
 	attributes unsafe.Pointer,
 	timestamp unsafe.Pointer,
 	offset unsafe.Pointer,
-	buf unsafe.Pointer,
-	len int32,
+	headerCount unsafe.Pointer,
+	po unsafe.Pointer,
+	poLen int32,
+	payload unsafe.Pointer,
+	payloadLen int32,
 ) int32
 
 // writeRecord writes a new record by copying the data pointed to.
@@ -92,4 +95,7 @@ func readNextRecord(
 // Returns a negative number to indicate an error.
 //
 //go:wasmimport redpanda_transform write_record
-func writeRecord(data unsafe.Pointer, length int32) int32
+func writeRecord(
+	payloadOffsets unsafe.Pointer, payloadOffsetsLen int32,
+	payload unsafe.Pointer, payloadLen int32,
+) int32

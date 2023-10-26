@@ -13,6 +13,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "reflection/type_traits.h"
 #include "utils/named_type.h"
 #include "utils/type_traits.h"
@@ -118,6 +119,11 @@ public:
     void append(std::string_view);
     void append(bytes_view);
     void append(const iobuf&);
+    void append(iobuf_const_parser& p, size_t s) {
+        ensure_size(s);
+        p.consume_to(s, &_output[_offset]);
+        _offset += s;
+    }
     void append_with_length(std::string_view);
     void append_with_length(const iobuf&);
     void append(uint32_t);

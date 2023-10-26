@@ -41,6 +41,7 @@ var (
 	inbuf         *rwbuf.RWBuf = rwbuf.New(128)
 	outbuf        *rwbuf.RWBuf = rwbuf.New(128)
 	e             writeEvent
+	offsets       [64]int32
 )
 
 // run our transformation loop
@@ -73,6 +74,8 @@ func processBatch(userTransformFunction OnRecordWrittenCallback) {
 	}
 
 	for i := 0; i < int(currentHeader.recordCount); i++ {
+		// TODO Don't hardcode this size
+		var headerCount int32
 		inbuf.Reset()
 		inbuf.EnsureSize(bufSize)
 		var timestamp int64
@@ -80,16 +83,20 @@ func processBatch(userTransformFunction OnRecordWrittenCallback) {
 			unsafe.Pointer(&e.record.Attrs.attr),
 			unsafe.Pointer(&timestamp),
 			unsafe.Pointer(&e.record.Offset),
+			unsafe.Pointer(&headerCount),
+			unsafe.Pointer(&offsets[0]),
+			int32(len(offsets)),
 			unsafe.Pointer(inbuf.WriterBufPtr()),
-			int32(bufSize)),
-		)
+			int32(bufSize),
+		))
 		// Assign the timestamp value to the record
 		e.record.Timestamp = time.UnixMilli(timestamp)
 		inbuf.AdvanceWriter(amt)
 		if amt < 0 {
 			panic("reading record failed with errno: " + strconv.Itoa(amt) + " buffer size: " + strconv.Itoa(bufSize))
 		}
-		err := e.record.deserializePayload(inbuf)
+		headerCount *= 2
+		err := e.record.deserializePayload(offsets[:headerCount+2], inbuf)
 		if err != nil {
 			panic("deserializing record failed: " + err.Error())
 		}
@@ -102,12 +109,15 @@ func processBatch(userTransformFunction OnRecordWrittenCallback) {
 		}
 		for _, r := range rs {
 			outbuf.Reset()
-			r.serializePayload(outbuf)
+			r.serializePayload(offsets[:(1+len(r.Headers))*2], outbuf)
 			b := outbuf.ReadAll()
 			// Write the record back out to the broker
-			amt := int(writeRecord(unsafe.Pointer(&b[0]), int32(len(b))))
-			if amt != len(b) {
-				panic("writing record failed with errno: " + strconv.Itoa(amt))
+			errno := int(writeRecord(
+				unsafe.Pointer(&offsets[0]), int32((1+len(r.Headers))*2),
+				unsafe.Pointer(&b[0]), int32(len(b)),
+			))
+			if errno != 0 {
+				panic("writing record failed with errno: " + strconv.Itoa(errno))
 			}
 		}
 	}

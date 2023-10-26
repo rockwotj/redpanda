@@ -115,11 +115,14 @@ public:
 
     ss::future<int32_t> read_next_record(
       uint8_t* attributes,
-      int64_t* timestamp_delta,
-      model::offset* offset_delta,
-      ffi::array<uint8_t>);
+      int64_t* timestamp,
+      model::offset* offset,
+      uint32_t* header_count,
+      ffi::array<uint32_t> payload_offsets,
+      ffi::array<uint8_t> payload);
 
-    int32_t write_record(ffi::array<uint8_t>);
+    int32_t write_record(
+      ffi::array<uint32_t> payload_offsets, ffi::array<uint8_t> payload);
 
     // End ABI exports
 

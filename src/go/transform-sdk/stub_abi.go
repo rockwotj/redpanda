@@ -47,12 +47,18 @@ func readNextRecord(
 	attributes unsafe.Pointer,
 	timestampDelta unsafe.Pointer,
 	offsetDelta unsafe.Pointer,
-	buf unsafe.Pointer,
-	len int32,
+	headerCount unsafe.Pointer,
+	po unsafe.Pointer,
+	poLen int32,
+	payload unsafe.Pointer,
+	payloadLen int32,
 ) int32 {
 	panic("stub")
 }
 
-func writeRecord(buf unsafe.Pointer, len int32) int32 {
+func writeRecord(
+	payloadOffsets unsafe.Pointer, payloadOffsetsLen int32,
+	payload unsafe.Pointer, payloadLen int32,
+) int32 {
 	panic("stub")
 }

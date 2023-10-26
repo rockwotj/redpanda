@@ -15,66 +15,56 @@
 package redpanda
 
 import (
-	"encoding/binary"
-
 	"github.com/redpanda-data/redpanda/src/go/transform-sdk/internal/rwbuf"
 )
 
 // Reusable slice of record headers
 var incomingRecordHeaders []RecordHeader = nil
 
-func readKV(b *rwbuf.RWBuf) ([]byte, []byte, error) {
-	k, err := b.ReadSizedSlice()
+func readKV(offsets []int32, b *rwbuf.RWBuf) ([]byte, []byte, []int32, error) {
+	k, err := b.ReadSlice(int(offsets[0]))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	v, err := b.ReadSizedSlice()
+	v, err := b.ReadSlice(int(offsets[1]))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return k, v, err
+	return k, v, offsets[2:], err
 }
 
-func (r *Record) deserializePayload(b *rwbuf.RWBuf) error {
-	k, v, err := readKV(b)
+func (r *Record) deserializePayload(offsets []int32, b *rwbuf.RWBuf) error {
+	k, v, offsets, err := readKV(offsets, b)
 	if err != nil {
 		return err
-	}
-	hc, err := binary.ReadVarint(b)
-	if err != nil {
-		return err
-	}
-	if incomingRecordHeaders == nil || len(incomingRecordHeaders) < int(hc) {
-		incomingRecordHeaders = make([]RecordHeader, hc)
-	}
-	incomingRecordHeaders = incomingRecordHeaders[:hc]
-	for i := 0; i < int(hc); i++ {
-		k, v, err := readKV(b)
-		if err != nil {
-			return err
-		}
-		incomingRecordHeaders[i] = RecordHeader{
-			Key:   k,
-			Value: v,
-		}
 	}
 	r.Key = k
 	r.Value = v
+	incomingRecordHeaders = incomingRecordHeaders[0:0]
+	for len(offsets) > 0 {
+		k, v, offsets, err = readKV(offsets, b)
+		if err != nil {
+			return err
+		}
+		incomingRecordHeaders = append(incomingRecordHeaders, RecordHeader{
+			Key:   k,
+			Value: v,
+		})
+	}
 	r.Headers = incomingRecordHeaders
 	return nil
 }
 
 // Serialize this output record's payload (key, value, headers) into the buffer
-func (r Record) serializePayload(b *rwbuf.RWBuf) {
-	b.WriteBytesWithSize(r.Key)
-	b.WriteBytesWithSize(r.Value)
-	if r.Headers != nil {
-		b.WriteVarint(int64(len(r.Headers)))
-		for _, h := range r.Headers {
-			b.WriteBytesWithSize(h.Key)
-			b.WriteBytesWithSize(h.Value)
-		}
-	} else {
-		b.WriteVarint(0)
+func (r Record) serializePayload(offsets []int32, b *rwbuf.RWBuf) {
+	offsets[0] = int32(len(r.Key))
+	_, _ = b.Write(r.Key)
+	offsets[1] = int32(len(r.Value))
+	_, _ = b.Write(r.Value)
+	for i, h := range r.Headers {
+		offsets[(i*2)+2] = int32(len(h.Key))
+		_, _ = b.Write(h.Key)
+		offsets[(i*2)+3] = int32(len(h.Value))
+		_, _ = b.Write(h.Value)
 	}
 }
