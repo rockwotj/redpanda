@@ -30,6 +30,15 @@
 namespace transform {
 
 /**
+ * The output of a transform, which holds the input offset and the transformed
+ * batch from the WebAssembly transform.
+ */
+struct transformed_batch {
+    model::offset input_offset;
+    model::record_batch batch;
+};
+
+/**
  * A processor is the driver of a transform for a single partition.
  *
  * At it's heart it's a fiber that reads->transforms->writes batches
@@ -64,6 +73,7 @@ public:
     const model::transform_metadata& meta() const;
 
 private:
+    ss::future<model::offset> compute_start_offset();
     ss::future<> run_consumer_loop();
     ss::future<> run_transform_loop();
     ss::future<> run_producer_loop();
@@ -84,7 +94,7 @@ private:
     probe* _probe;
 
     ss::queue<model::record_batch> _consumer_transform_pipe;
-    ss::queue<model::record_batch> _transform_producer_pipe;
+    ss::queue<transformed_batch> _transform_producer_pipe;
 
     ss::abort_source _as;
     ss::future<> _task;

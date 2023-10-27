@@ -19,6 +19,7 @@
 #include "units.h"
 #include "wasm/api.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
@@ -50,25 +51,31 @@ private:
     probe* _probe;
 };
 
-ss::future<ss::chunked_fifo<model::record_batch>>
-drain_queue(ss::queue<model::record_batch>* queue, probe* p) {
+struct drain_result {
+    ss::chunked_fifo<model::record_batch> batches;
+    model::offset offset;
+};
+
+ss::future<drain_result>
+drain_queue(ss::queue<transformed_batch>* queue, probe* p) {
     static constexpr size_t max_batches_bytes = 1_MiB;
-    ss::chunked_fifo<model::record_batch> output;
+    drain_result output;
     if (queue->empty()) {
         co_await queue->not_empty();
     }
     size_t batches_size = 0;
     while (!queue->empty()) {
-        auto& batch = queue->front();
-        auto batch_size = batch.size_bytes();
+        int32_t batch_size = queue->front().batch.size_bytes();
         batches_size += batch_size;
         // ensure if there is a large batch we make some progress
         // otherwise cap how much data we send to the sink at once.
-        if (!output.empty() && batches_size > max_batches_bytes) {
+        if (!output.batches.empty() && batches_size > max_batches_bytes) {
             break;
         }
         p->increment_write_bytes(batch_size);
-        output.push_back(queue->pop());
+        auto transformed = queue->pop();
+        output.batches.push_back(std::move(transformed.batch));
+        output.offset = transformed.input_offset;
     }
     co_return output;
 }
@@ -145,8 +152,18 @@ ss::future<> processor::poll_sleep() {
     }
 }
 
-ss::future<> processor::run_consumer_loop() {
+ss::future<model::offset> processor::compute_start_offset() {
+    auto committed = co_await _offset_tracker->load_committed_offset();
+    if (committed) {
+        co_return *committed;
+    }
     auto offset = _source->latest_offset();
+    co_await _offset_tracker->commit_offset(offset);
+    co_return offset;
+}
+
+ss::future<> processor::run_consumer_loop() {
+    auto offset = co_await compute_start_offset();
     vlog(_logger.trace, "starting at offset {}", offset);
     while (!_as.abort_requested()) {
         auto reader = co_await _source->read_batch(offset, &_as);
@@ -169,15 +186,20 @@ ss::future<> processor::run_consumer_loop() {
 ss::future<> processor::run_transform_loop() {
     while (!_as.abort_requested()) {
         auto batch = co_await _consumer_transform_pipe.pop_eventually();
+        model::offset last_offset = batch.last_offset();
         batch = co_await _engine->transform(std::move(batch), _probe);
-        co_await _transform_producer_pipe.push_eventually(std::move(batch));
+        co_await _transform_producer_pipe.push_eventually({
+          .input_offset = last_offset,
+          .batch = std::move(batch),
+        });
     }
 }
 
 ss::future<> processor::run_producer_loop() {
     while (!_as.abort_requested()) {
-        auto batches = co_await drain_queue(&_transform_producer_pipe, _probe);
-        co_await _sinks[0]->write(std::move(batches));
+        auto output = co_await drain_queue(&_transform_producer_pipe, _probe);
+        co_await _sinks[0]->write(std::move(output.batches));
+        co_await _offset_tracker->commit_offset(output.offset);
     }
 }
 
