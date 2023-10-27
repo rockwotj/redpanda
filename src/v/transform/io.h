@@ -72,4 +72,30 @@ public:
 
     using factory = detail::factory<source>;
 };
+
+/**
+ * Transforms are at least once delivery, which we achieve by committing
+ * progress on the input topic offset periodically.
+ */
+class offset_tracker {
+public:
+    offset_tracker() = default;
+    offset_tracker(const offset_tracker&) = delete;
+    offset_tracker(offset_tracker&&) = delete;
+    offset_tracker& operator=(const offset_tracker&) = delete;
+    offset_tracker& operator=(offset_tracker&&) = delete;
+    virtual ~offset_tracker() = default;
+
+    /**
+     * Load the latest offset we've committed too
+     */
+    virtual ss::future<std::optional<model::offset>>
+    load_committed_offset() = 0;
+
+    /**
+     * Commit progress
+     */
+    virtual ss::future<> commit_offset(model::offset) = 0;
+};
+
 } // namespace transform
