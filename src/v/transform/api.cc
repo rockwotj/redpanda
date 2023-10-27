@@ -17,6 +17,7 @@
 #include "cluster/types.h"
 #include "features/feature_table.h"
 #include "kafka/server/replicated_partition.h"
+#include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
@@ -34,6 +35,9 @@
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/optimized_optional.hh>
+
+#include <memory>
+#include <stdexcept>
 
 namespace transform {
 
@@ -159,6 +163,51 @@ private:
     cluster::partition_manager* _manager;
 };
 
+class offset_tracker_impl : public offset_tracker {
+public:
+    offset_tracker_impl(
+      model::transform_id tid, model::partition_id pid, rpc::client* client)
+      : _tid(tid)
+      , _pid(pid)
+      , _client(client) {}
+
+    ss::future<std::optional<model::offset>> load_committed_offset() override {
+        auto result = co_await _client->offset_fetch(
+          {.id = _tid, .partition = _pid});
+        if (result.has_error()) {
+            cluster::errc ec = result.error();
+            throw std::runtime_error(ss::format(
+              "error committing offset: {}",
+              cluster::error_category().message(int(ec))));
+        }
+        std::optional<model::transform_offsets_value> value = result.value();
+        if (!value) {
+            co_return std::nullopt;
+        }
+        // TODO(rockwood): The whole transform subsystem should work on
+        // kafka::offset.
+        co_return kafka::offset_cast(value->offset);
+    }
+
+    ss::future<> commit_offset(model::offset offset) override {
+        // TODO(rockwood): The whole transform subsystem should work on
+        // kafka::offset.
+        cluster::errc ec = co_await _client->offset_commit(
+          {.id = _tid, .partition = _pid},
+          {.offset = model::offset_cast(offset)});
+        if (ec != cluster::errc::success) {
+            throw std::runtime_error(ss::format(
+              "error committing offset: {}",
+              cluster::error_category().message(int(ec))));
+        }
+    }
+
+private:
+    model::transform_id _tid;
+    model::partition_id _pid;
+    rpc::client* _client;
+};
+
 using wasm_engine_factory = ss::noncopyable_function<
   ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>(
     model::transform_metadata)>;
@@ -168,10 +217,12 @@ public:
     proc_factory(
       wasm_engine_factory factory,
       std::unique_ptr<source::factory> source_factory,
-      std::unique_ptr<sink::factory> sink_factory)
+      std::unique_ptr<sink::factory> sink_factory,
+      rpc::client* client)
       : _wasm_engine_factory(std::move(factory))
       , _source_factory(std::move(source_factory))
-      , _sink_factory(std::move(sink_factory)) {}
+      , _sink_factory(std::move(sink_factory))
+      , _client(client) {}
 
     ss::future<std::unique_ptr<processor>> create_processor(
       model::transform_id id,
@@ -206,6 +257,7 @@ public:
           std::move(cb),
           *std::move(src),
           std::move(sinks),
+          std::make_unique<offset_tracker_impl>(id, ntp.tp.partition, _client),
           p);
     }
 
@@ -214,6 +266,7 @@ private:
     wasm_engine_factory _wasm_engine_factory;
     std::unique_ptr<source::factory> _source_factory;
     std::unique_ptr<sink::factory> _sink_factory;
+    rpc::client* _client;
     absl::flat_hash_map<model::offset, std::unique_ptr<wasm::engine>> _cache;
 };
 
@@ -274,7 +327,8 @@ ss::future<> service::start() {
             return create_engine(std::move(meta));
         },
         std::move(source_factory),
-        std::move(sink_factory)));
+        std::move(sink_factory),
+        &_rpc_client->local()));
     co_await _manager->start();
     register_notifications();
 }

@@ -62,4 +62,15 @@ uint64_t fake_wasm_engine::memory_usage_size_bytes() const {
 };
 ss::future<> fake_wasm_engine::start() { return ss::now(); }
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
+
+ss::future<> fake_offset_tracker::commit_offset(model::offset o) {
+    _offset = o;
+    co_return;
+}
+
+ss::future<std::optional<model::offset>>
+fake_offset_tracker::load_committed_offset() {
+    co_return _offset;
+}
+
 } // namespace transform::testing

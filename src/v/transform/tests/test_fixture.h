@@ -65,6 +65,16 @@ private:
     model::offset _latest_offset;
 };
 
+class fake_offset_tracker : public offset_tracker {
+public:
+    ss::future<std::optional<model::offset>> load_committed_offset() override;
+
+    ss::future<> commit_offset(model::offset o) override;
+
+private:
+    std::optional<model::offset> _offset;
+};
+
 class fake_sink : public sink {
     static constexpr size_t max_queue_size = 64;
 

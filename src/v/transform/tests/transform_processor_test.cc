@@ -30,6 +30,8 @@ public:
           = ss::make_shared<testing::fake_wasm_engine>();
         auto src = std::make_unique<testing::fake_source>(_offset);
         _src = src.get();
+        auto ot = std::make_unique<testing::fake_offset_tracker>();
+        _offset_tracker = ot.get();
         auto sink = std::make_unique<testing::fake_sink>();
         std::vector<std::unique_ptr<transform::sink>> sinks;
         _sinks.push_back(sink.get());
@@ -45,6 +47,7 @@ public:
             const model::transform_metadata&) { ++_error_count; },
           std::move(src),
           std::move(sinks),
+          std::move(ot),
           &_probe);
         _p->start().get();
     }
@@ -65,6 +68,7 @@ private:
 
     model::offset _offset = start_offset;
     std::unique_ptr<transform::processor> _p;
+    testing::fake_offset_tracker* _offset_tracker;
     testing::fake_source* _src;
     std::vector<testing::fake_sink*> _sinks;
     uint64_t _error_count = 0;
