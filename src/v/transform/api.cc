@@ -79,13 +79,13 @@ public:
     explicit partition_source(kafka::partition_proxy p)
       : _partition(std::move(p)) {}
 
-    ss::future<model::offset> load_latest_offset() final {
+    model::offset latest_offset() final {
         auto result = _partition.last_stable_offset();
         if (result.has_error()) {
             throw std::runtime_error(
               kafka::make_error_code(result.error()).message());
         }
-        co_return result.value();
+        return result.value();
     }
 
     ss::future<model::record_batch_reader>

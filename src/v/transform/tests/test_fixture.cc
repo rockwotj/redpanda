@@ -26,9 +26,7 @@ ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
 ss::future<model::record_batch> fake_sink::read() {
     return _batches.pop_eventually();
 }
-ss::future<model::offset> fake_source::load_latest_offset() {
-    co_return _latest_offset;
-}
+model::offset fake_source::latest_offset() { return _latest_offset; }
 ss::future<model::record_batch_reader>
 fake_source::read_batch(model::offset offset, ss::abort_source* as) {
     EXPECT_EQ(offset, _latest_offset);

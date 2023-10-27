@@ -66,7 +66,7 @@ public:
     source& operator=(source&&) = delete;
     virtual ~source() = default;
 
-    virtual ss::future<model::offset> load_latest_offset() = 0;
+    virtual model::offset latest_offset() = 0;
     virtual ss::future<model::record_batch_reader>
     read_batch(model::offset, ss::abort_source*) = 0;
 

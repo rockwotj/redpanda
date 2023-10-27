@@ -54,7 +54,7 @@ public:
       : _batches(max_queue_size)
       , _latest_offset(initial_offset) {}
 
-    ss::future<model::offset> load_latest_offset() override;
+    model::offset latest_offset() override;
     ss::future<model::record_batch_reader>
     read_batch(model::offset offset, ss::abort_source* as) override;
 
