@@ -11,51 +11,59 @@
 
 #include "transform/tests/test_fixture.h"
 
+#include "model/fundamental.h"
+
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/lowres_clock.hh>
 
 #include <gtest/gtest.h>
 
 #include <exception>
+#include <iostream>
 
 namespace transform::testing {
 ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
     for (auto& batch : batches) {
-        co_await _batches.push_eventually(std::move(batch));
+        _batches.push_back(std::move(batch));
     }
+    _cond_var.broadcast();
+    co_return;
 }
 ss::future<model::record_batch> fake_sink::read() {
-    return _batches.pop_eventually();
+    co_await _cond_var.wait(1s, [this] { return !_batches.empty(); });
+    auto batch = std::move(_batches.front());
+    _batches.pop_front();
+    co_return batch;
 }
-model::offset fake_source::latest_offset() { return _latest_offset; }
+
+model::offset fake_source::latest_offset() {
+    if (_batches.empty()) {
+        return model::offset(0);
+    }
+    return model::next_offset(_batches.rbegin()->first);
+}
+
 ss::future<model::record_batch_reader>
 fake_source::read_batch(model::offset offset, ss::abort_source* as) {
-    EXPECT_EQ(offset, _latest_offset);
-    if (!_batches.empty()) {
-        model::record_batch_reader::data_t batches;
-        while (!_batches.empty()) {
-            batches.push_back(_batches.pop());
+    auto sub = as->subscribe([this]() noexcept { _cond_var.broadcast(); });
+    co_await _cond_var.wait([this, as, offset] {
+        if (as->abort_requested()) {
+            return true;
         }
-        _latest_offset = model::next_offset(batches.back().last_offset());
-        co_return model::make_memory_record_batch_reader(std::move(batches));
-    }
-    auto sub = as->subscribe(
-      // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-      [this](const std::optional<std::exception_ptr>& ex) noexcept {
-          _batches.abort(ex.value_or(
-            std::make_exception_ptr(ss::abort_requested_exception())));
-      });
-    if (!sub) {
-        _batches.abort(
-          std::make_exception_ptr(ss::abort_requested_exception()));
-    }
-    auto batch = co_await _batches.pop_eventually();
-    _latest_offset = model::next_offset(batch.last_offset());
-    sub->unlink();
-    co_return model::make_memory_record_batch_reader(std::move(batch));
+        auto it = _batches.lower_bound(offset);
+        return it != _batches.end();
+    });
+    as->check();
+    auto it = _batches.lower_bound(offset);
+    co_return model::make_memory_record_batch_reader(it->second.copy());
 }
+
 ss::future<> fake_source::push_batch(model::record_batch batch) {
-    co_await _batches.push_eventually(std::move(batch));
+    _batches.emplace(batch.last_offset(), std::move(batch));
+    _cond_var.broadcast();
+    co_return;
 }
+
 uint64_t fake_wasm_engine::memory_usage_size_bytes() const {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     return 64_KiB;
@@ -64,6 +72,7 @@ ss::future<> fake_wasm_engine::start() { return ss::now(); }
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
 
 ss::future<> fake_offset_tracker::commit_offset(model::offset o) {
+    _cond_var.broadcast();
     _offset = o;
     co_return;
 }
@@ -71,6 +80,10 @@ ss::future<> fake_offset_tracker::commit_offset(model::offset o) {
 ss::future<std::optional<model::offset>>
 fake_offset_tracker::load_committed_offset() {
     co_return _offset;
+}
+
+ss::future<> fake_offset_tracker::wait_for_committed_offset(model::offset o) {
+    return _cond_var.wait([this, o] { return _offset && *_offset >= o; });
 }
 
 } // namespace transform::testing

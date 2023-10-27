@@ -28,7 +28,7 @@ public:
     void SetUp() override {
         ss::shared_ptr<wasm::engine> engine
           = ss::make_shared<testing::fake_wasm_engine>();
-        auto src = std::make_unique<testing::fake_source>(_offset);
+        auto src = std::make_unique<testing::fake_source>();
         _src = src.get();
         auto ot = std::make_unique<testing::fake_offset_tracker>();
         _offset_tracker = ot.get();
@@ -50,12 +50,13 @@ public:
           std::move(ot),
           &_probe);
         _p->start().get();
+        _offset_tracker->wait_for_committed_offset(_offset).get();
     }
     void TearDown() override { _p->stop().get(); }
 
     model::record_batch make_tiny_batch() {
         return model::test::make_random_batch(model::test::record_batch_spec{
-          .offset = _offset++, .allow_compression = false, .count = 1});
+          .offset = ++_offset, .allow_compression = false, .count = 1});
     }
     void push_batch(model::record_batch batch) {
         _src->push_batch(std::move(batch)).get();
@@ -63,8 +64,13 @@ public:
     model::record_batch read_batch() { return _sinks[0]->read().get(); }
     uint64_t error_count() const { return _error_count; }
 
+    void restart() {
+        _p->stop().get();
+        _p->start().get();
+    }
+
 private:
-    static constexpr model::offset start_offset = model::offset(9);
+    static constexpr model::offset start_offset = model::offset(0);
 
     model::offset _offset = start_offset;
     std::unique_ptr<transform::processor> _p;

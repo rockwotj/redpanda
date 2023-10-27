@@ -192,7 +192,7 @@ class processor_tracker : public processor_factory {
             std::move(meta),
             ss::make_shared<testing::fake_wasm_engine>(),
             [](auto, auto, auto) {},
-            std::make_unique<testing::fake_source>(model::offset(1)),
+            std::make_unique<testing::fake_source>(),
             make_sink(),
             std::make_unique<testing::fake_offset_tracker>(),
             p)
