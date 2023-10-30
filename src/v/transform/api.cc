@@ -23,6 +23,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "transform/io.h"
 #include "transform/logger.h"
+#include "transform/offset_commit_batcher.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
 #include "transform/transform_manager.h"
@@ -166,10 +167,14 @@ private:
 class offset_tracker_impl : public offset_tracker {
 public:
     offset_tracker_impl(
-      model::transform_id tid, model::partition_id pid, rpc::client* client)
+      model::transform_id tid,
+      model::partition_id pid,
+      rpc::client* client,
+      offset_commit_batcher<>* batcher)
       : _tid(tid)
       , _pid(pid)
-      , _client(client) {}
+      , _client(client)
+      , _batcher(batcher) {}
 
     ss::future<std::optional<model::offset>> load_committed_offset() override {
         auto result = co_await _client->offset_fetch(
@@ -192,20 +197,16 @@ public:
     ss::future<> commit_offset(model::offset offset) override {
         // TODO(rockwood): The whole transform subsystem should work on
         // kafka::offset.
-        cluster::errc ec = co_await _client->offset_commit(
+        co_await _batcher->commit_offset(
           {.id = _tid, .partition = _pid},
           {.offset = model::offset_cast(offset)});
-        if (ec != cluster::errc::success) {
-            throw std::runtime_error(ss::format(
-              "error committing offset: {}",
-              cluster::error_category().message(int(ec))));
-        }
     }
 
 private:
     model::transform_id _tid;
     model::partition_id _pid;
     rpc::client* _client;
+    offset_commit_batcher<>* _batcher;
 };
 
 using wasm_engine_factory = ss::noncopyable_function<
@@ -218,11 +219,13 @@ public:
       wasm_engine_factory factory,
       std::unique_ptr<source::factory> source_factory,
       std::unique_ptr<sink::factory> sink_factory,
-      rpc::client* client)
+      rpc::client* client,
+      offset_commit_batcher<>* batcher)
       : _wasm_engine_factory(std::move(factory))
       , _source_factory(std::move(source_factory))
       , _sink_factory(std::move(sink_factory))
-      , _client(client) {}
+      , _client(client)
+      , _batcher(batcher) {}
 
     ss::future<std::unique_ptr<processor>> create_processor(
       model::transform_id id,
@@ -257,7 +260,8 @@ public:
           std::move(cb),
           *std::move(src),
           std::move(sinks),
-          std::make_unique<offset_tracker_impl>(id, ntp.tp.partition, _client),
+          std::make_unique<offset_tracker_impl>(
+            id, ntp.tp.partition, _client, _batcher),
           p);
     }
 
@@ -267,7 +271,27 @@ private:
     std::unique_ptr<source::factory> _source_factory;
     std::unique_ptr<sink::factory> _sink_factory;
     rpc::client* _client;
+    offset_commit_batcher<>* _batcher;
     absl::flat_hash_map<model::offset, std::unique_ptr<wasm::engine>> _cache;
+};
+
+class offset_committer_impl : public offset_committer {
+public:
+    ss::future<result<model::partition_id, cluster::errc>>
+    find_coordinator(model::transform_offsets_key key) override {
+        return _client->find_coordinator(key);
+    }
+
+    ss::future<cluster::errc> batch_commit(
+      model::partition_id coordinator,
+      absl::btree_map<
+        model::transform_offsets_key,
+        model::transform_offsets_value> kvs) override {
+        return _client->batch_offset_commit(coordinator, std::move(kvs));
+    }
+
+private:
+    rpc::client* _client;
 };
 
 } // namespace
@@ -318,6 +342,11 @@ ss::future<> service::start() {
     std::unique_ptr<sink::factory> sink_factory
       = std::make_unique<rpc_client_factory>(&_rpc_client->local());
 
+    constexpr static auto commit_interval = 5s;
+    _batcher = std::make_unique<offset_commit_batcher<>>(
+      commit_interval,
+      std::make_unique<offset_committer_impl>(&_rpc_client->local()));
+
     _manager = std::make_unique<manager<ss::lowres_clock>>(
       _self,
       std::make_unique<registry_adapter>(
@@ -328,7 +357,8 @@ ss::future<> service::start() {
         },
         std::move(source_factory),
         std::move(sink_factory),
-        &_rpc_client->local()));
+        &_rpc_client->local(),
+        _batcher.get()));
     co_await _manager->start();
     register_notifications();
 }

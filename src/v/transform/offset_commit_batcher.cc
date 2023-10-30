@@ -156,7 +156,7 @@ ss::future<> offset_commit_batcher<ClockType>::flush() {
         auto node = _batched.extract(it);
         model::partition_id coordinator = node.key();
         kv_map kvs = std::move(node.mapped());
-        auto fut = co_await ss::coroutine::as_future<>(
+        auto fut = co_await ss::coroutine::as_future<cluster::errc>(
           _offset_committer->batch_commit(
             node.key(), std::move(node.mapped())));
         if (fut.failed()) {
@@ -167,6 +167,8 @@ ss::future<> offset_commit_batcher<ClockType>::flush() {
               fut.get_exception());
             it = _batched.upper_bound(coordinator);
             continue;
+        }
+        if (fut.get() != cluster::errc::success) {
         }
     }
     if (!_batched.empty() && !_timer.armed()) {

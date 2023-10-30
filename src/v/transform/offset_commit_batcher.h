@@ -52,7 +52,7 @@ public:
      *
      * The partition **must** be owner of every key in the batch.
      */
-    virtual ss::future<> batch_commit(
+    virtual ss::future<cluster::errc> batch_commit(
       model::partition_id coordinator,
       absl::
         btree_map<model::transform_offsets_key, model::transform_offsets_value>)
