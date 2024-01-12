@@ -280,8 +280,8 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		if err != nil {
 			return fmt.Errorf("cargo is not available on $PATH, please download and install it: https://rustup.rs/")
 		}
-		if err := runCli(cargo, "add", "redpanda-transform-sdk"); err != nil {
-			return fmt.Errorf("unable to add redpanda-transform-sdk crate: %v", err)
+		if err := runCli(cargo, "generate-lockfile"); err != nil {
+			return fmt.Errorf("unable to generate lockfile: %v", err)
 		}
 		return nil
 	}

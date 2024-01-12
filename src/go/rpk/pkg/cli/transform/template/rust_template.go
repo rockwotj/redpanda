@@ -12,6 +12,9 @@ package template
 import (
 	_ "embed"
 	"fmt"
+	"strings"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
 )
 
 //go:embed rust/main.rustsrc
@@ -29,8 +32,19 @@ edition = "2021"
 [dependencies]
 `
 
+const rustDependencies = `redpanda-transform-sdk = %q
+`
+
 func WasmRustCargoConfig(name string) string {
-	return fmt.Sprintf(cargoTomlTemplate, name)
+	cargoToml := fmt.Sprintf(cargoTomlTemplate, name)
+	v := version.Version()
+	// Just let dev builds use the latest version and force usage of `cargo add redpanda-transform-sdk`,
+	// otherwise fix the version to be the same as RPK
+	if v.IsReleasedVersion() {
+		// Rust versions drop the `v` prefix.
+		cargoToml += fmt.Sprintf(rustDependencies, strings.TrimPrefix(v.Version, "v"))
+	}
+	return cargoToml
 }
 
 //go:embed rust/README.md
