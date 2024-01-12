@@ -12,6 +12,7 @@ package version
 import (
 	"fmt"
 	"runtime"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -29,7 +30,7 @@ var (
 	hostArch  string // Arch that was used to built rpk (go env GOHOSTARCH).
 )
 
-type rpkVersion struct {
+type RpkVersion struct {
 	Version   string `json:"version,omitempty" yaml:"version,omitempty"`
 	GitRef    string `json:"git_ref,omitempty" yaml:"git_ref,omitempty"`
 	BuildTime string `json:"build_time,omitempty" yaml:"build_time,omitempty"`
@@ -37,11 +38,25 @@ type rpkVersion struct {
 	OsArch    string `json:"os_arch,omitempty" yaml:"os_arch,omitempty"`
 }
 
+func (v RpkVersion) IsReleasedVersion() bool {
+	return !strings.HasPrefix(v.Version, "v0.0.0-")
+}
+
 type redpandaVersion struct {
 	NodeID  int
 	Version string
 }
 type redpandaVersions []redpandaVersion
+
+func Version() RpkVersion {
+	return RpkVersion{
+		Version:   version,
+		GitRef:    rev,
+		BuildTime: buildTime,
+		GoVersion: runtime.Version(),
+		OsArch:    fmt.Sprintf("%s/%s", hostOs, hostArch),
+	}
+}
 
 func Pretty() string {
 	return fmt.Sprintf("%s (rev %s)", version, rev)
@@ -59,13 +74,7 @@ version running on each node in your cluster.
 To list the Redpanda version of each node in your cluster you may pass the
 Admin API hosts via flags, profile, or environment variables.`,
 		Run: func(cmd *cobra.Command, _ []string) {
-			rv := rpkVersion{
-				Version:   version,
-				GitRef:    rev,
-				BuildTime: buildTime,
-				GoVersion: runtime.Version(),
-				OsArch:    fmt.Sprintf("%s/%s", hostOs, hostArch),
-			}
+			rv := Version()
 			printRpkVersion(rv)
 			var rows redpandaVersions
 			defer printClusterVersions(&rows)
@@ -95,7 +104,7 @@ Admin API hosts via flags, profile, or environment variables.`,
 	return cmd
 }
 
-func printRpkVersion(rv rpkVersion) {
+func printRpkVersion(rv RpkVersion) {
 	fmt.Printf(`Version:     %s
 Git ref:     %s
 Build date:  %s
