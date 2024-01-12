@@ -21,8 +21,8 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/internal/cache"
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/internal/rwbuf"
+	"github.com/rockwotj/redpanda/src/transform-sdk/go/transform/v24/internal/cache"
+	"github.com/rockwotj/redpanda/src/transform-sdk/go/transform/v24/internal/rwbuf"
 )
 
 // schemaId is an ID of a schema registered with schema registry

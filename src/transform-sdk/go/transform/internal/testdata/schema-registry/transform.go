@@ -17,9 +17,9 @@ package main
 import (
 	"bytes"
 
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/sr"
-	"github.com/redpanda-data/wasm-transform-testdata/schema-registry/avro"
+	"github.com/rockwotj/redpanda/src/transform-sdk/go/transform"
+	"github.com/rockwotj/redpanda/src/transform-sdk/go/transform/sr"
+	"github.com/rockwotj/wasm-transform-testdata/schema-registry/avro"
 )
 
 var (

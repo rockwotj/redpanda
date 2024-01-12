@@ -17,7 +17,7 @@ package transform
 import (
 	"encoding/binary"
 
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/internal/rwbuf"
+	"github.com/rockwotj/redpanda/src/transform-sdk/go/transform/v24/internal/rwbuf"
 )
 
 // Reusable slice of record headers
