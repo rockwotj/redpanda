@@ -12,13 +12,38 @@ package template
 import (
 	_ "embed"
 	"fmt"
+	"strings"
+	"time"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
 )
 
+type goSdkVersion struct {
+	major string
+	full  string
+}
+
+func computeGoSdkVersion() goSdkVersion {
+	v := version.Version()
+	if !v.IsReleasedVersion() {
+		// Use the current year as the major version
+		return goSdkVersion{
+			major: time.Now().Format("06"),
+			full:  "",
+		}
+	}
+	parts := strings.SplitN(v.Version, ".", 2)
+	return goSdkVersion{
+		major: parts[0],
+		full:  v.Version,
+	}
+}
+
 //go:embed golang/transform.gosrc
-var wasmMainFile string
+var wasmGolangMainFile string
 
 func WasmGoMain() string {
-	return wasmMainFile
+	return fmt.Sprintf(wasmGolangMainFile, computeGoSdkVersion().major)
 }
 
 const wasmGoModFile = `module %s
@@ -26,8 +51,19 @@ const wasmGoModFile = `module %s
 go 1.20
 `
 
+const requiredGoModules = `
+require github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/%s %s
+`
+
 func WasmGoModule(name string) string {
-	return fmt.Sprintf(wasmGoModFile, name)
+	modFile := fmt.Sprintf(wasmGoModFile, name)
+	// Just let dev builds use the latest version and force usage of `go mod tidy`,
+	// otherwise fix the version to be the same as RPK
+	v := computeGoSdkVersion()
+	if v.full != "" {
+		modFile += fmt.Sprintf(requiredGoModules, v.major, v.full)
+	}
+	return modFile
 }
 
 //go:embed golang/README.md
