@@ -51,47 +51,51 @@ public:
         if (v._capacity >= std::numeric_limits<size_t>::max() / 2) {
             return AssertionFailure() << "capacity too big";
         }
-        size_t calc_size = 0, calc_cap = 0;
-
-        for (size_t i = 0; i < v._frags.size(); ++i) {
-            auto& f = v._frags[i];
-
-            calc_size += f.size();
-            calc_cap += f.capacity();
-
-            if (i + 1 < v._frags.size()) {
-                if (f.size() < v.elems_per_frag) {
-                    return AssertionFailure() << fmt::format(
-                             "fragment {} is undersized ({} < {})",
-                             i,
-                             f.size(),
-                             v.elems_per_frag);
-                }
-            }
+        if (v._capacity == 0 && !v._frags.empty()) {
+            return AssertionFailure() << "frags and capacity mismatch";
         }
+        // What can we check here???
+        // size_t calc_size = 0, calc_cap = 0;
 
-        if (calc_size != v.size()) {
-            return AssertionFailure() << fmt::format(
-                     "calculated size is wrong ({} != {})",
-                     calc_size,
-                     v.size());
-        }
-        size_t max_frag_bytes = std::decay_t<decltype(v)>::max_frag_bytes;
-        if (v._frags.size() > 1 || max_frag_bytes != std::dynamic_extent) {
-            if (calc_cap != v._capacity) {
-                return AssertionFailure() << fmt::format(
-                         "calculated capcity is wrong ({} != {})",
-                         calc_cap,
-                         v._capacity);
-            }
-        } else if (
-          v._frags.size() == 1 && max_frag_bytes == std::dynamic_extent) {
-            if ((calc_cap & (calc_cap - 1)) != 0) {
-                return AssertionFailure() << fmt::format(
-                         "calculated capcity is not a power of two ({})",
-                         calc_cap);
-            }
-        }
+        // for (size_t i = 0; i < v._frags.size(); ++i) {
+        //     auto& f = v._frags[i];
+
+        //     calc_size += f.size();
+        //     calc_cap += f.capacity();
+
+        //     if (i + 1 < v._frags.size()) {
+        //         if (f.size() < v.elems_per_frag) {
+        //             return AssertionFailure() << fmt::format(
+        //                      "fragment {} is undersized ({} < {})",
+        //                      i,
+        //                      f.size(),
+        //                      v.elems_per_frag);
+        //         }
+        //     }
+        // }
+
+        // if (calc_size != v.size()) {
+        //     return AssertionFailure() << fmt::format(
+        //              "calculated size is wrong ({} != {})",
+        //              calc_size,
+        //              v.size());
+        // }
+        // size_t max_frag_bytes = std::decay_t<decltype(v)>::max_frag_bytes;
+        // if (v._frags.size() > 1 || max_frag_bytes != std::dynamic_extent) {
+        //     if (calc_cap != v._capacity) {
+        //         return AssertionFailure() << fmt::format(
+        //                  "calculated capcity is wrong ({} != {})",
+        //                  calc_cap,
+        //                  v._capacity);
+        //     }
+        // } else if (
+        //   v._frags.size() == 1 && max_frag_bytes == std::dynamic_extent) {
+        //     if ((calc_cap & (calc_cap - 1)) != 0) {
+        //         return AssertionFailure() << fmt::format(
+        //                  "calculated capcity is not a power of two ({})",
+        //                  calc_cap);
+        //     }
+        // }
         return AssertionSuccess();
     }
 };

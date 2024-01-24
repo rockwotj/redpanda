@@ -16,9 +16,11 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/later.hh>
 
+#include <algorithm>
 #include <compare>
 #include <cstddef>
 #include <iterator>
+#include <memory>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
@@ -109,7 +111,7 @@ public:
         }
         return *this;
     }
-    ~fragmented_vector() noexcept = default;
+    ~fragmented_vector() noexcept { clear(); };
 
     template<typename Iter>
     requires std::input_iterator<Iter>
@@ -122,7 +124,14 @@ public:
         }
     }
 
-    fragmented_vector copy() const noexcept { return *this; }
+    fragmented_vector copy() const noexcept {
+        fragmented_vector c;
+        // TODO: make this more efficient
+        for (const T& e : *this) {
+            c.push_back(e);
+        }
+        return c;
+    }
 
     void swap(fragmented_vector& other) noexcept {
         std::swap(_size, other._size);
@@ -135,25 +144,28 @@ public:
     template<class E = T>
     void push_back(E&& elem) {
         maybe_add_capacity();
-        _frags.back().push_back(std::forward<E>(elem));
-        ++_size;
+        _frags.back()[_size % elems_per_frag] = std::forward<E>(elem);
+        _size++;
         update_generation();
     }
 
     template<class... Args>
     T& emplace_back(Args&&... args) {
         maybe_add_capacity();
-        _frags.back().emplace_back(std::forward<Args>(args)...);
-        ++_size;
+        T* ptr = _frags.back()[_size % elems_per_frag];
+        std::construct_at(ptr, std::forward<Args>(args)...);
+        _size++;
         update_generation();
-        return _frags.back().back();
+        return *ptr;
     }
 
     void pop_back() {
         vassert(_size > 0, "Cannot pop from empty container");
-        _frags.back().pop_back();
+        std::destroy_at(std::addressof(back()));
         --_size;
-        if (_frags.back().empty()) {
+        if ((_size % elems_per_frag) == 0) {
+            std::allocator<T>{}.deallocate(
+              _frags.back(), std::min(_capacity, elems_per_frag));
             _frags.pop_back();
             _capacity -= elems_per_frag;
         }
@@ -173,26 +185,20 @@ public:
             return;
         }
 
-        _size -= n;
-
-        while (n >= _frags.back().size()) {
-            n -= _frags.back().size();
-            _frags.pop_back();
-            _capacity -= elems_per_frag;
-        }
+        // TODO: optimize!
 
         for (size_t i = 0; i < n; ++i) {
-            _frags.back().pop_back();
+            pop_back();
         }
         update_generation();
     }
 
     const T& at(size_t index) const {
-        return _frags.at(index / elems_per_frag).at(index % elems_per_frag);
+        return _frags.at(index / elems_per_frag)[index % elems_per_frag];
     }
 
     T& at(size_t index) {
-        return _frags.at(index / elems_per_frag).at(index % elems_per_frag);
+        return _frags.at(index / elems_per_frag)[index % elems_per_frag];
     }
 
     const T& operator[](size_t index) const {
@@ -203,10 +209,12 @@ public:
         return _frags[index / elems_per_frag][index % elems_per_frag];
     }
 
-    const T& front() const { return _frags.front().front(); }
-    const T& back() const { return _frags.back().back(); }
-    T& front() { return _frags.front().front(); }
-    T& back() { return _frags.back().back(); }
+    const T& front() const { return _frags.front()[0]; }
+    const T& back() const {
+        return _frags.back()[(_size - 1) % elems_per_frag];
+    }
+    T& front() { return _frags.front()[0]; }
+    T& back() { return _frags.back()[(_size - 1) % elems_per_frag]; }
     bool empty() const noexcept { return _size == 0; }
     size_t size() const noexcept { return _size; }
 
@@ -218,7 +226,19 @@ public:
 
     void reserve(size_t v) {
         if constexpr (fragment_size_bytes == std::dynamic_extent) {
-            _frags.front().reserve(std::min(v, elems_per_frag));
+            if (v > _capacity) {
+                if (_size == 0) {
+                    vassert(
+                      _capacity == 0,
+                      "capacity not empty when size empty: {}",
+                      _capacity);
+                    _capacity = std::min(elems_per_frag, v);
+                    auto alloc = std::allocator<T>{};
+                    _frags.push_back(alloc.allocate(_capacity));
+                } else if (_size < elems_per_frag) {
+                    grow_first_to(std::min(elems_per_frag, v));
+                }
+            }
         }
         update_generation();
     }
@@ -231,7 +251,7 @@ public:
      * Returns the approximate in-memory size of this vector in bytes.
      */
     size_t memory_size() const {
-        return _frags.size() * (sizeof(_frags[0]) + elems_per_frag * sizeof(T));
+        return _frags.size() * elems_per_frag * sizeof(T);
     }
 
     /**
@@ -248,8 +268,24 @@ public:
      * based on non-reallocation and capacity()).
      */
     void clear() {
+        // Cleanup the remainder chunk
+        size_t last_chunk_size = _size % elems_per_frag;
+        std::allocator<T> alloc;
+        if (last_chunk_size > 0) {
+            std::destroy_n(_frags.back(), last_chunk_size);
+            // If this is the first chunk, it has variable capacity
+            // otherwise it's a full chunk capacity wise
+            alloc.deallocate(
+              _frags.back(), std::min(_capacity, elems_per_frag));
+            _frags.pop_back();
+        }
+        // Cleanup full chunks
+        for (T* chunk : _frags) {
+            std::destroy_n(chunk, elems_per_frag);
+            alloc.deallocate(_frags.back(), elems_per_frag);
+        }
         // do the swap dance to actually clear the memory held by the vector
-        std::vector<std::vector<T>>{}.swap(_frags);
+        std::vector<T*>{}.swap(_frags);
         _size = 0;
         _capacity = 0;
         update_generation();
@@ -393,14 +429,42 @@ public:
 
 private:
     void maybe_add_capacity() {
-        if (_size == _capacity) {
-            std::vector<T> frag;
-            if (fragment_size_bytes != std::dynamic_extent || !_frags.empty()) {
-                frag.reserve(elems_per_frag);
+        if constexpr (fragment_size_bytes != std::dynamic_extent) {
+            if (_size == _capacity) {
+                auto alloc = std::allocator<T>{};
+                _frags.push_back(alloc.allocate(elems_per_frag));
+                _capacity += elems_per_frag;
             }
-            _frags.push_back(std::move(frag));
-            _capacity += elems_per_frag;
+        } else {
+            if (_size == _capacity) {
+                auto alloc = std::allocator<T>{};
+                if (_size >= elems_per_frag) {
+                    _frags.push_back(alloc.allocate(elems_per_frag));
+                    _capacity += elems_per_frag;
+                } else if (_size == 0) {
+                    _frags.push_back(alloc.allocate(1));
+                    _capacity += 1;
+                } else {
+                    grow_first_to(_capacity * 2);
+                }
+            }
         }
+    }
+
+    void grow_first_to(size_t new_capacity) {
+        auto alloc = std::allocator<T>{};
+        auto old_cap = std::exchange(_capacity, new_capacity);
+        T* old_begin = std::exchange(_frags.front(), alloc.allocate(_capacity));
+        T* old_end = old_begin + old_cap;
+        using pointer = T*;
+        for (pointer old_it = old_begin, new_it = _frags.front();
+             old_it < old_end;
+             ++old_it, ++new_it) {
+            // Invoke the move constructor
+            std::construct_at(new_it, std::move(*old_it));
+            std::destroy_at(old_it);
+        }
+        alloc.deallocate(old_begin, old_cap);
     }
 
     inline void update_generation() {
@@ -411,7 +475,6 @@ private:
 
 private:
     friend class fragmented_vector_validator;
-    fragmented_vector(const fragmented_vector&) noexcept = default;
 
     template<typename TT, size_t SS>
     friend seastar::future<>
@@ -423,7 +486,7 @@ private:
 
     size_t _size{0};
     size_t _capacity{0};
-    std::vector<std::vector<T>> _frags;
+    std::vector<T*> _frags;
 #ifndef NDEBUG
     // Add a generation number that is incremented on every mutation to catch
     // invalidated iterator accesses.
