@@ -19,9 +19,12 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <memory>
 #include <numeric>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -37,8 +40,8 @@ static_assert(std::forward_iterator<vec::const_iterator>);
 class fragmented_vector_validator {
 public:
     // perform an internal consistency check of the vector structure
-    template<typename T>
-    static AssertionResult validate(const fragmented_vector<T>& v) {
+    template<typename T, size_t S>
+    static AssertionResult validate(const fragmented_vector<T, S>& v) {
         if (v._size > v._capacity) {
             return AssertionFailure() << "size greater than capacity";
         }
@@ -73,12 +76,21 @@ public:
                      calc_size,
                      v.size());
         }
-
-        if (calc_cap != v._capacity) {
-            return AssertionFailure() << fmt::format(
-                     "calculated capcity is wrong ({} != {})",
-                     calc_cap,
-                     v._capacity);
+        size_t max_frag_bytes = std::decay_t<decltype(v)>::max_frag_bytes;
+        if (v._frags.size() > 1 || max_frag_bytes != std::dynamic_extent) {
+            if (calc_cap != v._capacity) {
+                return AssertionFailure() << fmt::format(
+                         "calculated capcity is wrong ({} != {})",
+                         calc_cap,
+                         v._capacity);
+            }
+        } else if (
+          v._frags.size() == 1 && max_frag_bytes == std::dynamic_extent) {
+            if ((calc_cap & (calc_cap - 1)) != 0) {
+                return AssertionFailure() << fmt::format(
+                         "calculated capcity is not a power of two ({})",
+                         calc_cap);
+            }
         }
         return AssertionSuccess();
     }
@@ -135,8 +147,8 @@ using testing::Lt;
 using testing::Ne;
 using testing::Not;
 
-template<typename T>
-AssertionResult is_eq(fragmented_vector<T>& impl, std::vector<T>& shadow) {
+template<typename T, size_t S>
+AssertionResult is_eq(fragmented_vector<T, S>& impl, std::vector<T>& shadow) {
     if (!std::equal(impl.begin(), impl.end(), shadow.begin(), shadow.end())) {
         return testing::AssertionFailure()
                << "iterators not equal: " << testing::PrintToString(impl)
@@ -155,8 +167,9 @@ AssertionResult is_eq(fragmented_vector<T>& impl, std::vector<T>& shadow) {
     return fragmented_vector_validator::validate(impl);
 }
 
+template<size_t S>
 AssertionResult
-push(fragmented_vector<int>& impl, std::vector<int>& shadow, int count) {
+push(fragmented_vector<int, S>& impl, std::vector<int>& shadow, int count) {
     for (int i = 0; i < count; ++i) {
         shadow.push_back(i);
         impl.push_back(i);
@@ -174,8 +187,9 @@ push(fragmented_vector<int>& impl, std::vector<int>& shadow, int count) {
     return testing::AssertionSuccess();
 }
 
+template<size_t S>
 AssertionResult
-pop(fragmented_vector<int>& impl, std::vector<int>& shadow, int count) {
+pop(fragmented_vector<int, S>& impl, std::vector<int>& shadow, int count) {
     for (int i = 0; i < count; ++i) {
         shadow.pop_back();
         impl.pop_back();
@@ -388,3 +402,24 @@ TEST(Vector, FromIterRangeConstructor) {
     EXPECT_THAT(fv, IsValid());
     EXPECT_THAT(fv, ElementsAre(1, 2, 3));
 }
+
+TEST(ChunkedVector, FirstChunkCapacityDoubles) {
+    chunked_vector<int32_t> vec;
+    for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+        vec.push_back(i);
+        EXPECT_TRUE(fragmented_vector_validator::validate(vec));
+    }
+}
+
+TEST(ChunkedVector, Reserve) {
+    chunked_vector<int32_t> vec;
+    vec.reserve(vec.elements_per_fragment());
+    vec.push_back(-1);
+    int* initial_location = &vec.front();
+    for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+        vec.push_back(i);
+        EXPECT_EQ(initial_location, &vec.front());
+    }
+}
+
+} // namespace
