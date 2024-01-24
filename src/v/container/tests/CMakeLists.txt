@@ -12,6 +12,6 @@ rp_test(
   BINARY_NAME container_unit
   SOURCES
     fragmented_vector_test.cc
-  DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::random v::serde
+  LIBRARIES v::gtest_main v::random v::serde
+  ARGS "-- -c 1"
 )
