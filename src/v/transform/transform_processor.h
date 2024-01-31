@@ -92,7 +92,8 @@ private:
       sink*,
       kafka::offset);
     ss::future<> poll_sleep();
-    ss::future<kafka::offset> load_start_offset();
+    ss::future<absl::flat_hash_map<model::output_topic_index, kafka::offset>>
+    load_latest_committed();
     void report_lag(int64_t);
 
     template<typename... Future>
@@ -114,6 +115,7 @@ private:
       _consumer_transform_pipe;
 
     struct output {
+        model::output_topic_index index;
         transfer_queue<transformed_output> queue;
         std::unique_ptr<sink> sink;
     };
