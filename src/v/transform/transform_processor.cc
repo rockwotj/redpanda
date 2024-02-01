@@ -113,8 +113,6 @@ processor::processor(
   , _outputs()
   , _task(ss::now())
   , _logger(tlog, ss::format("{}/{}", _meta.name(), _ntp.tp.partition())) {
-    vassert(
-      sinks.size() == 1, "expected only a single sink, got: {}", sinks.size());
     const auto& outputs = _meta.output_topics;
     vassert(
       outputs.size() == sinks.size(),
@@ -336,15 +334,15 @@ ss::future<> processor::run_producer_loop(
             continue;
         }
         kafka::offset latest_offset = last_committed;
-        ss::chunked_fifo<model::transformed_data> datas;
+        ss::chunked_fifo<model::transformed_data> records;
         for (auto& entry : popped) {
             ss::visit(
               entry.data,
-              [&datas, &suppress](model::transformed_data& b) {
+              [&records, &suppress](model::transformed_data& d) {
                   if (suppress) {
                       return;
                   }
-                  datas.push_back(std::move(b));
+                  records.push_back(std::move(d));
               },
               [&latest_offset, &suppress, last_committed](
                 kafka::offset offset) {
@@ -356,12 +354,12 @@ ss::future<> processor::run_producer_loop(
                   latest_offset = offset;
               });
         }
-        if (!datas.empty()) {
+        if (!records.empty()) {
             ss::chunked_fifo<model::record_batch> batches;
             // TODO(rockwood): Limit batch sizes so we don't overshoot
             // max batch size limits.
             batches.push_back(model::transformed_data::make_batch(
-              model::timestamp::now(), std::move(datas)));
+              model::timestamp::now(), std::move(records)));
             co_await sink->write(std::move(batches));
         }
         if (latest_offset > last_committed) {
