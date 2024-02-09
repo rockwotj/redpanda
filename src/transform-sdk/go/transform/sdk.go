@@ -35,6 +35,26 @@ type WriteEvent interface {
 	Record() Record
 }
 
+type (
+	writeOpts struct {
+		topic string
+	}
+	// WriteOpt is an option modify a Write
+	WriteOpt     interface{ apply(*writeOpts) }
+	writeOptFunc func(*writeOpts)
+)
+
+func (f writeOptFunc) apply(opts *writeOpts) {
+	f(opts)
+}
+
+// Specify the output topic that we write to
+func ToTopic(topic string) WriteOpt {
+	return writeOptFunc(func(o *writeOpts) {
+		o.topic = topic
+	})
+}
+
 // RecordWriter is an interface for writing transformed records to the destination topic.
 type RecordWriter interface {
 	// Write writes a record to the output topic.
@@ -42,7 +62,9 @@ type RecordWriter interface {
 	// When writing a record, only the key, value and headers are
 	// used other information like the timestamp will be overridden
 	// by the broker.
-	Write(Record) error
+	//
+	// WriteOpts can be added to control where records go, for example the output topic.
+	Write(Record, ...WriteOpt) error
 }
 
 // Headers are optional key/value pairs that are passed along with

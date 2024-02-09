@@ -93,3 +93,6 @@ func readNextRecord(
 //
 //go:wasmimport redpanda_transform write_record
 func writeRecord(data unsafe.Pointer, length int32) int32
+
+//go:wasmimport redpanda_transform write_record_with_options
+func writeRecordWithOptions(data unsafe.Pointer, length int32, opts unsafe.Pointer, optsLength int32) int32

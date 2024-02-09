@@ -66,12 +66,12 @@ func (WasmLang) Type() string {
 }
 
 type Config struct {
-	Name        string            `yaml:"name"`
-	Description string            `yaml:"description,omitempty"`
-	InputTopic  string            `yaml:"input-topic"`
-	OutputTopic string            `yaml:"output-topic"`
-	Language    WasmLang          `yaml:"language"`
-	Env         map[string]string `yaml:"env,omitempty"`
+	Name         string            `yaml:"name"`
+	Description  string            `yaml:"description,omitempty"`
+	InputTopic   string            `yaml:"input-topic"`
+	OutputTopics []string          `yaml:"output-topics"`
+	Language     WasmLang          `yaml:"language"`
+	Env          map[string]string `yaml:"env,omitempty"`
 }
 
 var ConfigFileName = "transform.yaml"
