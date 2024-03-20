@@ -125,6 +125,7 @@ add_subdirectory(transform)
 add_subdirectory(container)
 add_subdirectory(strings)
 add_subdirectory(crypto)
+add_subdirectory(ai)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 
