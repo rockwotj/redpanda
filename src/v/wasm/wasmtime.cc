@@ -10,6 +10,7 @@
  */
 #include "wasm/wasmtime.h"
 
+#include "ai/service.h"
 #include "base/vassert.h"
 #include "metrics/metrics.h"
 #include "model/record.h"
@@ -21,6 +22,7 @@
 #include "storage/parser_utils.h"
 #include "utils/human.h"
 #include "utils/type_traits.h"
+#include "wasm/ai_module.h"
 #include "wasm/allocator.h"
 #include "wasm/api.h"
 #include "wasm/engine_probe.h"
@@ -128,6 +130,8 @@ public:
 
     size_t per_invocation_fuel_amount() const;
 
+    ai::service* ai_service() { return &_ai_service.local(); }
+
 private:
     void register_metrics();
 
@@ -153,6 +157,7 @@ private:
       heap_allocator::request, wasmtime_linear_memory_t* memory_ret);
 
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
+    ss::sharded<ai::service> _ai_service;
     std::unique_ptr<schema_registry> _sr;
     ssx::singleton_thread_worker _alien_thread;
     ss::sharded<wasm::heap_allocator> _heap_allocator;
@@ -450,7 +455,8 @@ public:
       , _sr_module(sr)
       , _wasi_module(
           {_meta.name()}, make_environment_vars(_meta), _logger.get())
-      , _transform_module(&_wasi_module) {}
+      , _transform_module(&_wasi_module)
+      , _ai_module(runtime->ai_service()) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
     wasmtime_engine(wasmtime_engine&&) = delete;
@@ -510,6 +516,8 @@ public:
             return &_transform_module;
         } else if constexpr (std::is_same_v<T, schema_registry_module>) {
             return &_sr_module;
+        } else if constexpr (std::is_same_v<T, ai_module>) {
+            return &_ai_module;
         } else {
             static_assert(
               utils::unsupported_type<T>::value, "unsupported module");
@@ -793,6 +801,7 @@ private:
     schema_registry_module _sr_module;
     wasi::preview1_module _wasi_module;
     transform_module _transform_module;
+    ai_module _ai_module;
 
     // The following state is only valid if there is a non-null store.
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
@@ -1239,6 +1248,15 @@ void register_sr_module(
 #undef REG_HOST_FN
 }
 
+void register_ai_module(
+  wasmtime_linker_t* linker, const strict_stack_config& ssc) {
+    // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define REG_HOST_FN(name)                                                      \
+    host_function<&ai_module::name>::reg(linker, #name, ssc)
+    REG_HOST_FN(generate_text);
+#undef REG_HOST_FN
+}
+
 class wasmtime_engine_factory : public factory {
 public:
     wasmtime_engine_factory(
@@ -1380,6 +1398,14 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
     });
     co_await _engine_probe_cache.start();
     register_metrics();
+
+    co_await _ai_service.start();
+    co_await _ai_service.invoke_on_all([](ai::service& s) {
+        return s.start({
+          .model_file
+          = "/home/rockwood/code/llama.cpp/models/llama-2-7b.Q4_K_M.gguf",
+        });
+    });
 }
 
 void wasmtime_runtime::register_metrics() {
@@ -1397,6 +1423,7 @@ void wasmtime_runtime::register_metrics() {
 }
 
 ss::future<> wasmtime_runtime::stop() {
+    co_await _ai_service.stop();
     _public_metrics.clear();
     co_await _engine_probe_cache.stop();
     co_await _alien_thread.stop();
@@ -1438,6 +1465,7 @@ wasmtime_runtime::make_factory(model::transform_metadata meta, iobuf buf) {
           register_transform_module(linker.get(), ssc);
           register_sr_module(linker.get(), ssc);
           register_wasi_module(linker.get(), ssc);
+          register_ai_module(linker.get(), ssc);
 
           wasmtime_instance_pre_t* preinitialized_ptr = nullptr;
           error.reset(wasmtime_linker_instantiate_pre(
@@ -1486,6 +1514,7 @@ wasmtime_error_t* wasmtime_runtime::allocate_stack_memory(
         stack_memory underlying;
         wasm::stack_allocator* allocator;
     };
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     memory_ret->env = new vm_stack{
       .underlying = std::move(stack),
       .allocator = &_stack_allocator.local(),
@@ -1553,6 +1582,7 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
         size_t used_memory;
         wasm::heap_allocator* allocator;
     };
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     memory_ret->env = new linear_memory{
       .underlying = *std::move(memory),
       .used_memory = req.minimum,
