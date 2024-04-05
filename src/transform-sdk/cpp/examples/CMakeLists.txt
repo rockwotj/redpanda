@@ -23,23 +23,24 @@ FetchContent_Declare(
   SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/.."
 )
 
-FetchContent_MakeAvailable(redpanda-transform-sdk)
+FetchContent_Declare(
+  json 
+  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+)
+
+FetchContent_MakeAvailable(redpanda-transform-sdk json)
+
+add_compile_definitions(EI_PORTING_POSIX=1 CLOCK_PROCESS_CPUTIME_ID=CLOCK_MONOTONIC)
 
 add_executable(
-  identity_transform
-  identity.cc
+  app
+  app.cc
 )
 target_link_libraries(
-  identity_transform
+  app
   Redpanda::transform_sdk
+  nlohmann_json::nlohmann_json
 )
 
+add_subdirectory(edge-impulse-export)
 
-add_executable(
-  identity_logging_transform
-  identity_logging.cc
-)
-target_link_libraries(
-  identity_logging_transform
-  Redpanda::transform_sdk
-)

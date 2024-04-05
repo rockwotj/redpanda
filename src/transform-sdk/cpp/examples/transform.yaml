@@ -1,0 +1,4 @@
+name: "edge-impulse-classifier"
+input-topic: "sensor-data"
+output-topic: "classifications"
+language: rust

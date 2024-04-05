@@ -53,6 +53,10 @@ public:
     /** A view over an entire bytes range. */
     // NOLINTNEXTLINE(*-explicit-*)
     bytes_view(const bytes&);
+    // NOLINTNEXTLINE(*-explicit-*)
+    bytes_view(const std::string&);
+    // NOLINTNEXTLINE(*-explicit-*)
+    bytes_view(std::string_view);
 
     /** The start of this range. */
     [[nodiscard]] bytes::const_pointer begin() const;
