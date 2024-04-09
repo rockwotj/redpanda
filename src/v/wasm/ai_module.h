@@ -23,10 +23,8 @@ public:
     explicit ai_module(ai::service* service);
     static constexpr std::string_view name = "redpanda_ai";
 
-    ss::future<int32_t> generate_text(
-      ss::sstring prompt,
-      int32_t max_tokens,
-      ffi::array<uint8_t> generated_output);
+    ss::future<int32_t>
+    compute_embeddings(ss::sstring text, ffi::array<float> generated_output);
 
 private:
     ai::service* _service;

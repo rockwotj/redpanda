@@ -24,6 +24,7 @@
 
 #include <absl/strings/ascii.h>
 
+#include <algorithm>
 #include <ggml.h>
 #include <limits>
 #include <memory>
@@ -78,9 +79,10 @@ context initialize_context(llama_model* model) {
     llama_context_params ctx_params = llama_context_default_params();
 
     ctx_params.seed = -1; // Use RNG
-    ctx_params.n_ctx = 0; // Use the model's context window
+    // ctx_params.n_ctx = 0; // Use the model's context window
     ctx_params.n_threads = std::thread::hardware_concurrency();
     ctx_params.n_threads_batch = ctx_params.n_threads; // use n_threads
+    ctx_params.embeddings = true;
     // TODO: Figure out the other parameters here.
     context ctx{llama_new_context_with_model(model, ctx_params)};
     if (!ctx) {
@@ -130,8 +132,8 @@ tokenize(const llama_model* model, const ss::sstring& prompt) {
     return result;
 };
 
-void append_decoded_token(
-  const llama_model* model, token id, ss::sstring* output) {
+[[maybe_unused]] void
+append_decoded_token(const llama_model* model, token id, ss::sstring* output) {
     static constexpr size_t decoded_guess_size = 8;
     std::array<char, decoded_guess_size> decoded; // NOLINT
     int32_t result = llama_token_to_piece(
@@ -196,6 +198,19 @@ private:
     llama_batch _underlying;
     int32_t _max_tokens;
 };
+void embd_normalize(const float* inp, float* out, int n) {
+    double sum = 0.0;
+    for (int i = 0; i < n; i++) {
+        sum += inp[i] * inp[i];
+    }
+    sum = sqrt(sum);
+
+    const float norm = sum > 0.0 ? 1.0f / sum : 0.0f;
+
+    for (int i = 0; i < n; i++) {
+        out[i] = inp[i] * norm;
+    }
+}
 
 } // namespace llama
 } // namespace
@@ -206,85 +221,44 @@ public:
       : _llm(std::move(llm))
       , _ctx(std::move(ctx)) {}
 
-    ss::sstring generate_text(
-      const ss::sstring& prompt, service::generate_text_options opts) {
+    std::vector<float> compute_embeddings(const ss::sstring& text) {
         llama_kv_cache_clear(_ctx.get());
 
-        auto tokens = llama::tokenize(_llm.get(), prompt);
-        auto n_ctx = int32_t(llama_n_ctx(_ctx.get()));
-        const int32_t output_len = opts.max_tokens;
-        int32_t n_kv_req = static_cast<int32_t>(tokens.size())
-                           + (output_len - static_cast<int32_t>(tokens.size()));
-        if (n_kv_req > n_ctx) {
-            throw std::runtime_error(ss::format(
-              "required KV cache size ({}) is not big enough, need at least {} "
-              "tokens",
-              n_ctx,
-              n_kv_req));
+        auto tokens = llama::tokenize(_llm.get(), text);
+        if (tokens.empty() || tokens.back() != llama_token_eos(_llm.get())) {
+            tokens.emplace_back(llama_token_eos(_llm.get()));
         }
-        constexpr size_t batch_n_tokens = 512;
-        llama::batch batch(batch_n_tokens, /*embd=*/0, /*n_seq_max=*/1);
+        auto n_batch = int32_t(llama_n_batch(_ctx.get()));
+        if (tokens.size() > size_t(n_batch)) {
+            throw std::runtime_error("need mor");
+        }
+        llama::batch batch(n_batch, /*embd=*/0, /*n_seq_max=*/1);
 
-        // Add initial prompt
+        // Add text
         std::vector seq_ids = {0};
         for (size_t i = 0; i < tokens.size(); ++i) {
             batch.add(
               tokens[i], llama::pos(int32_t(i)), seq_ids, /*logits=*/false);
         }
-        // Output logits only for the last token of the prompt
         batch.compute_logits(llama::pos(batch.n_tokens() - 1));
+        // Output logits only for the last token of the prompt
         int32_t decode_result = llama_decode(_ctx.get(), batch.raw());
         if (decode_result != 0) {
             throw std::runtime_error(
               ss::format("failure to decode tokens: {}", decode_result));
         }
 
-        int32_t n_cur = batch.n_tokens();
-
-        auto n_vocab = llama_n_vocab(_llm.get());
-        std::vector<llama_token_data> candidates;
-        candidates.reserve(n_vocab);
-
-        ss::sstring output;
-
-        // The main loop to generate new tokens
-        while (n_cur <= output_len) {
-            std::span<float> logits(
-              llama_get_logits_ith(_ctx.get(), batch.n_tokens() - 1), n_vocab);
-            candidates.clear();
-            for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
-                candidates.emplace_back(token_id, logits[token_id], 0.0f);
-            }
-            llama_token_data_array candidates_p = {
-              .data = candidates.data(),
-              .size = candidates.size(),
-              .sorted = false,
-            };
-            auto new_token_id = llama::token(
-              llama_sample_token_greedy(_ctx.get(), &candidates_p));
-            if (
-              new_token_id == llama_token_eos(_llm.get())
-              || n_cur == output_len) {
-                break;
-            }
-
-            llama::append_decoded_token(_llm.get(), new_token_id, &output);
-
-            batch.clear();
-            batch.add(
-              new_token_id,
-              llama::pos(n_cur),
-              seq_ids,
-              /*logits=*/true);
-            ++n_cur;
-            decode_result = llama_decode(_ctx.get(), batch.raw());
-            if (decode_result != 0) {
-                throw std::runtime_error(
-                  ss::format("failure to decode tokens: {}", decode_result));
-            }
+        size_t n = llama_n_embd(_llm.get());
+        ai_logger.info("n embd: {}", n);
+        const float* raw = llama_get_embeddings_seq(_ctx.get(), 0);
+        if (raw == nullptr) {
+            ai_logger.info("fallback");
+            raw = llama_get_embeddings_ith(
+              _ctx.get(), int32_t(tokens.size() - 1));
         }
-
-        return output;
+        std::vector<float> embeddings(n);
+        llama::embd_normalize(raw, embeddings.data(), int32_t(n));
+        return embeddings;
     }
 
 private:
@@ -350,21 +324,19 @@ ss::future<> service::stop() {
     co_await _worker->stop();
 }
 
-ss::future<ss::sstring>
-service::generate_text(ss::sstring prompt, generate_text_options opts) {
+ss::future<std::vector<float>> service::compute_embeddings(ss::sstring text) {
     return container().invoke_on(
       model_shard,
-      [](service& s, ss::sstring prompt, generate_text_options opts) {
-          return s.do_generate_text(std::move(prompt), opts);
+      [](service& s, ss::sstring text) {
+          return s.do_compute_embeddings(std::move(text));
       },
-      std::move(prompt),
-      opts);
+      std::move(text));
 }
 
-ss::future<ss::sstring>
-service::do_generate_text(ss::sstring prompt, generate_text_options opts) {
-    return _worker->submit([this, prompt = std::move(prompt), opts] {
-        return _model->generate_text(prompt, opts);
+ss::future<std::vector<float>>
+service::do_compute_embeddings(ss::sstring text) {
+    return _worker->submit([this, text = std::move(text)] {
+        return _model->compute_embeddings(text);
     });
 }
 } // namespace ai

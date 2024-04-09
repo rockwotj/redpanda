@@ -1253,7 +1253,7 @@ void register_ai_module(
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
     host_function<&ai_module::name>::reg(linker, #name, ssc)
-    REG_HOST_FN(generate_text);
+    REG_HOST_FN(compute_embeddings);
 #undef REG_HOST_FN
 }
 
@@ -1403,7 +1403,7 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
     co_await _ai_service.invoke_on_all([](ai::service& s) {
         return s.start({
           .model_file
-          = "/home/rockwood/code/llama.cpp/models/llama-2-7b.Q4_K_M.gguf",
+          = "/home/rockwood/code/llama.cpp/models/all-MiniLM-L6-v2.Q4_K_M.gguf",
         });
     });
 }

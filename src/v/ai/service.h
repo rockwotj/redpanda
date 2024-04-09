@@ -17,6 +17,7 @@
 #include <seastar/core/sharded.hh>
 
 #include <memory>
+#include <vector>
 
 namespace ai {
 
@@ -41,17 +42,10 @@ public:
     ss::future<> start(config);
     ss::future<> stop();
 
-    struct generate_text_options {
-        int32_t max_tokens;
-    };
-
-    // Generate text based on the prompt.
-    ss::future<ss::sstring>
-    generate_text(ss::sstring prompt, generate_text_options);
+    ss::future<std::vector<float>> compute_embeddings(ss::sstring text);
 
 private:
-    ss::future<ss::sstring>
-    do_generate_text(ss::sstring prompt, generate_text_options);
+    ss::future<std::vector<float>> do_compute_embeddings(ss::sstring text);
 
     std::unique_ptr<ssx::singleton_thread_worker> _worker;
     std::unique_ptr<model> _model;
