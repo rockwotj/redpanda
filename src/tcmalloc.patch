@@ -1,0 +1,22 @@
+diff --git a/tcmalloc/internal/allocation_guard.h b/tcmalloc/internal/allocation_guard.h
+index 60ce55c..c346366 100644
+--- a/tcmalloc/internal/allocation_guard.h
++++ b/tcmalloc/internal/allocation_guard.h
+@@ -15,6 +15,8 @@
+ #ifndef TCMALLOC_INTERNAL_ALLOCATION_GUARD_H_
+ #define TCMALLOC_INTERNAL_ALLOCATION_GUARD_H_
+ 
++#include <absl/base/internal/low_level_scheduling.h>
++
+ #include "absl/base/attributes.h"
+ #include "absl/base/internal/spinlock.h"
+ #include "absl/base/thread_annotations.h"
+@@ -36,7 +38,7 @@ class ABSL_SCOPED_LOCKABLE AllocationGuardSpinLockHolder {
+       ABSL_EXCLUSIVE_LOCK_FUNCTION(l)
+       : lock_holder_(l) {
+ #ifndef NDEBUG
+-    if (l->IsCooperative()) {
++    if (false) {
+       abort();
+     }
+ #endif  // NDEBUG

@@ -25,7 +25,7 @@ endfunction()
 set(ABSL_PROPAGATE_CXX_STD ON)
 fetch_dep(absl
   REPO https://github.com/abseil/abseil-cpp
-  TAG 20230802.1)
+  TAG 20230802.2)
 
 fetch_dep(fmt
   REPO https://github.com/fmtlib/fmt.git
@@ -37,7 +37,7 @@ fetch_dep(fmt
 # the add_subdirectory method of using Seastar.
 set(Seastar_TESTING ON CACHE BOOL "" FORCE)
 set(Seastar_API_LEVEL 6 CACHE STRING "" FORCE)
-set(Seastar_CXX_FLAGS -Wno-error)
+set(Seastar_CXX_FLAGS -Wno-error -DSEASTAR_DEFAULT_ALLOCATOR)
 fetch_dep(seastar
   REPO https://github.com/redpanda-data/seastar.git
   TAG v24.1.x

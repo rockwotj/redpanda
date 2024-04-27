@@ -9,6 +9,8 @@ else()
   find_package(GnuTLS)
 endif()
 
+include(./tcmalloc.cmake)
+
 find_package(Boost REQUIRED
   COMPONENTS
     iostreams
