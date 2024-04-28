@@ -72,6 +72,7 @@ v_cc_library(
     v::transform
     v::version 
     v::wasm
+    tcmalloc::tcmalloc
   )
 
 add_subdirectory(tests)

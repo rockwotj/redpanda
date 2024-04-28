@@ -104,19 +104,31 @@ set(TCMALLOC_SOURCES
   tcmalloc/tcmalloc/malloc_tracing_extension.cc
   tcmalloc/tcmalloc/new_extension.cc
   tcmalloc/tcmalloc/page_allocator.cc
+  tcmalloc/tcmalloc/transfer_cache.cc
   tcmalloc/tcmalloc/page_allocator_interface.cc
+  tcmalloc/tcmalloc/peak_heap_tracker.cc
   tcmalloc/tcmalloc/pagemap.cc
   tcmalloc/tcmalloc/parameters.cc
   tcmalloc/tcmalloc/sampler.cc
+  tcmalloc/tcmalloc/thread_cache.cc
   tcmalloc/tcmalloc/size_classes.cc
   tcmalloc/tcmalloc/sizemap.cc
   tcmalloc/tcmalloc/span.cc
   tcmalloc/tcmalloc/stack_trace_table.cc
   tcmalloc/tcmalloc/static_vars.cc
   tcmalloc/tcmalloc/stats.cc
+  tcmalloc/tcmalloc/huge_page_aware_allocator.cc
+  tcmalloc/tcmalloc/huge_cache.cc
+  tcmalloc/tcmalloc/huge_allocator.cc
+  tcmalloc/tcmalloc/huge_address_map.cc
   tcmalloc/tcmalloc/system-alloc.cc
   tcmalloc/tcmalloc/tcmalloc.cc
+  tcmalloc/tcmalloc/profile_marshaler.cc
+  tcmalloc/tcmalloc/internal/profile_builder.cc
+  tcmalloc/tcmalloc/internal/cache_topology.cc
   tcmalloc/tcmalloc/internal/allocation_guard.cc
+  tcmalloc/tcmalloc/internal/pageflags.cc
+  tcmalloc/tcmalloc/internal/residency.cc
   tcmalloc/tcmalloc/internal/environment.cc
   tcmalloc/tcmalloc/internal/logging.cc
   tcmalloc/tcmalloc/internal/memory_stats.cc
@@ -128,13 +140,15 @@ set(TCMALLOC_SOURCES
   tcmalloc/tcmalloc/internal/percpu_tcmalloc.cc
   tcmalloc/tcmalloc/internal/sysinfo.cc
   tcmalloc/tcmalloc/internal/util.cc
+  tcmalloc/tcmalloc/internal/profile.pb.cc
   tcmalloc/tcmalloc/selsan/selsan.cc
+  tcmalloc/tcmalloc/internal/percpu_rseq_asm.S
 )
 
 add_library(tcmalloc ${TCMALLOC_SOURCES})
 
 target_include_directories(tcmalloc PUBLIC tcmalloc)
-target_link_libraries(tcmalloc PUBLIC absl::base)
+target_link_libraries(tcmalloc PUBLIC absl::base absl::status absl::statusor)
 target_link_libraries(tcmalloc PUBLIC protobuf)
 
-add_library(tmalloc::tmalloc ALIAS tcmalloc)
+add_library(tcmalloc::tcmalloc ALIAS tcmalloc)

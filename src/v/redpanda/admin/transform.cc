@@ -19,6 +19,8 @@
 #include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
+#include "tcmalloc/malloc_extension.h"
+#include "tcmalloc/profile_marshaler.h"
 #include "transform/api.h"
 
 #include <system_error>
@@ -93,6 +95,18 @@ ss::httpd::transform_json::partition_transform_status::
 
 ss::future<ss::json::json_return_type>
 admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
+    tcmalloc::Profile profile = tcmalloc::MallocExtension::SnapshotCurrent(
+      tcmalloc::ProfileType::kHeap);
+    absl::StatusOr<std::string> output = tcmalloc::Marshal(profile);
+    if (output.ok()) {
+        std::ofstream myfile;
+        myfile.open("profile.pb.gz");
+        myfile << output.value();
+        myfile.close();
+
+    } else {
+        std::cout << "error!\n";
+    }
     if (!_transform_service->local_is_initialized()) {
         throw transforms_not_enabled();
     }

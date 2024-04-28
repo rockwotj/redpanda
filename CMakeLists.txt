@@ -7,7 +7,7 @@ if(VECTORIZED_CMAKE_DIR)
 endif()
 
 cmake_minimum_required(VERSION 3.24)
-project(redpanda LANGUAGES CXX)
+project(redpanda LANGUAGES CXX ASM)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
