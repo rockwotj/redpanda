@@ -46,6 +46,9 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "value",
+    srcs = [
+        "value.cc",
+    ],
     hdrs = [
         "value.h",
     ],
@@ -54,6 +57,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
+        "//src/v/utils:base64",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/numeric:int128",
     ],
