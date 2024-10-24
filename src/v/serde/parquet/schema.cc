@@ -20,7 +20,7 @@ namespace {
 
 indexed_schema_element transform(int32_t index, const schema_element& root) {
     indexed_schema_element out{
-      .index = index,
+      .column_index = index,
       .type = root.type,
       .repetition_type = root.repetition_type,
       .name = root.name,
@@ -65,8 +65,8 @@ indexed_schema_element index_schema(const schema_element& root) {
 } // namespace serde::parquet
 
 auto fmt::formatter<serde::parquet::schema_element>::format(
-  const serde::parquet::schema_element& e,
-  fmt::format_context& ctx) const -> decltype(ctx.out()) {
+  const serde::parquet::schema_element& e, fmt::format_context& ctx) const
+  -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
       "{{type: {}, repetition_type: {}, name: {}, logical_type: {}, field_id: "
@@ -84,9 +84,9 @@ auto fmt::formatter<serde::parquet::indexed_schema_element>::format(
   fmt::format_context& ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{index: {}, type: {}, repetition_type: {}, name: {}, "
+      "{{column_index: {}, type: {}, repetition_type: {}, name: {}, "
       "logical_type: {}, field_id: {}, children: [{}]}}",
-      e.index,
+      e.column_index,
       e.type.index(),
       static_cast<uint8_t>(e.repetition_type),
       e.name,
