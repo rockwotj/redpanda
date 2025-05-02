@@ -1,6 +1,22 @@
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest")
 
 redpanda_cc_gtest(
+    name = "numeric_test",
+    timeout = "short",
+    srcs = [
+        "numeric_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/serde/json/detail:numeric",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@seastar",
+        "//src/v/random:generators",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "string_test",
     timeout = "short",
     srcs = [

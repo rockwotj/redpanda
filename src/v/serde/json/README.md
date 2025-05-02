@@ -23,7 +23,9 @@ while (co_await p.next()) {
 
 ## Known issues
 
-...
+- Numeric precision lower than RapidJSON. While this can be ignored as
+  [RFC 8259] does not mandate precision for numbers (section 6), we are still
+  below what C++ double type can represent.
 
 ## Design
 

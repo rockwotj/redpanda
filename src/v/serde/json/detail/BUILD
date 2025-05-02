@@ -19,3 +19,24 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "numeric",
+    srcs = [
+        "numeric.cc",
+    ],
+    hdrs = [
+        "numeric.h",
+        "pow10.h",
+        "strod.h",
+    ],
+    include_prefix = "serde/json/detail",
+    visibility = [
+        ":__subpackages__",
+        "//src/v/serde/json:__pkg__",
+    ],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
