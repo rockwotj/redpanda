@@ -26,6 +26,11 @@ while (co_await p.next()) {
 - Numeric precision lower than RapidJSON. While this can be ignored as
   [RFC 8259] does not mandate precision for numbers (section 6), we are still
   below what C++ double type can represent.
+- Not sufficiently tested. Notably, no fuzz testing is done yet. The parser
+  should be fuzz tested with various JSON documents to ensure it does not
+  trip/gets into infinite loops with malformed documents. The parser should also
+  be fuzz tested with various alignment/boundaries.
+- No UTF-8 validation. The parser does not validate UTF-8 sequences.
 
 ## Design
 

@@ -159,7 +159,9 @@ size_t string_parser::advance(
                 continue;
             }
 
-            throw std::runtime_error(fmt::format("invalid escape: {}", c));
+            err = result::invalid_json_string;
+            _state = state::finished_with_error;
+            return pos;
         }
 
         case state::in_unicode: {

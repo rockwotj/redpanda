@@ -8,11 +8,11 @@ redpanda_cc_gtest(
     ],
     cpu = 1,
     deps = [
+        "//src/v/random:generators",
         "//src/v/serde/json/detail:numeric",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
         "@seastar",
-        "//src/v/random:generators",
     ],
 )
 
