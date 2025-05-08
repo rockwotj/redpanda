@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_gtest(
     name = "parser_test",
@@ -22,6 +22,28 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
         "@googletest//:gtest_main",
         "@seastar",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "parser_rpbench",
+    timeout = "short",
+    srcs = [
+        "parser_bench.cc",
+    ],
+    cpu = 1,
+    data = [
+        "testdata/json-test-suite/sample.json",
+    ],
+    deps = [
+        ":data",
+        "//src/v/bytes:streambuf",
+        "//src/v/json",
+        "//src/v/serde/json:parser",
+        "@boost//:test",
+        "@rapidjson",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
 
