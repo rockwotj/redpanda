@@ -204,3 +204,25 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "conformance_rapidjson_test",
+    timeout = "short",
+    srcs =
+        [
+            "conformance_rapidjson_test.cc",
+        ],
+    cpu = 1,
+    data = [
+        "testdata/json-test-suite/sample.json",
+    ],
+    deps = [
+        ":data",
+        ":dom",
+        ":dom_rapidjson",
+        ":dom_serde",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
