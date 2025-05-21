@@ -72,6 +72,11 @@ public:
         }
         return *this;
     }
+    io_byte_iterator operator++(int) {
+        auto tmp = *this;
+        ++*this;
+        return tmp;
+    }
 
 private:
     void next_fragment() {
