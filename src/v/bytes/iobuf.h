@@ -20,6 +20,7 @@
 
 #include <seastar/core/temporary_buffer.hh>
 
+#include <array>
 #include <cstddef>
 #include <iosfwd>
 #include <string_view>
@@ -75,7 +76,7 @@ public:
 
     static iobuf from(std::string_view view) {
         iobuf i;
-        i.append(view.data(), view.size());
+        i.append_str(view);
         return i;
     }
 
@@ -160,6 +161,21 @@ public:
      * a copy of the source bytes.
      */
     void append(const uint8_t*, size_t);
+
+    /**
+     * A helper to append a container of uint8_t or char to this iobuf. This
+     * always makes a copy of the source bytes.
+     */
+    template<typename T, size_t S>
+    void append(const std::array<T, S>& a) {
+        append(a.data(), a.size());
+    }
+
+    /**
+     * A helper to append a string_view to this iobuf. This always makes a copy
+     * of the source bytes.
+     */
+    void append_str(std::string_view str) { append(str.data(), str.size()); }
 
     /**
      * Appends the contents of the passed buffer to this one.
