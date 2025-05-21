@@ -19,3 +19,23 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "writer",
+    srcs = [
+        "writer.cc",
+    ],
+    hdrs = [
+        "writer.h",
+    ],
+    implementation_deps = [
+        "@abseil-cpp//absl/cleanup",
+        "@abseil-cpp//absl/strings",
+    ],
+    include_prefix = "serde/json",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+    ],
+)
