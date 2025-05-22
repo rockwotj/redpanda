@@ -13,6 +13,7 @@
 
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
+#include "utils/base64.h"
 
 namespace serde::json {
 
@@ -46,14 +47,14 @@ void serialize_json_string(Iter it, Iter end, iobuf* buf) {
         constexpr unsigned char max_ascii_control_char = 31;
         if (c < ascii_size) {
             // NOLINTNEXTLINE(*-constant-array-index)
-            char escape = escape_table[static_cast<unsigned char>(c)];
+            char escape = escape_table[c];
             if (escape) {
                 buf->append(std::to_array({'\\', escape}));
             } else if (c <= max_ascii_control_char) {
                 buf->append_str(
                   absl::StrCat(
                     "\\u",
-                    absl::Hex(static_cast<int32_t>(c), absl::kZeroPad4)));
+                    absl::Hex(static_cast<uint32_t>(c), absl::kZeroPad4)));
             } else {
                 // Normal ASCII character, no escaping needed
                 buf->append(std::to_array({c}));
@@ -86,7 +87,7 @@ void serialize_json_string(Iter it, Iter end, iobuf* buf) {
             if ((c1 & 0xC0u) == 0x80 && (c2 & 0xC0u) == 0x80) {
                 codepoint = ((c & 0x0Fu) << 12u) | ((c1 & 0x3Fu) << 6u)
                             | (c2 & 0x3Fu);
-                // Check for uTF-16 surrogates or overlong encoding
+                // Check for UTF-16 surrogates or overlong encoding
                 valid = codepoint >= 0x800
                         && (codepoint < 0xD800 || codepoint > 0xDFFF);
             }
@@ -106,11 +107,11 @@ void serialize_json_string(Iter it, Iter end, iobuf* buf) {
         }
 
         if (!valid) {
-            // Invalid uTF-8 sequence, use replacement character
+            // Invalid UTF-8 sequence, use replacement character
             buf->append_str("\\ufffd");
             continue;
         }
-        // For codepoints outside the BMP (> u+FFFF), encode as a
+        // For codepoints outside the BMP (> \uffff), encode as a
         // surrogate pair
         if (codepoint > 0xFFFF) {
             // Encode as surrogate pair
@@ -119,15 +120,13 @@ void serialize_json_string(Iter it, Iter end, iobuf* buf) {
             buf->append_str(
               absl::StrCat(
                 "\\u",
-                absl::Hex(static_cast<int32_t>(hi), absl::kZeroPad4),
+                absl::Hex(hi, absl::kZeroPad4),
                 "\\u",
-                absl::Hex(static_cast<int32_t>(lo), absl::kZeroPad4)));
+                absl::Hex(lo, absl::kZeroPad4)));
         } else {
             // BMP character, encode directly
             buf->append_str(
-              absl::StrCat(
-                "\\u",
-                absl::Hex(static_cast<int32_t>(codepoint), absl::kZeroPad4)));
+              absl::StrCat("\\u", absl::Hex(codepoint, absl::kZeroPad4)));
         }
         // NOLINTEND(*-magic-numbers)
     }
@@ -149,14 +148,29 @@ void writer::number(double d) {
     _buf.append_str(absl::StrCat(absl::SixDigits(d)));
     _next_delimiter = ',';
 }
-void writer::number(int32_t i) {
+void writer::integer(int32_t i) {
     append_delimiter();
     _buf.append_str(absl::StrCat(absl::AlphaNum(i)));
     _next_delimiter = ',';
 }
-void writer::number(uint32_t i) {
+void writer::integer(uint32_t i) {
     append_delimiter();
     _buf.append_str(absl::StrCat(absl::AlphaNum(i)));
+    _next_delimiter = ',';
+}
+void writer::integer_string(int64_t i) {
+    append_delimiter();
+    _buf.append_str(absl::StrCat("\"", absl::AlphaNum(i), "\""));
+    _next_delimiter = ',';
+}
+void writer::integer_string(uint64_t i) {
+    append_delimiter();
+    _buf.append_str(absl::StrCat("\"", absl::AlphaNum(i), "\""));
+    _next_delimiter = ',';
+}
+void writer::base64_string(const iobuf& b) {
+    append_delimiter();
+    append_string(base64_to_iobuf(b));
     _next_delimiter = ',';
 }
 } // namespace serde::json

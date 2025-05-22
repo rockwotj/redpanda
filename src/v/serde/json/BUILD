@@ -29,6 +29,7 @@ redpanda_cc_library(
         "writer.h",
     ],
     implementation_deps = [
+        "//src/v/utils:base64",
         "@abseil-cpp//absl/cleanup",
         "@abseil-cpp//absl/strings",
     ],

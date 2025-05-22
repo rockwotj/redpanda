@@ -72,13 +72,14 @@ public:
         append_string(b);
         _next_delimiter = ',';
     }
+    void base64_string(const iobuf& b);
     void number(double d);
-    void number(int32_t i);
-    void number(uint32_t i);
-    // NOTE: We intentionally do not support int64_t and uint64_t
-    // It's not clear all JSON parsers will properly preserve those
-    // types, so we force the caller to wrap that as a string like
-    // proto3 json.
+    void integer(int32_t i);
+    void integer(uint32_t i);
+    // Because JSON doesn't have a great story around numbers larger than 2^53
+    // we encode larger numbers as strings, similar to proto3 json.
+    void integer_string(int64_t i);
+    void integer_string(uint64_t i);
 
     iobuf&& finish() && {
         end_object();
