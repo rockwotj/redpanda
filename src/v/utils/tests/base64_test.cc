@@ -29,10 +29,12 @@ BOOST_AUTO_TEST_CASE(bytes_type) {
 
 BOOST_AUTO_TEST_CASE(iobuf_type) {
     auto encdec = [](const iobuf& input, const auto expected) {
-        auto encoded = iobuf_to_base64(input);
+        auto encoded = iobuf_to_base64_string(input, input.size_bytes());
         BOOST_REQUIRE_EQUAL(encoded, expected);
         auto decoded = base64_to_bytes(encoded);
         BOOST_REQUIRE_EQUAL(decoded, iobuf_to_bytes(input));
+        auto encoded_buf = iobuf_to_base64(input);
+        BOOST_REQUIRE_EQUAL(encoded_buf, iobuf::from(encoded));
     };
 
     encdec(iobuf::from(""), "");
@@ -46,12 +48,14 @@ BOOST_AUTO_TEST_CASE(iobuf_type) {
         buf.append(data.data(), data.size());
     }
 
-    auto encoded = iobuf_to_base64(buf);
+    auto encoded = iobuf_to_base64_string(buf, buf.size_bytes());
     auto decoded = base64_to_bytes(encoded);
     BOOST_REQUIRE_EQUAL(decoded, iobuf_to_bytes(buf));
+    auto encoded_buf = iobuf_to_base64(buf);
+    BOOST_REQUIRE_EQUAL(iobuf::from(encoded), encoded_buf);
 
     auto encdec_limit = [](iobuf input, const auto expected, size_t sz_bytes) {
-        auto encoded = iobuf_to_base64(input, sz_bytes);
+        auto encoded = iobuf_to_base64_string(input, sz_bytes);
         BOOST_REQUIRE_EQUAL(encoded, expected);
         auto decoded = base64_to_bytes(encoded);
         BOOST_REQUIRE_EQUAL(decoded, iobuf_to_bytes(input.share(0, sz_bytes)));

@@ -10,6 +10,7 @@
  */
 #include "utils/base64.h"
 
+#include "base/units.h"
 #include "base/vassert.h"
 #include "thirdparty/base64/libbase64.h"
 
@@ -17,10 +18,15 @@
 
 #include <absl/strings/escaping.h>
 
+#include <ranges>
+
+namespace {
 // Required length is ceil(4n/3) rounded up to 4 bytes
-static inline size_t encode_capacity(size_t input_size) {
+inline size_t encode_capacity(size_t input_size) {
     return (((4 * input_size) / 3) + 3) & ~0x3U;
 }
+
+size_t decode_capacity(size_t input_size) { return (input_size * 3 + 3) / 4; }
 
 template<typename S>
 S base64_to_string_impl(std::string_view input) {
@@ -44,6 +50,7 @@ S base64_to_string_impl(std::string_view input) {
     output.resize(output_len);
     return output;
 }
+} // namespace
 
 bytes base64_to_bytes(std::string_view input) {
     return base64_to_string_impl<bytes>(input);
@@ -72,8 +79,35 @@ ss::sstring bytes_to_base64(bytes_view input) {
     return output;
 }
 
-ss::sstring iobuf_to_base64(const iobuf& input, std::optional<size_t> limit) {
-    auto sz_bytes = limit.value_or(input.size_bytes());
+iobuf iobuf_to_base64(const iobuf& input) {
+    size_t max_size = encode_capacity(input.size_bytes());
+    constexpr size_t max_alloc = 128_KiB;
+    constexpr size_t max_padding = 4;
+    iobuf output;
+    ss::sstring tmp(
+      ss::sstring::initialized_later{},
+      std::max(std::min(max_size, max_alloc), max_padding));
+    base64_state state; // NOLINT
+    base64_stream_encode_init(&state, 0);
+    for (const auto& frag : input) {
+        std::span<const char> frag_view{frag.get(), frag.size()};
+        while (!frag_view.empty()) {
+            size_t consume_amt = std::min(
+              decode_capacity(tmp.size()), frag_view.size());
+            size_t written = 0;
+            base64_stream_encode(
+              &state, frag_view.data(), consume_amt, tmp.data(), &written);
+            frag_view = frag_view.subspan(consume_amt);
+            output.append(tmp.data(), written);
+        }
+    }
+    size_t output_len = 0;
+    base64_stream_encode_final(&state, tmp.data(), &output_len);
+    output.append(tmp.data(), output_len);
+    return output;
+}
+
+ss::sstring iobuf_to_base64_string(const iobuf& input, size_t sz_bytes) {
     const size_t output_capacity = encode_capacity(sz_bytes);
     ss::sstring output(ss::sstring::initialized_later{}, output_capacity);
     size_t written = 0;

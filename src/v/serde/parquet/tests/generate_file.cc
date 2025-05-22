@@ -49,9 +49,11 @@ void json(json_writer& w, const schema_element& schema, const value& v) {
           auto str = fmt::format("{:.8f}", v.val);
           w.RawValue(str.data(), str.size(), rapidjson::kNumberType);
       },
-      [&w](const byte_array_value& v) { w.String(iobuf_to_base64(v.val)); },
+      [&w](const byte_array_value& v) {
+          w.String(iobuf_to_base64_string(v.val, v.val.size_bytes()));
+      },
       [&w](const fixed_byte_array_value& v) {
-          w.String(iobuf_to_base64(v.val));
+          w.String(iobuf_to_base64_string(v.val, v.val.size_bytes()));
       },
       [&w, &schema](const group_value& v) {
           w.StartObject();
@@ -329,11 +331,12 @@ ss::future<iobuf> serialize_testcase(size_t test_case) {
             co_await w.write_row(std::get<group_value>(std::move(value)));
         }
         co_await w.close();
-        co_return json(testcase{
-          .schema = dremel_paper_schema(),
-          .rows = dremel_paper_values(),
-          .parquet_file = std::move(file),
-        });
+        co_return json(
+          testcase{
+            .schema = dremel_paper_schema(),
+            .rows = dremel_paper_values(),
+            .parquet_file = std::move(file),
+          });
     }
     iobuf file;
     writer w(
@@ -357,11 +360,12 @@ ss::future<iobuf> serialize_testcase(size_t test_case) {
         }
     }
     co_await w.close();
-    co_return json(testcase{
-      .schema = all_types_schema(),
-      .rows = std::move(rows),
-      .parquet_file = std::move(file),
-    });
+    co_return json(
+      testcase{
+        .schema = all_types_schema(),
+        .rows = std::move(rows),
+        .parquet_file = std::move(file),
+      });
 }
 // NOLINTEND(*magic-number*)
 

@@ -39,8 +39,9 @@ ss::sstring base64_to_string(std::string_view);
 // base64 -> iobuf
 iobuf base64_to_iobuf(const iobuf&);
 
-// base64 <-> iobuf
-ss::sstring iobuf_to_base64(const iobuf&, std::optional<size_t> = std::nullopt);
+// iobuf -> base64
+iobuf iobuf_to_base64(const iobuf&);
+ss::sstring iobuf_to_base64_string(const iobuf&, size_t max_size);
 
 /// \brief Used to decode URL encoded base64 values
 ///

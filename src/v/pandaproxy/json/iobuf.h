@@ -84,7 +84,6 @@ public:
         if (buf.empty()) {
             return w.Null();
         }
-        // TODO Ben: Implement custom OutputStream to prevent this linearization
         return w.String(iobuf_to_base64(buf));
     };
 

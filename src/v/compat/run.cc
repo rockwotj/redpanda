@@ -186,7 +186,7 @@ struct corpus_helper {
             w.Key("name");
             w.String(b.name);
             w.Key("data");
-            w.String(iobuf_to_base64(b.data));
+            w.String(iobuf_to_base64_string(b.data, b.data.size_bytes()));
             w.Key("crc32c");
             w.Uint(crc.value());
             w.EndObject();
@@ -258,11 +258,12 @@ struct corpus_helper {
             crc_extend_iobuf(crc, binary_data);
 
             if (crc.value() != binary["crc32c"].GetUint()) {
-                throw compat_error(fmt::format(
-                  "Test {} has invalid crc {} expected {}",
-                  checker::name,
-                  crc.value(),
-                  binary["crc32c"].GetUint()));
+                throw compat_error(
+                  fmt::format(
+                    "Test {} has invalid crc {} expected {}",
+                    checker::name,
+                    crc.value(),
+                    binary["crc32c"].GetUint()));
             }
 
             compat_binary data(
@@ -279,11 +280,12 @@ struct corpus_helper {
                 json::StringBuffer buf;
                 json::PrettyWriter<json::StringBuffer> writer(buf);
                 doc.Accept(writer);
-                throw compat_error(fmt::format(
-                  "compat check failed for {}\nInput {}\n{}\n",
-                  checker::name,
-                  buf.GetString(),
-                  e.what()));
+                throw compat_error(
+                  fmt::format(
+                    "compat check failed for {}\nInput {}\n{}\n",
+                    checker::name,
+                    buf.GetString(),
+                    e.what()));
             }
         }
     }
