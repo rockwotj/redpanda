@@ -37,6 +37,12 @@ build:system-clang-19 --config=system-clang
 build:system-clang-19 --action_env=CC=clang-19 --host_action_env=CC=clang-19
 build:system-clang-19 --action_env=CXX=clang++-19 --host_action_env=CXX=clang++-19
 
+# Use new proto toolchain resolution
+build --incompatible_enable_proto_toolchain_resolution
+# Keep source info - bigger descriptors (not a problem at our scale),
+# but allows for printing comments in generated protos
+build --experimental_proto_descriptor_sets_include_source_info
+
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1065
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1186#issuecomment-2053550487
 build --host_action_env=CXXFLAGS=-Wno-int-conversion
