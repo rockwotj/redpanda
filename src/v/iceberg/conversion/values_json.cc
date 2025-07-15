@@ -24,9 +24,9 @@ namespace iceberg {
 
 namespace {
 
-std::optional<primitive_value> convert_primitive(
-  experimental::serde::json::parser& p, const primitive_type& ft) {
-    using token = experimental::serde::json::token;
+std::optional<primitive_value>
+convert_primitive(serde::json::parser& p, const primitive_type& ft) {
+    using token = serde::json::token;
 
     switch (p.token()) {
     case token::value_null:
@@ -111,25 +111,25 @@ std::optional<primitive_value> convert_primitive(
 }
 
 ss::future<> decode_struct(
-  experimental::serde::json::parser& p,
+  serde::json::parser& p,
   struct_value& sv,
   const struct_type& st,
   const json_conversion_ir::struct_field_map_t& field_map);
 
 ss::future<> decode_list(
-  experimental::serde::json::parser& p,
+  serde::json::parser& p,
   list_value& lv,
   const list_type& lt,
   const json_conversion_ir::struct_field_map_t& field_map);
 
 ss::future<> decode_field(
-  experimental::serde::json::parser& p,
+  serde::json::parser& p,
   std::optional<iceberg::value>& v,
   const field_type& ft,
   const json_conversion_ir::struct_field_map_t& field_map) {
     struct field_decoder_visitor {
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
-        experimental::serde::json::parser& p;
+        serde::json::parser& p;
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
         const json_conversion_ir::struct_field_map_t& field_map;
 
@@ -161,11 +161,11 @@ ss::future<> decode_field(
 }
 
 ss::future<> decode_struct(
-  experimental::serde::json::parser& p,
+  serde::json::parser& p,
   struct_value& sv,
   const struct_type& st,
   const json_conversion_ir::struct_field_map_t& field_map) {
-    if (p.token() != experimental::serde::json::token::start_object) {
+    if (p.token() != serde::json::token::start_object) {
         throw value_conversion_exception(fmt::format(
           "Expected start of JSON object for struct type but got {}",
           p.token()));
@@ -182,7 +182,7 @@ ss::future<> decode_struct(
               "Failed to read next JSON token after start object");
         }
 
-        if (p.token() == experimental::serde::json::token::end_object) {
+        if (p.token() == serde::json::token::end_object) {
             for (size_t i = 0; i < st.fields.size(); ++i) {
                 if (st.fields[i]->required && !sv.fields[i].has_value()) {
                     throw value_conversion_exception(fmt::format(
@@ -192,7 +192,7 @@ ss::future<> decode_struct(
             co_return;
         }
 
-        if (p.token() != experimental::serde::json::token::key) {
+        if (p.token() != serde::json::token::key) {
             throw value_conversion_exception(fmt::format(
               "Expected key token in JSON object but got {}", p.token()));
         }
@@ -228,17 +228,17 @@ ss::future<> decode_struct(
 }
 
 ss::future<> decode_list(
-  experimental::serde::json::parser& p,
+  serde::json::parser& p,
   list_value& lv,
   const list_type& lt,
   const json_conversion_ir::struct_field_map_t& field_map) {
-    if (p.token() != experimental::serde::json::token::start_array) {
+    if (p.token() != serde::json::token::start_array) {
         throw value_conversion_exception(
           "Expected start of JSON array for list type");
     }
 
     while (co_await p.next()) {
-        if (p.token() == experimental::serde::json::token::end_array) {
+        if (p.token() == serde::json::token::end_array) {
             co_return;
         }
 
@@ -253,7 +253,7 @@ ss::future<value_outcome>
 deserialize_json(iobuf buf, const json_conversion_ir& ir) {
     std::optional<iceberg::value> root_value;
 
-    experimental::serde::json::parser p(std::move(buf));
+    serde::json::parser p(std::move(buf));
 
     if (!co_await p.next()) {
         throw value_conversion_exception("Failed to read next JSON token");
