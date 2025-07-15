@@ -36,7 +36,7 @@
     } while (false)
 #endif
 
-namespace experimental::serde::json {
+namespace serde::json {
 
 class iobuf_wrapper {
 public:
@@ -139,7 +139,7 @@ private:
 };
 
 class parser::impl {
-    using token = experimental::serde::json::token;
+    using token = serde::json::token;
 
 public:
     explicit impl(iobuf&& buf, parser_config config)
@@ -675,4 +675,4 @@ double parser::value_double() { return _impl->value_double(); }
 
 iobuf parser::value_string() { return _impl->value_string(); }
 
-} // namespace experimental::serde::json
+} // namespace serde::json

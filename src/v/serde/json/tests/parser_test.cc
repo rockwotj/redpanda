@@ -17,7 +17,7 @@
 #include <gtest/gtest.h>
 
 using namespace testing;
-using namespace experimental::serde::json;
+using namespace serde::json;
 
 constexpr std::string_view json_checker_pass1 = R"([
     "JSON Test Pattern pass1",
@@ -81,8 +81,7 @@ constexpr std::string_view json_checker_pass1 = R"([
 // Simple test to ensure the parse doesn't fail on valid sample data. The
 // contents and correctness is not verified in this test.
 TEST_CORO(json_test_suite, parse) {
-    auto parser = experimental::serde::json::parser(
-      co_await json_test_suite_sample());
+    auto parser = serde::json::parser(co_await json_test_suite_sample());
 
     while (co_await parser.next()) {
         // Do nothing, just drain the parser.
@@ -107,7 +106,7 @@ struct token_seq_test_case {
 };
 
 ss::future<> run_test_case(const token_seq_test_case& tc) {
-    auto parser = experimental::serde::json::parser(iobuf::from(tc.input));
+    auto parser = serde::json::parser(iobuf::from(tc.input));
     ASSERT_NO_FATAL_FAILURE_CORO(
       co_await skip_tokens(parser, tc.expected_tokens));
     ASSERT_FALSE_CORO(co_await parser.next())
@@ -146,7 +145,7 @@ TEST_CORO(json_parser, truncated_json_always_errors) {
           i,
           json_checker_pass1.size()));
 
-        auto p = experimental::serde::json::parser(
+        auto p = serde::json::parser(
           iobuf::from(json_checker_pass1.substr(0, i)));
 
         while (co_await p.next()) {
@@ -166,7 +165,7 @@ constexpr std::string_view skip_value_input = R"({
 })";
 
 TEST_CORO(json_parser, skip_value_whole_document) {
-    auto p = experimental::serde::json::parser(iobuf::from(skip_value_input));
+    auto p = serde::json::parser(iobuf::from(skip_value_input));
     ASSERT_TRUE_CORO(co_await p.next());
     ASSERT_EQ_CORO(p.token(), token::start_object);
     co_await p.skip_value();
@@ -182,7 +181,7 @@ TEST_CORO(json_parser, skip_value_whole_document) {
 }
 
 TEST_CORO(json_parser, skip_value_whole_without_next_call) {
-    auto p = experimental::serde::json::parser(iobuf::from(skip_value_input));
+    auto p = serde::json::parser(iobuf::from(skip_value_input));
     co_await p.skip_value();
 
     SCOPED_TRACE("After skipping whole document");
@@ -194,20 +193,19 @@ TEST_CORO(json_parser, skip_value_whole_without_next_call) {
 }
 
 TEST_CORO(json_parser, skip_value_whole_without_next_call_bad_input) {
-    auto p = experimental::serde::json::parser(
-      iobuf::from(R"({"bad", ["input)"));
+    auto p = serde::json::parser(iobuf::from(R"({"bad", ["input)"));
     co_await p.skip_value();
     ASSERT_EQ_CORO(p.token(), token::error);
 }
 
 TEST_CORO(json_parser, skip_value_whole_without_next_call_bad_input_2) {
-    auto p = experimental::serde::json::parser(iobuf::from(R"(["bad input])"));
+    auto p = serde::json::parser(iobuf::from(R"(["bad input])"));
     co_await p.skip_value();
     ASSERT_EQ_CORO(p.token(), token::error);
 }
 
 TEST_CORO(json_parser, skip_value_whole_without_next_call_bad_input_3) {
-    auto p = experimental::serde::json::parser(iobuf::from(R"({"key"})"));
+    auto p = serde::json::parser(iobuf::from(R"({"key"})"));
 
     ASSERT_NO_FATAL_FAILURE_CORO(co_await skip_tokens(
       p,
@@ -222,7 +220,7 @@ TEST_CORO(json_parser, skip_value_whole_without_next_call_bad_input_3) {
 }
 
 TEST_CORO(json_parser, skip_value_key_with_value) {
-    auto p = experimental::serde::json::parser(iobuf::from(skip_value_input));
+    auto p = serde::json::parser(iobuf::from(skip_value_input));
 
     ASSERT_NO_FATAL_FAILURE_CORO(co_await skip_tokens(
       p,
@@ -242,7 +240,7 @@ TEST_CORO(json_parser, skip_value_key_with_value) {
 }
 
 TEST_CORO(json_parser, skip_value_object_value) {
-    auto p = experimental::serde::json::parser(iobuf::from(skip_value_input));
+    auto p = serde::json::parser(iobuf::from(skip_value_input));
 
     ASSERT_NO_FATAL_FAILURE_CORO(co_await skip_tokens(
       p,
@@ -263,7 +261,7 @@ TEST_CORO(json_parser, skip_value_object_value) {
 }
 
 TEST_CORO(json_parser, skip_value_primitive_key_value) {
-    auto p = experimental::serde::json::parser(iobuf::from(skip_value_input));
+    auto p = serde::json::parser(iobuf::from(skip_value_input));
 
     ASSERT_NO_FATAL_FAILURE_CORO(co_await skip_tokens(
       p,
@@ -283,7 +281,7 @@ TEST_CORO(json_parser, skip_value_primitive_key_value) {
 }
 
 TEST_CORO(json_parser, skip_value_primitive_value) {
-    auto p = experimental::serde::json::parser(iobuf::from(skip_value_input));
+    auto p = serde::json::parser(iobuf::from(skip_value_input));
 
     ASSERT_NO_FATAL_FAILURE_CORO(co_await skip_tokens(
       p,
@@ -304,7 +302,7 @@ TEST_CORO(json_parser, skip_value_primitive_value) {
 }
 
 TEST_CORO(json_parser, skip_value_entire_array) {
-    auto p = experimental::serde::json::parser(iobuf::from(R"(
+    auto p = serde::json::parser(iobuf::from(R"(
       [1, 2, [[]], [1, {"a": 1, "b": 2}]]
     )"));
 
@@ -321,7 +319,7 @@ TEST_CORO(json_parser, skip_value_entire_array) {
 }
 
 TEST_CORO(json_parser, skip_value_nested_array) {
-    auto p = experimental::serde::json::parser(iobuf::from(R"(
+    auto p = serde::json::parser(iobuf::from(R"(
       [1, 2, [[[]]], [1, {"a": 1, "b": 2}]]
     )"));
 
@@ -352,7 +350,7 @@ TEST_CORO(json_parser, skip_value_nested_array) {
 }
 
 TEST_CORO(json_parser, skip_value_bad_precondition) {
-    auto p = experimental::serde::json::parser(iobuf::from("[]"));
+    auto p = serde::json::parser(iobuf::from("[]"));
 
     ASSERT_NO_FATAL_FAILURE_CORO(co_await skip_tokens(
       p,

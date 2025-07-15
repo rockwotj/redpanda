@@ -15,7 +15,7 @@
 
 #include <seastar/core/temporary_buffer.hh>
 
-namespace experimental::serde::json::detail {
+namespace serde::json::detail {
 
 /// An incremental parser for JSON numeric types (ints, doubles).
 class numeric_parser {
@@ -120,4 +120,4 @@ private:
     int _exp = 0;
 };
 
-} // namespace experimental::serde::json::detail
+} // namespace serde::json::detail

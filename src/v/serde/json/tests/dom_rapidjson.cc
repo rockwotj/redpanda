@@ -17,7 +17,7 @@
 
 #include <rapidjson/error/en.h>
 
-namespace experimental::serde::json::test::dom {
+namespace serde::json::test::dom {
 
 ss::future<value> parse_document_rapidjson(iobuf buf) {
     enum class container_type {
@@ -168,4 +168,4 @@ ss::future<value> parse_document_rapidjson(iobuf buf) {
     co_return std::move(stack.back().values[0]);
 }
 
-}; // namespace experimental::serde::json::test::dom
+}; // namespace serde::json::test::dom

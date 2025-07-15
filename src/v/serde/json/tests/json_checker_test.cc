@@ -18,7 +18,7 @@
 
 #include <optional>
 
-using namespace experimental::serde::json;
+using namespace serde::json;
 
 std::vector<std::string> collect_test_cases(const std::string& directory);
 
@@ -30,7 +30,7 @@ ss::future<> run_json_test(
       "src/v/serde/json/tests/testdata/{}/{}", directory, test_case));
 
     auto contents = co_await read_fully(test_case_path);
-    auto parser = experimental::serde::json::parser(
+    auto parser = serde::json::parser(
       std::move(contents), config.value_or(parser_config{}));
 
     while (co_await parser.next()) {

@@ -18,7 +18,7 @@
 
 #include <variant>
 
-namespace experimental::serde::json::test::dom {
+namespace serde::json::test::dom {
 
 struct null_t {
     bool operator==(const null_t&) const { return true; }
@@ -71,4 +71,4 @@ private:
 
 std::ostream& operator<<(std::ostream&, const value&);
 
-} // namespace experimental::serde::json::test::dom
+} // namespace serde::json::test::dom

@@ -20,7 +20,7 @@
 #include <memory>
 #include <utility>
 
-namespace experimental::serde::json {
+namespace serde::json {
 
 struct parser_config {
     /// Default max depth is very liberal.
@@ -144,4 +144,4 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
-}; // namespace experimental::serde::json
+}; // namespace serde::json

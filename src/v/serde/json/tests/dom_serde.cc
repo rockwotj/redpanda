@@ -12,10 +12,10 @@
 #include "serde/json/parser.h"
 #include "serde/json/tests/dom.h"
 
-namespace experimental::serde::json::test::dom {
+namespace serde::json::test::dom {
 
 ss::future<value> parse_document_serde(iobuf buf) {
-    auto parser = experimental::serde::json::parser(std::move(buf));
+    auto parser = serde::json::parser(std::move(buf));
 
     enum class container_type {
         document,
@@ -113,4 +113,4 @@ ss::future<value> parse_document_serde(iobuf buf) {
     vassert(false, "Expected EOF");
 }
 
-} // namespace experimental::serde::json::test::dom
+} // namespace serde::json::test::dom
