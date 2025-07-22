@@ -13,15 +13,14 @@
 #include "base/outcome.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_topics/batch_cache/batch_cache.h"
+#include "cloud_topics/cluster_services.h"
 #include "cloud_topics/core/read_pipeline.h"
 #include "cloud_topics/core/write_pipeline.h"
-#include "cloud_topics/ephemeral_cluster_services.h"
 #include "cloud_topics/level_zero/batcher/batcher.h"
 #include "cloud_topics/level_zero/reconciler/reconciler.h"
 #include "cloud_topics/read_path/fetch_request_handler.h"
 #include "cloud_topics/throttler/throttler.h"
 #include "model/fundamental.h"
-#include "model/record_batch_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/future.hh>
@@ -40,8 +39,10 @@ public:
       seastar::sharded<cloud_io::remote>* io,
       seastar::sharded<cloud_storage::cache>* cache,
       cloud_storage_clients::bucket_name bucket,
-      seastar::sharded<storage::api>* storage_api)
-      : _reconciler(std::make_unique<reconciler::reconciler>(pm, io, bucket))
+      seastar::sharded<storage::api>* storage_api,
+      std::unique_ptr<cluster_services> cluster_services)
+      : _cluster_services(std::move(cluster_services))
+      , _reconciler(std::make_unique<reconciler::reconciler>(pm, io, bucket))
       , _write_pipeline(std::make_unique<core::write_pipeline<>>())
       , _throttler(std::make_unique<throttler<>>(
           10_MiB /*TODO: fixme*/,
@@ -50,7 +51,7 @@ public:
           _write_pipeline->register_write_pipeline_stage(),
           bucket,
           io->local(),
-          &_cluster_services))
+          _cluster_services.get()))
       , _read_pipeline(std::make_unique<core::read_pipeline<>>())
       , _l0_resolver(std::make_unique<fetch_handler>(
           _read_pipeline->register_read_pipeline_stage(),
@@ -119,11 +120,11 @@ public:
     }
 
 private:
+    std::unique_ptr<cluster_services> _cluster_services;
     std::unique_ptr<reconciler::reconciler> _reconciler;
     // Write path
     std::unique_ptr<core::write_pipeline<>> _write_pipeline;
     std::unique_ptr<throttler<>> _throttler;
-    ephemeral_cluster_services _cluster_services;
     std::unique_ptr<batcher<>> _batcher;
     // Read path
     std::unique_ptr<core::read_pipeline<>> _read_pipeline;
@@ -137,9 +138,15 @@ ss::shared_ptr<data_plane_api> make_data_plane(
   ss::sharded<cloud_io::remote>* remote,
   ss::sharded<cloud_storage::cache>* cache,
   cloud_storage_clients::bucket_name bucket,
-  ss::sharded<storage::api>* log_manager) {
+  ss::sharded<storage::api>* log_manager,
+  std::unique_ptr<cluster_services> cluster_services) {
     return ss::make_shared<impl>(
-      partition_manager, remote, cache, std::move(bucket), log_manager);
+      partition_manager,
+      remote,
+      cache,
+      std::move(bucket),
+      log_manager,
+      std::move(cluster_services));
 }
 
 } // namespace experimental::cloud_topics

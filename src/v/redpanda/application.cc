@@ -20,6 +20,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
+#include "cloud_topics/cluster_services.h"
 #include "cloud_topics/data_plane_impl.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_factory.h"
 #include "cluster/archival/archival_metadata_stm.h"
@@ -2085,6 +2086,24 @@ void application::wire_up_redpanda_services(
           archival_storage_enabled(),
           "cloud topics currently requires archival storage to be enabled");
 
+        class real_cluster_services
+          : public experimental::cloud_topics::cluster_services {
+        public:
+            explicit real_cluster_services(
+              ss::sharded<cluster::cluster_epoch_generator>* epoch_generator)
+              : _epoch_generator(epoch_generator) {}
+
+            seastar::future<experimental::cloud_topics::cluster_epoch>
+            current_epoch() override {
+                int64_t epoch
+                  = co_await _epoch_generator->local().current_epoch();
+                co_return experimental::cloud_topics::cluster_epoch(epoch);
+            }
+
+        private:
+            ss::sharded<cluster::cluster_epoch_generator>* _epoch_generator;
+        };
+
         construct_service(
           cloud_topics_api,
           ss::sharded_parameter([this, bucket] {
@@ -2093,7 +2112,9 @@ void application::wire_up_redpanda_services(
                 &cloud_io,
                 &shadow_index_cache,
                 bucket,
-                &storage);
+                &storage,
+                std::make_unique<real_cluster_services>(
+                  &controller->get_cluster_epoch_generator()));
           }),
           ss::sharded_parameter([this, bucket] {
               return std::make_unique<

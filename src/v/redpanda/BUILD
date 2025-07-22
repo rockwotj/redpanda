@@ -20,6 +20,7 @@ redpanda_cc_library(
         "//src/v/cloud_storage",
         "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics:data_plane_api",
+        "//src/v/cloud_topics:cluster_services_interface",
         "//src/v/cloud_topics:data_plane_impl",
         "//src/v/cloud_topics:app",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_factory",

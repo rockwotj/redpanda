@@ -19,7 +19,7 @@
 
 namespace cluster {
 class partition_manager;
-}
+} // namespace cluster
 
 namespace cloud_io {
 class remote;
@@ -35,11 +35,14 @@ class api;
 
 namespace experimental::cloud_topics {
 
+class cluster_services;
+
 ss::shared_ptr<data_plane_api> make_data_plane(
   seastar::sharded<cluster::partition_manager>*,
   seastar::sharded<cloud_io::remote>*,
   seastar::sharded<cloud_storage::cache>*,
   cloud_storage_clients::bucket_name bucket,
-  seastar::sharded<storage::api>* log_manager);
+  seastar::sharded<storage::api>* log_manager,
+  std::unique_ptr<cluster_services> cluster_services);
 
 } // namespace experimental::cloud_topics
