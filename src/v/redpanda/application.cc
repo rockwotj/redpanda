@@ -750,8 +750,9 @@ void application::setup_public_metrics() {
                      return static_cast<unsigned int>(
                        config::node().fips_mode());
                  },
-                 sm::description("Identifies whether or not Redpanda is "
-                                 "running in FIPS mode."))
+                 sm::description(
+                   "Identifies whether or not Redpanda is "
+                   "running in FIPS mode."))
                  .aggregate({sm::shard_label})});
         })
       .get();
@@ -993,20 +994,22 @@ void application::check_environment() {
         auto file_exists = ss::file_exists(strict_data_dir_file).get();
 
         if (!file_exists) {
-            throw std::invalid_argument(ssx::sformat(
-              "Data directory not in expected state: {} not found, is the "
-              "expected filesystem mounted?",
-              strict_data_dir_file));
+            throw std::invalid_argument(
+              ssx::sformat(
+                "Data directory not in expected state: {} not found, is the "
+                "expected filesystem mounted?",
+                strict_data_dir_file));
         }
     }
 
     if (config::fips_mode_enabled(config::node().fips_mode())) {
         if (!ss::file_exists(fips_enabled_file).get()) {
             if (config::node().fips_mode() == config::fips_mode_flag::enabled) {
-                throw std::runtime_error(fmt::format(
-                  "File '{}' does not exist.  Redpanda cannot start in FIPS "
-                  "mode",
-                  fips_enabled_file));
+                throw std::runtime_error(
+                  fmt::format(
+                    "File '{}' does not exist.  Redpanda cannot start in FIPS "
+                    "mode",
+                    fips_enabled_file));
             } else if (
               config::node().fips_mode()
               == config::fips_mode_flag::permissive) {
@@ -1435,12 +1438,13 @@ void application::wire_up_runtime_services(
         construct_service(
           datalake_throttle_manager,
           [&mgr = _datalake_manager] {
-              return ssx::now(kafka::datalake_throttle_manager::status{
-                .max_shares_assigned = mgr.local().max_shares_assigned(),
-                .total_translation_backlog
-                = mgr.local().total_translation_backlog(),
+              return ssx::now(
+                kafka::datalake_throttle_manager::status{
+                  .max_shares_assigned = mgr.local().max_shares_assigned(),
+                  .total_translation_backlog
+                  = mgr.local().total_translation_backlog(),
 
-              });
+                });
           },
           std::ref(storage_node),
           ss::sharded_parameter([] {
@@ -2023,10 +2027,11 @@ void application::wire_up_redpanda_services(
             const auto supported = cloud_storage::inventory::
               validate_backend_supported_for_inventory_scrub(backend);
             if (!manual_setup && !supported) {
-                throw std::runtime_error(fmt::format(
-                  "cloud storage backend inferred as {} which is "
-                  "not supported for inventory based scrubbing",
-                  backend));
+                throw std::runtime_error(
+                  fmt::format(
+                    "cloud storage backend inferred as {} which is "
+                    "not supported for inventory based scrubbing",
+                    backend));
             }
 
             std::shared_ptr<cluster::leaders_provider> leaders_provider
@@ -2121,9 +2126,6 @@ void application::wire_up_redpanda_services(
                 experimental::cloud_topics::l1::domain_supervisor>(
                 controller.get());
           }))
-          .get();
-
-        cloud_topics_api.invoke_on_all([](auto& app) { return app.start(); })
           .get();
     }
 
@@ -2392,16 +2394,17 @@ void application::wire_up_redpanda_services(
 
               c.connection_rate_bindings.emplace(std::move(bindings));
 
-              c.tcp_keepalive_bindings.emplace(net::tcp_keepalive_bindings{
-                .keepalive_idle_time
-                = config::shard_local_cfg()
-                    .kafka_tcp_keepalive_idle_timeout_seconds.bind(),
-                .keepalive_interval
-                = config::shard_local_cfg()
-                    .kafka_tcp_keepalive_probe_interval_seconds.bind(),
-                .keepalive_probes
-                = config::shard_local_cfg().kafka_tcp_keepalive_probes.bind(),
-              });
+              c.tcp_keepalive_bindings.emplace(
+                net::tcp_keepalive_bindings{
+                  .keepalive_idle_time
+                  = config::shard_local_cfg()
+                      .kafka_tcp_keepalive_idle_timeout_seconds.bind(),
+                  .keepalive_interval
+                  = config::shard_local_cfg()
+                      .kafka_tcp_keepalive_probe_interval_seconds.bind(),
+                  .keepalive_probes
+                  = config::shard_local_cfg().kafka_tcp_keepalive_probes.bind(),
+                });
           });
       })
       .get();
@@ -2740,10 +2743,11 @@ void application::start_bootstrap_services() {
         if (
           configured_node_id != std::nullopt
           && *configured_node_id != stored_node_id) {
-            throw std::invalid_argument(ssx::sformat(
-              "Configured node ID {} doesn't match stored node ID {}",
-              *configured_node_id,
-              stored_node_id));
+            throw std::invalid_argument(
+              ssx::sformat(
+                "Configured node ID {} doesn't match stored node ID {}",
+                *configured_node_id,
+                stored_node_id));
         }
         ss::smp::invoke_on_all([stored_node_id] {
             config::node().node_id.set_value(
@@ -3097,16 +3101,17 @@ void application::start_runtime_services(
         _rpc
           .invoke_on_all([this](rpc::rpc_server& s) {
               std::vector<std::unique_ptr<rpc::service>> runtime_services;
-              runtime_services.push_back(std::make_unique<raft::service<
-                                           cluster::partition_manager,
-                                           cluster::shard_table>>(
-                sched_groups.raft_recv_sg(),
-                smp_service_groups.raft_smp_sg(),
-                sched_groups.raft_heartbeats(),
-                partition_manager,
-                shard_table.local(),
-                config::shard_local_cfg().raft_heartbeat_interval_ms(),
-                config::node().node_id().value()));
+              runtime_services.push_back(
+                std::make_unique<raft::service<
+                  cluster::partition_manager,
+                  cluster::shard_table>>(
+                  sched_groups.raft_recv_sg(),
+                  smp_service_groups.raft_smp_sg(),
+                  sched_groups.raft_heartbeats(),
+                  partition_manager,
+                  shard_table.local(),
+                  config::shard_local_cfg().raft_heartbeat_interval_ms(),
+                  config::node().node_id().value()));
               s.add_services(std::move(runtime_services));
           })
           .get();
@@ -3164,53 +3169,57 @@ void application::start_runtime_services(
               std::ref(offsets_lookup),
               std::ref(offsets_recovery_router),
               std::ref(offsets_upload_router)));
-          runtime_services.push_back(std::make_unique<cluster::id_allocator>(
-            sched_groups.raft_recv_sg(),
-            smp_service_groups.raft_smp_sg(),
-            std::ref(id_allocator_frontend)));
+          runtime_services.push_back(
+            std::make_unique<cluster::id_allocator>(
+              sched_groups.raft_recv_sg(),
+              smp_service_groups.raft_smp_sg(),
+              std::ref(id_allocator_frontend)));
           // _rm_group_proxy is wrap around a sharded service with only
           // `.local()' access so it's ok to share without foreign_ptr
-          runtime_services.push_back(std::make_unique<cluster::tx_gateway>(
-            sched_groups.raft_recv_sg(),
-            smp_service_groups.raft_smp_sg(),
-            std::ref(tx_gateway_frontend),
-            _rm_group_proxy.get(),
-            std::ref(rm_partition_frontend)));
+          runtime_services.push_back(
+            std::make_unique<cluster::tx_gateway>(
+              sched_groups.raft_recv_sg(),
+              smp_service_groups.raft_smp_sg(),
+              std::ref(tx_gateway_frontend),
+              _rm_group_proxy.get(),
+              std::ref(rm_partition_frontend)));
 
           if (!start_raft_rpc_early) {
-              runtime_services.push_back(std::make_unique<raft::service<
-                                           cluster::partition_manager,
-                                           cluster::shard_table>>(
-                sched_groups.raft_recv_sg(),
-                smp_service_groups.raft_smp_sg(),
-                sched_groups.raft_heartbeats(),
-                partition_manager,
-                shard_table.local(),
-                config::shard_local_cfg().raft_heartbeat_interval_ms(),
-                config::node().node_id().value()));
+              runtime_services.push_back(
+                std::make_unique<raft::service<
+                  cluster::partition_manager,
+                  cluster::shard_table>>(
+                  sched_groups.raft_recv_sg(),
+                  smp_service_groups.raft_smp_sg(),
+                  sched_groups.raft_heartbeats(),
+                  partition_manager,
+                  shard_table.local(),
+                  config::shard_local_cfg().raft_heartbeat_interval_ms(),
+                  config::node().node_id().value()));
           }
 
-          runtime_services.push_back(std::make_unique<cluster::service>(
-            sched_groups.cluster_sg(),
-            smp_service_groups.cluster_smp_sg(),
-            controller.get(),
-            std::ref(controller->get_topics_frontend()),
-            std::ref(controller->get_plugin_frontend()),
-            std::ref(controller->get_members_manager()),
-            std::ref(metadata_cache),
-            std::ref(controller->get_security_frontend()),
-            std::ref(controller->get_api()),
-            std::ref(controller->get_members_frontend()),
-            std::ref(controller->get_config_frontend()),
-            std::ref(controller->get_config_manager()),
-            std::ref(controller->get_feature_manager()),
-            std::ref(controller->get_feature_table()),
-            std::ref(controller->get_health_monitor()),
-            std::ref(_connection_cache),
-            std::ref(controller->get_partition_manager()),
-            std::ref(node_status_backend),
-            std::ref(controller->get_quota_frontend()),
-            std::ref(controller->get_cluster_link_frontend())));
+          runtime_services.push_back(
+            std::make_unique<cluster::service>(
+              sched_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              controller.get(),
+              std::ref(controller->get_topics_frontend()),
+              std::ref(controller->get_plugin_frontend()),
+              std::ref(controller->get_members_manager()),
+              std::ref(metadata_cache),
+              std::ref(controller->get_security_frontend()),
+              std::ref(controller->get_api()),
+              std::ref(controller->get_members_frontend()),
+              std::ref(controller->get_config_frontend()),
+              std::ref(controller->get_config_manager()),
+              std::ref(controller->get_feature_manager()),
+              std::ref(controller->get_feature_table()),
+              std::ref(controller->get_health_monitor()),
+              std::ref(_connection_cache),
+              std::ref(controller->get_partition_manager()),
+              std::ref(node_status_backend),
+              std::ref(controller->get_quota_frontend()),
+              std::ref(controller->get_cluster_link_frontend())));
           runtime_services.push_back(
             std::make_unique<cluster::metadata_dissemination_handler>(
               sched_groups.cluster_sg(),
@@ -3344,6 +3353,11 @@ void application::start_runtime_services(
             return fm.verify_enterprise_license();
         })
       .get();
+
+    if (cloud_storage_api.local_is_initialized()) {
+        cloud_topics_api.invoke_on_all([](auto& app) { return app.start(); })
+          .get();
+    }
 
     _debug_bundle_service.invoke_on_all(&debug_bundle::service::start).get();
 
