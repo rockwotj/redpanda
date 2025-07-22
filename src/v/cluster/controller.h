@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/cloud_metadata/producer_id_recovery_manager.h"
+#include "cluster/cluster_epoch_generator.h"
 #include "cluster/cluster_link/fwd.h"
 #include "cluster/controller_probe.h"
 #include "cluster/controller_stm.h"
@@ -69,7 +70,6 @@ public:
     ss::sharded<members_manager>& get_members_manager() {
         return _members_manager;
     }
-
     ss::sharded<config_frontend>& get_config_frontend() {
         return _config_frontend;
     }
@@ -151,6 +151,10 @@ public:
         return _members_backend;
     }
     ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
+
+    ss::sharded<cluster_epoch_generator>& get_cluster_epoch_generator() {
+        return _epoch_generator;
+    }
 
     ss::sharded<data_migrations::migrated_resources>&
     get_data_migrated_resources() {
@@ -365,6 +369,8 @@ private:
       _cluster_link_frontend; // instance per core
     ss::sharded<cluster::cluster_link::table>
       _cluster_link_table; // instance per core
+
+    ss::sharded<cluster_epoch_generator> _epoch_generator; // instance per core
 
     bool _is_ready = false;
     ss::scheduling_group _scheduling_group;
