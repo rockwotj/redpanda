@@ -399,8 +399,8 @@ ss::future<> controller::start(
           std::ref(_data_migration_table.local()),
           std::ref(_cluster_link_table.local()));
     }
-    co_await _epoch_generator.start();
-    _epoch_generator.local().set_raft0(_stm);
+    co_await _epoch_service.start();
+    _epoch_service.local().set_raft0(_raft0, _stm, _raft_manager);
 
     co_await _members_frontend.start(
       std::ref(_stm),
@@ -943,7 +943,7 @@ ss::future<> controller::stop() {
     co_await _credentials.stop();
     co_await _tp_state.stop();
     co_await _members_manager.stop();
-    co_await _epoch_generator.stop();
+    co_await _epoch_service.stop();
     co_await _stm.stop();
     co_await _cluster_link_table.stop();
     co_await _quota_backend.stop();

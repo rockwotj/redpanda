@@ -12,6 +12,8 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "raft/consensus.h"
+#include "raft/group_manager.h"
 #include "ssx/checkpoint_mutex.h"
 
 #include <seastar/core/distributed.hh>
@@ -26,17 +28,17 @@ class controller_stm;
 //
 // The cluster epoch is a monotonically increasing value that is currently used
 // in the Cloud Topics's L0 implementation.
-class cluster_epoch_generator
-  : public ss::peering_sharded_service<cluster_epoch_generator> {
-    struct shard0_state;
+class cluster_epoch_service
+  : public ss::peering_sharded_service<cluster_epoch_service> {
+    class raft0_state;
 
 public:
-    cluster_epoch_generator() noexcept;
-    cluster_epoch_generator(const cluster_epoch_generator&) = delete;
-    cluster_epoch_generator(cluster_epoch_generator&&) = delete;
-    cluster_epoch_generator& operator=(const cluster_epoch_generator&) = delete;
-    cluster_epoch_generator& operator=(cluster_epoch_generator&&) = delete;
-    ~cluster_epoch_generator() noexcept;
+    cluster_epoch_service() noexcept;
+    cluster_epoch_service(const cluster_epoch_service&) = delete;
+    cluster_epoch_service(cluster_epoch_service&&) = delete;
+    cluster_epoch_service& operator=(const cluster_epoch_service&) = delete;
+    cluster_epoch_service& operator=(cluster_epoch_service&&) = delete;
+    ~cluster_epoch_service() noexcept;
 
     ss::future<> start();
     ss::future<> stop();
@@ -44,14 +46,24 @@ public:
     // Returns the current epoch for the cluster.
     ss::future<int64_t> current_epoch();
 
-    // Set the controller stm instance used to generate the cluster epoch
-    // from.
+    // Invalidate any caching that may (or may not) be going on of the current
+    // epoch.
+    void invalidate_epoch_cache();
+
+    // Set the controller stm instance used to generate
+    // the cluster epoch from.
+    //
+    // Also sets the raft_group manager, which is used to subscribe to
+    // leadership changes on raft0.
     //
     // Must only be set on shard0
-    void set_raft0(ss::sharded<controller_stm>&) noexcept;
+    void set_raft0(
+      ss::lw_shared_ptr<raft::consensus> raft0,
+      ss::sharded<controller_stm>& controller_stm,
+      ss::sharded<raft::group_manager>& raft_manager) noexcept;
 
 private:
-    ss::future<int64_t> get_current_epoch();
+    ss::future<std::optional<int64_t>> get_current_epoch();
 
     bool cache_entry_expired() const noexcept;
 
@@ -61,7 +73,7 @@ private:
     ssx::checkpoint_mutex _mu{"cluster_epoch_generator"};
     ss::gate _gate;
 
-    std::unique_ptr<shard0_state> _shard0_state;
+    std::unique_ptr<raft0_state> _shard0_state;
 };
 
 } // namespace cluster
