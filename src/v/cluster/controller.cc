@@ -399,7 +399,8 @@ ss::future<> controller::start(
           std::ref(_data_migration_table.local()),
           std::ref(_cluster_link_table.local()));
     }
-    co_await _epoch_service.start();
+    co_await _epoch_service.start(
+      _raft0->self().id(), &_connections, &_partition_leaders);
     _epoch_service.local().set_raft0(_raft0, _stm, _raft_manager);
 
     co_await _members_frontend.start(

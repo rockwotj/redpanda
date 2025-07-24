@@ -154,6 +154,9 @@ public:
     ss::future<update_mirror_topic_state_response> update_mirror_topic_state(
       update_mirror_topic_state_request, rpc::streaming_context&) final;
 
+    ss::future<get_current_cluster_epoch_response> get_current_cluster_epoch(
+      get_current_cluster_epoch_request, ::rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::pair<std::vector<model::topic_metadata>, topic_configuration_vector>

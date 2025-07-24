@@ -12,15 +12,20 @@
 #include "cluster/cluster_epoch_service.h"
 
 #include "base/vassert.h"
+#include "base/vlog.h"
+#include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
+#include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "raft/notification.h"
+#include "ssx/future-util.h"
 #include "ssx/work_queue.h"
 #include "utils/backoff_policy.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
 
+#include <exception>
 #include <stdexcept>
 
 namespace cluster {
@@ -183,7 +188,14 @@ ss::future<> cluster_epoch_service::raft0_state::update_epoch() {
     }
 }
 
-cluster_epoch_service::cluster_epoch_service() noexcept = default;
+cluster_epoch_service::cluster_epoch_service(
+  model::node_id self,
+  ss::sharded<rpc::connection_cache>* cc,
+  ss::sharded<partition_leaders_table>* l) noexcept
+  : _self(self)
+  , _rpc_conn(cc)
+  , _leaders(l) {}
+
 cluster_epoch_service::~cluster_epoch_service() noexcept = default;
 
 ss::future<> cluster_epoch_service::start() { co_return; }
@@ -196,7 +208,16 @@ ss::future<> cluster_epoch_service::stop() {
     _shard0_state = nullptr;
 }
 
-ss::future<int64_t> cluster_epoch_service::current_epoch() {
+void cluster_epoch_service::invalidate_epoch_cache(int64_t observed_epoch) {
+    _gate.check();
+    // This is safe to check without the lock, because we only use the lock to
+    // limit the number of cross shard calls and RPCs.
+    if (_cached_epoch == observed_epoch) {
+        _cached_epoch_time = ss::lowres_clock::time_point::min();
+    }
+}
+
+ss::future<int64_t> cluster_epoch_service::get_cached_epoch() {
     auto holder = _gate.hold();
     if (cache_entry_expired()) {
         auto units = co_await _mu.get_units();
@@ -204,11 +225,9 @@ ss::future<int64_t> cluster_epoch_service::current_epoch() {
             auto maybe_epoch = co_await this->container().invoke_on(
               controller_stm_shard, &cluster_epoch_service::get_current_epoch);
             if (!maybe_epoch) {
-                // TODO: We need to go make an RPC to the controller leader to
-                // get the epoch.
-                throw std::runtime_error("unimplemented");
+                maybe_epoch = co_await fetch_leader_epoch();
             }
-            int64_t new_epoch = *maybe_epoch;
+            int64_t new_epoch = maybe_epoch.value();
             vassert(
               new_epoch >= _cached_epoch,
               "epochs must monotonically increase, but new epoch {} is less "
@@ -222,12 +241,68 @@ ss::future<int64_t> cluster_epoch_service::current_epoch() {
     co_return _cached_epoch;
 }
 
-void cluster_epoch_service::invalidate_epoch_cache() {
-    _gate.check();
-    _cached_epoch_time = ss::lowres_clock::time_point::min();
+ss::future<int64_t> cluster_epoch_service::fetch_leader_epoch() {
+    constexpr std::chrono::milliseconds rpc_timeout = 3s;
+    constexpr int max_retries = 3;
+    std::exception_ptr last_exception;
+    int retries = 0;
+    while (true) {
+        try {
+            co_return co_await do_fetch_leader_epoch(rpc_timeout);
+        } catch (...) {
+            const auto& current = std::current_exception();
+            auto done = _gate.is_closed() || ++retries > max_retries;
+            vlogl(
+              clusterlog,
+              done && !ssx::is_shutdown_exception(current)
+                ? ss::log_level::warn
+                : ss::log_level::debug,
+              "Cluster epoch fetch attempt ({} of {}) failed: {}",
+              retries,
+              max_retries,
+              current);
+            if (done) {
+                throw;
+            }
+        }
+    }
+}
+
+ss::future<int64_t> cluster_epoch_service::do_fetch_leader_epoch(
+  ss::lowres_clock::duration timeout) {
+    auto cluster_leader = _leaders->local().get_leader(model::controller_ntp);
+    if (!cluster_leader) {
+        throw std::runtime_error(
+          "No leader for controller ntp, cannot fetch cluster epoch");
+    }
+    auto result = co_await _rpc_conn->local()
+                    .with_node_client<controller_client_protocol>(
+                      _self,
+                      ss::this_shard_id(),
+                      *cluster_leader,
+                      timeout,
+                      [timeout](controller_client_protocol client) {
+                          return client.get_current_cluster_epoch(
+                            get_current_cluster_epoch_request{
+                              .timeout = timeout},
+                            rpc::client_opts(timeout));
+                      });
+    if (!result) {
+        auto ec = result.error();
+        throw std::runtime_error(
+          fmt::format("Failed to fetch cluster epoch from leader: {}", ec));
+    }
+    auto resp = result.value().data;
+    if (resp.ec != errc::success) {
+        throw std::runtime_error(fmt::format(
+          "Failed to fetch cluster epoch from leader: {}",
+          errc_category().message(static_cast<int>(resp.ec))));
+    }
+    co_return resp.epoch;
 }
 
 ss::future<std::optional<int64_t>> cluster_epoch_service::get_current_epoch() {
+    _gate.check();
     vassert(
       _shard0_state,
       "get_current_epoch called on cluster_epoch_service without "

@@ -2096,17 +2096,17 @@ void application::wire_up_redpanda_services(
         public:
             explicit real_cluster_services(
               ss::sharded<cluster::cluster_epoch_service>* epoch_generator)
-              : _epoch_generator(epoch_generator) {}
+              : _epoch_service(epoch_generator) {}
 
             seastar::future<experimental::cloud_topics::cluster_epoch>
             current_epoch() override {
                 int64_t epoch
-                  = co_await _epoch_generator->local().current_epoch();
+                  = co_await _epoch_service->local().get_cached_epoch();
                 co_return experimental::cloud_topics::cluster_epoch(epoch);
             }
 
         private:
-            ss::sharded<cluster::cluster_epoch_service>* _epoch_generator;
+            ss::sharded<cluster::cluster_epoch_service>* _epoch_service;
         };
 
         construct_service(

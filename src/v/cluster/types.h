@@ -3661,6 +3661,43 @@ struct update_mirror_topic_state_response
     auto serde_fields() { return std::tie(ec); }
 };
 
+// Request to get the current cluster epoch.
+struct get_current_cluster_epoch_request
+  : serde::envelope<
+      get_current_cluster_epoch_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::timeout_clock::duration timeout{};
+
+    friend bool operator==(
+      const get_current_cluster_epoch_request&,
+      const get_current_cluster_epoch_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(timeout); }
+};
+
+// The reply to the get_current_cluster_epoch_request.
+struct get_current_cluster_epoch_response
+  : serde::envelope<
+      get_current_cluster_epoch_response,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    errc ec{errc::success};
+    int64_t epoch{-1};
+
+    friend bool operator==(
+      const get_current_cluster_epoch_response&,
+      const get_current_cluster_epoch_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(ec, epoch); }
+};
+
 } // namespace cluster
 
 namespace reflection {
