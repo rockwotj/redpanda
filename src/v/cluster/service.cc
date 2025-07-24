@@ -897,7 +897,7 @@ ss::future<get_current_cluster_epoch_response>
 service::get_current_cluster_epoch(
   get_current_cluster_epoch_request, ::rpc::streaming_context&) {
     auto result = co_await _controller->get_cluster_epoch_generator().invoke_on(
-      controller_stm_shard, &cluster_epoch_service::get_current_epoch);
+      controller_stm_shard, &cluster_epoch_service<>::get_current_epoch);
     co_return get_current_cluster_epoch_response{
       .ec = result ? errc::success : errc::not_leader_controller,
       .epoch = result.value_or(-1),

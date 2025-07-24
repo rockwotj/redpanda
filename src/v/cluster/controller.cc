@@ -401,6 +401,7 @@ ss::future<> controller::start(
     }
     co_await _epoch_service.start(
       _raft0->self().id(), &_connections, &_partition_leaders);
+    co_await _epoch_service.invoke_on_all(&cluster_epoch_service<>::start);
     _epoch_service.local().set_raft0(_raft0, _stm, _raft_manager);
 
     co_await _members_frontend.start(

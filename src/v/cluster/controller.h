@@ -152,7 +152,7 @@ public:
     }
     ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
 
-    ss::sharded<cluster_epoch_service>& get_cluster_epoch_generator() {
+    ss::sharded<cluster_epoch_service<>>& get_cluster_epoch_generator() {
         return _epoch_service;
     }
 
@@ -370,7 +370,7 @@ private:
     ss::sharded<cluster::cluster_link::table>
       _cluster_link_table; // instance per core
 
-    ss::sharded<cluster_epoch_service> _epoch_service; // instance per core
+    ss::sharded<cluster_epoch_service<>> _epoch_service; // instance per core
 
     bool _is_ready = false;
     ss::scheduling_group _scheduling_group;

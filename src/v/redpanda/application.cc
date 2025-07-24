@@ -2095,7 +2095,7 @@ void application::wire_up_redpanda_services(
           : public experimental::cloud_topics::cluster_services {
         public:
             explicit real_cluster_services(
-              ss::sharded<cluster::cluster_epoch_service>* epoch_generator)
+              ss::sharded<cluster::cluster_epoch_service<>>* epoch_generator)
               : _epoch_service(epoch_generator) {}
 
             seastar::future<experimental::cloud_topics::cluster_epoch>
@@ -2106,7 +2106,7 @@ void application::wire_up_redpanda_services(
             }
 
         private:
-            ss::sharded<cluster::cluster_epoch_service>* _epoch_service;
+            ss::sharded<cluster::cluster_epoch_service<>>* _epoch_service;
         };
 
         construct_service(
