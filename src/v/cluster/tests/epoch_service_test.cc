@@ -108,3 +108,24 @@ TEST_F_CORO(ClusterEpochService, FetchesLimitedToShard0) {
     EXPECT_EQ(accesses, 2);
     EXPECT_THAT(co_await all_epochs(), ElementsAre(1, 1));
 }
+
+TEST_F_CORO(ClusterEpochService, CacheInvalidation) {
+    using ::testing::ElementsAre;
+    ++cluster_epoch;
+    auto all_epochs = [this]() {
+        return service.map(
+          [](epoch_service& es) { return es.get_cached_epoch(); });
+    };
+    EXPECT_THAT(co_await all_epochs(), ElementsAre(1, 1));
+    EXPECT_EQ(accesses, 1);
+    ++cluster_epoch;
+    // Lower epoch does not invalidate anything
+    co_await service.invoke_on_all(&epoch_service::invalidate_epoch_cache, 0);
+    EXPECT_THAT(co_await all_epochs(), ElementsAre(1, 1));
+    co_await tests::drain_task_queue();
+    co_await tests::drain_task_queue();
+    EXPECT_EQ(accesses, 1);
+    co_await service.invoke_on_all(&epoch_service::invalidate_epoch_cache, 2);
+    EXPECT_THAT(co_await all_epochs(), ElementsAre(2, 2));
+    EXPECT_EQ(accesses, 2);
+}

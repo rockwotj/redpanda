@@ -30,6 +30,22 @@ class controller_stm;
 //
 // The cluster epoch is a monotonically increasing value that is currently used
 // in the Cloud Topics's L0 implementation.
+//
+// If the cluster_epoch_service is hosting the controller leader on the same
+// shard, it becomes responsible for driving the epoch forward, and does this by
+// periodically committing a checkpoint batch to raft0. This checkpointed
+// batch's offset becomes the new epoch for the cluster until another epoch is
+// committed to the log. It's important we derive the epoch from the log so we
+// can correlate it with other cluster level operations (adding partitions).
+//
+// The update mechanism for epochs is as follows:
+//
+// 1. Shard0 on each broker either fetches the epoch from itself (because it is
+//    controller leader) or it makes an RPC to go and fetch from the leader its
+//    current epoch.
+// 2. None shard0 will go fetch the epoch from shard0. If shard0 needs an update
+//    it may wait for that update to complete before returning to update the
+//    local shard's cached epoch.
 template<typename Clock = ss::lowres_clock>
 class cluster_epoch_service
   : public ss::peering_sharded_service<cluster_epoch_service<Clock>> {
@@ -73,7 +89,8 @@ public:
     // To ensure we are not continually invaliding epochs, you must pass the
     // epoch that caused the sequence violation (ie. that you got back from
     // `get_cached_epoch`) in order to actually invalidate the cache.
-    void invalidate_epoch_cache(int64_t epoch_causing_sequence_violation);
+    ss::future<>
+    invalidate_epoch_cache(int64_t epoch_causing_sequence_violation);
 
     // Returns the current epoch (with caching) for the cluster.
     //
@@ -104,8 +121,6 @@ private:
     bool cache_entry_expired() const noexcept;
     // The cached epoch needs updating, and block we need to block on it.
     bool cache_entry_needs_updated() const noexcept;
-    // Update the epoch if the lock isn't held
-    void maybe_update_epoch_in_background();
     // Fetch the epoch from shard0, and also return the time it was fetched
     // from that shard. Note that we're using ss::low_res clock from another
     // shard, which might be different from the current shard's low_res::clock

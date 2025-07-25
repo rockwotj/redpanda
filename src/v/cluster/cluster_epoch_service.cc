@@ -275,15 +275,27 @@ ss::future<> cluster_epoch_service<Clock>::stop() {
 }
 
 template<typename Clock>
-void cluster_epoch_service<Clock>::invalidate_epoch_cache(
+ss::future<> cluster_epoch_service<Clock>::invalidate_epoch_cache(
   int64_t epoch_causing_sequence_violation) {
-    _gate.check();
-    // This is safe to check without the lock, because we only use the lock to
-    // limit the number of cross shard calls and RPCs.
-    if (_cached_epoch == epoch_causing_sequence_violation) {
-        _cached_epoch_time = Clock::time_point::min();
-        _epoch_updated_time = Clock::time_point::min();
-    }
+    _gate.hold();
+    co_await this->container().invoke_on_all(
+      [epoch_causing_sequence_violation](cluster_epoch_service<Clock>& s) {
+          s._gate.check();
+          // This is safe to check without the lock, because we only use the
+          // lock to limit the number of cross shard calls and RPCs.
+          //
+          // We do want <= here because the epoch passed in is the epoch
+          // returned from `get_cached_epoch`, that caused the sequence
+          // violation (so it's not the epoch that could have came from another
+          // node, and since it's local we know *another node* observed a higher
+          // epoch and we need to refetch the epoch).
+          if (s._cached_epoch <= epoch_causing_sequence_violation) {
+              s._cached_epoch_time = Clock::time_point::min();
+              // Force this to be a blocking update so we don't get another
+              // sequence violation from the async update.
+              s._epoch_updated_time = Clock::time_point::min();
+          }
+      });
 }
 
 template<typename Clock>
@@ -337,6 +349,9 @@ ss::future<> cluster_epoch_service<Clock>::do_update_epoch() {
           controller_stm_shard,
           &cluster_epoch_service<Clock>::shard0_get_epoch);
         maybe_epoch = epoch0;
+        // Change our update_time to be the time from shard0, this prevents
+        // cases where non-shard0 could have an epoch twice as stale as the
+        // configuration knob for cache expiration.
         update_time = update_time0;
     }
     vlog(clusterlog.debug, "updated cluster epoch to {}", maybe_epoch);
