@@ -39,7 +39,7 @@ public:
     // TODO(cloud-topics): make these configuration knobs.
     // The amount of time to cache the current epoch before we attempt an
     // update.
-    constexpr static ss::lowres_clock::duration epoch_cache_timeout = 30s;
+    constexpr static ss::lowres_clock::duration epoch_cache_timeout = 1min;
     // The interval on which we bump our epoch.
     constexpr static ss::lowres_clock::duration epoch_bump_interval = 10min;
     // Maximum amount of time to cache the same epoch before we block on the
@@ -104,7 +104,18 @@ private:
     bool cache_entry_expired() const noexcept;
     // The cached epoch needs updating, and block we need to block on it.
     bool cache_entry_needs_updated() const noexcept;
-    ss::future<> update_epoch();
+    // Update the epoch if the lock isn't held
+    void maybe_update_epoch_in_background();
+    // Fetch the epoch from shard0, and also return the time it was fetched
+    // from that shard. Note that we're using ss::low_res clock from another
+    // shard, which might be different from the current shard's low_res::clock
+    // but it should be "good enough" in practice, since they are all based on
+    // the system clock.
+    ss::future<std::tuple<int64_t, typename Clock::time_point>>
+    shard0_get_epoch();
+    // Update the epoch
+    ss::future<> do_update_epoch();
+    // Fetch the epoch from the leader node
     ss::future<int64_t> fetch_leader_epoch();
 
     // The currently cached epoch

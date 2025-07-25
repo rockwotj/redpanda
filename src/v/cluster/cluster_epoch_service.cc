@@ -294,7 +294,7 @@ ss::future<int64_t> cluster_epoch_service<Clock>::get_cached_epoch() {
     if (cache_entry_needs_updated()) {
         auto units = co_await _mu.get_units();
         if (cache_entry_needs_updated()) {
-            co_await update_epoch();
+            co_await do_update_epoch();
             if (cache_entry_needs_updated()) {
                 throw std::runtime_error(fmt::format(
                   "epoch too old, has not successfully updated in {}",
@@ -311,7 +311,8 @@ ss::future<int64_t> cluster_epoch_service<Clock>::get_cached_epoch() {
         if (maybe_units) {
             ssx::spawn_with_gate(
               _gate, [this, units = std::move(*maybe_units)]() mutable {
-                  return update_epoch().finally([units = std::move(units)] {});
+                  return do_update_epoch().finally(
+                    [units = std::move(units)] {});
               });
         }
     }
@@ -319,17 +320,26 @@ ss::future<int64_t> cluster_epoch_service<Clock>::get_cached_epoch() {
 }
 
 template<typename Clock>
-ss::future<> cluster_epoch_service<Clock>::update_epoch() {
+ss::future<> cluster_epoch_service<Clock>::do_update_epoch() {
     auto maybe_epoch = co_await this->container().invoke_on(
       controller_stm_shard, &cluster_epoch_service::get_current_epoch);
-    if (!maybe_epoch) {
+    auto update_time = Clock::now();
+    if (!maybe_epoch && ss::this_shard_id() == 0) {
         try {
             maybe_epoch = co_await fetch_leader_epoch();
+            update_time = Clock::now();
         } catch (...) {
             // fetch_leader_epoch logged, we can just return
             co_return;
         }
+    } else if (!maybe_epoch) {
+        auto [epoch0, update_time0] = co_await this->container().invoke_on(
+          controller_stm_shard,
+          &cluster_epoch_service<Clock>::shard0_get_epoch);
+        maybe_epoch = epoch0;
+        update_time = update_time0;
     }
+    vlog(clusterlog.debug, "updated cluster epoch to {}", maybe_epoch);
     int64_t new_epoch = maybe_epoch.value();
     vassert(
       new_epoch >= _cached_epoch,
@@ -342,6 +352,21 @@ ss::future<> cluster_epoch_service<Clock>::update_epoch() {
         _epoch_updated_time = _cached_epoch_time;
     }
     _cached_epoch = new_epoch;
+}
+
+template<typename Clock>
+ss::future<std::tuple<int64_t, typename Clock::time_point>>
+cluster_epoch_service<Clock>::shard0_get_epoch() {
+    vassert(ss::this_shard_id() == 0, "must be called from shard0");
+    if (!cache_entry_expired()) {
+        co_return std::make_tuple(_cached_epoch, _cached_epoch_time);
+    }
+    auto units = co_await _mu.get_units();
+    if (!cache_entry_expired()) {
+        co_return std::make_tuple(_cached_epoch, _cached_epoch_time);
+    }
+    co_await do_update_epoch();
+    co_return std::make_tuple(_cached_epoch, _cached_epoch_time);
 }
 
 template<typename Clock>
