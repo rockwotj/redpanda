@@ -308,6 +308,10 @@ ss::future<int64_t> cluster_epoch_service<Clock>::get_cached_epoch() {
         if (cache_entry_needs_updated()) {
             co_await do_update_epoch();
             if (cache_entry_needs_updated()) {
+                if (_epoch_updated_time == Clock::time_point::min()) {
+                    throw std::runtime_error(
+                      "epoch has never been successfully updated");
+                }
                 throw std::runtime_error(fmt::format(
                   "epoch too old, has not successfully updated in {}",
                   std::chrono::duration_cast<std::chrono::seconds>(
