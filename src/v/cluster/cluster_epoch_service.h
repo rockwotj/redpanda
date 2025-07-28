@@ -43,7 +43,7 @@ class controller_stm;
 // 1. Shard0 on each broker either fetches the epoch from itself (because it is
 //    controller leader) or it makes an RPC to go and fetch from the leader its
 //    current epoch.
-// 2. None shard0 will go fetch the epoch from shard0. If shard0 needs an update
+// 2. Non shard0 will go fetch the epoch from shard0. If shard0 needs an update
 //    it may wait for that update to complete before returning to update the
 //    local shard's cached epoch.
 template<typename Clock = ss::lowres_clock>
@@ -87,10 +87,10 @@ public:
     // a higher epoch, otherwise this will needlessly invalidate the cache.
     //
     // To ensure we are not continually invaliding epochs, you must pass the
-    // epoch that caused the sequence violation (ie. that you got back from
+    // epoch that caused the monotonicity violation (ie. that you got back from
     // `get_cached_epoch`) in order to actually invalidate the cache.
     ss::future<>
-    invalidate_epoch_cache(int64_t epoch_causing_sequence_violation);
+    invalidate_epoch_cache(int64_t epoch_causing_monotonicity_violation);
 
     // Returns the current epoch (with caching) for the cluster.
     //

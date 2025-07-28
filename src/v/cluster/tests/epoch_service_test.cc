@@ -21,19 +21,34 @@ class ClusterEpochService : public seastar_test {
 protected:
     ss::future<> SetUpAsync() override {
         co_await service.start(ss::sharded_parameter([this] {
-            return [this](ss::manual_clock::duration) {
-                ++accesses;
-                if (injected_failure_count > 0) {
-                    --injected_failure_count;
-                    throw std::runtime_error("Fetch failed");
-                }
-                return ss::as_ready_future(cluster_epoch.load());
-            };
+            return [this](ss::manual_clock::duration) { return get_epoch(); };
         }));
         co_await service.invoke_on_all(&epoch_service::start);
     }
     ss::future<> TearDownAsync() override { co_await service.stop(); }
 
+    ss::future<int64_t> get_epoch() {
+        auto guard = co_await ss::smp::submit_to(0, [this] {
+            return ss::get_shared_lock(_mutex).then([](auto guard) {
+                return ss::make_foreign(ss::make_lw_shared(std::move(guard)));
+            });
+        });
+        ++accesses;
+        if (injected_failure_count > 0) {
+            --injected_failure_count;
+            throw std::runtime_error("Fetch failed");
+        }
+        co_return cluster_epoch.load();
+    }
+
+    auto acquire_barrier() { return ss::get_unique_lock(_mutex); }
+
+    auto all_epochs() {
+        return service.map(
+          [](epoch_service& es) { return es.get_cached_epoch(); });
+    }
+
+    ss::shared_mutex _mutex;
     std::atomic<int64_t> cluster_epoch = 0;
     std::atomic<int64_t> accesses = 0;
     std::atomic<int64_t> injected_failure_count = 0;
@@ -50,7 +65,9 @@ TEST_F_CORO(ClusterEpochService, TestCaching) {
     EXPECT_EQ(accesses, 1);
     // After the timeout we async re-fetch the value
     ss::manual_clock::advance(epoch_service::epoch_cache_timeout + 1us);
+    auto barrier = co_await acquire_barrier();
     EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch - 1);
+    barrier.unlock();
     co_await tests::drain_task_queue();
     EXPECT_EQ(accesses, 2);
     EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch);
@@ -90,39 +107,38 @@ TEST_F_CORO(ClusterEpochService, IncrementMustHappenEventually) {
 
 TEST_F_CORO(ClusterEpochService, FetchesLimitedToShard0) {
     using ::testing::ElementsAre;
-    auto all_epochs = [this]() {
-        return service.map(
-          [](epoch_service& es) { return es.get_cached_epoch(); });
-    };
     EXPECT_THAT(co_await all_epochs(), ElementsAre(0, 0));
     EXPECT_EQ(accesses, 1);
     // Bumping the epoch and awaiting for the cache to expire should only cause
     // one additional fetch
     ++cluster_epoch;
     ss::manual_clock::advance(epoch_service::epoch_cache_timeout + 1us);
+    auto barrier = co_await acquire_barrier();
     EXPECT_THAT(co_await all_epochs(), ElementsAre(0, 0));
-    // Drain the queue twice to ensure that cross shard tasks are executed
-    // and complete.
-    co_await tests::drain_task_queue();
+    barrier.unlock();
     co_await tests::drain_task_queue();
     EXPECT_EQ(accesses, 2);
-    EXPECT_THAT(co_await all_epochs(), ElementsAre(1, 1));
+    // Due to the cross core requests happening, we have to check a few times
+    // for the requests to resolve, otherwise even if the task queue is idle
+    // the cross core request from shard1 might not have finished yet.
+    RPTEST_REQUIRE_EVENTUALLY_CORO(1s, [this]() -> ss::future<bool> {
+        return tests::drain_task_queue().then([this]() {
+            return all_epochs().then([](const std::vector<int64_t>& epochs) {
+                return epochs == std::vector<int64_t>{1, 1};
+            });
+        });
+    });
 }
 
 TEST_F_CORO(ClusterEpochService, CacheInvalidation) {
     using ::testing::ElementsAre;
     ++cluster_epoch;
-    auto all_epochs = [this]() {
-        return service.map(
-          [](epoch_service& es) { return es.get_cached_epoch(); });
-    };
     EXPECT_THAT(co_await all_epochs(), ElementsAre(1, 1));
     EXPECT_EQ(accesses, 1);
     ++cluster_epoch;
     // Lower epoch does not invalidate anything
     co_await service.invoke_on_all(&epoch_service::invalidate_epoch_cache, 0);
     EXPECT_THAT(co_await all_epochs(), ElementsAre(1, 1));
-    co_await tests::drain_task_queue();
     co_await tests::drain_task_queue();
     EXPECT_EQ(accesses, 1);
     co_await service.invoke_on_all(&epoch_service::invalidate_epoch_cache, 2);

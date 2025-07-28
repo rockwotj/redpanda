@@ -276,10 +276,10 @@ ss::future<> cluster_epoch_service<Clock>::stop() {
 
 template<typename Clock>
 ss::future<> cluster_epoch_service<Clock>::invalidate_epoch_cache(
-  int64_t epoch_causing_sequence_violation) {
-    _gate.hold();
+  int64_t epoch_causing_monotonicity_violation) {
+    auto holder = _gate.hold();
     co_await this->container().invoke_on_all(
-      [epoch_causing_sequence_violation](cluster_epoch_service<Clock>& s) {
+      [epoch_causing_monotonicity_violation](cluster_epoch_service<Clock>& s) {
           s._gate.check();
           // This is safe to check without the lock, because we only use the
           // lock to limit the number of cross shard calls and RPCs.
@@ -289,7 +289,7 @@ ss::future<> cluster_epoch_service<Clock>::invalidate_epoch_cache(
           // violation (so it's not the epoch that could have came from another
           // node, and since it's local we know *another node* observed a higher
           // epoch and we need to refetch the epoch).
-          if (s._cached_epoch <= epoch_causing_sequence_violation) {
+          if (s._cached_epoch <= epoch_causing_monotonicity_violation) {
               s._cached_epoch_time = Clock::time_point::min();
               // Force this to be a blocking update so we don't get another
               // sequence violation from the async update.
@@ -340,7 +340,7 @@ ss::future<> cluster_epoch_service<Clock>::do_update_epoch() {
     auto maybe_epoch = co_await this->container().invoke_on(
       controller_stm_shard, &cluster_epoch_service::get_current_epoch);
     auto update_time = Clock::now();
-    if (!maybe_epoch && ss::this_shard_id() == 0) {
+    if (!maybe_epoch && ss::this_shard_id() == controller_stm_shard) {
         try {
             maybe_epoch = co_await fetch_leader_epoch();
             update_time = Clock::now();
@@ -376,7 +376,9 @@ ss::future<> cluster_epoch_service<Clock>::do_update_epoch() {
 template<typename Clock>
 ss::future<std::tuple<int64_t, typename Clock::time_point>>
 cluster_epoch_service<Clock>::shard0_get_epoch() {
-    vassert(ss::this_shard_id() == 0, "must be called from shard0");
+    vassert(
+      ss::this_shard_id() == controller_stm_shard,
+      "must be called from shard0");
     if (!cache_entry_expired()) {
         co_return std::make_tuple(_cached_epoch, _cached_epoch_time);
     }
