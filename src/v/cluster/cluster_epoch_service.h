@@ -21,6 +21,8 @@
 #include <seastar/core/distributed.hh>
 #include <seastar/core/gate.hh>
 
+#include <expected>
+
 namespace cluster {
 
 class controller_stm;
@@ -69,8 +71,9 @@ public:
       ss::sharded<partition_leaders_table>*) noexcept;
     // **For testing** support injecting a custom "remote fetch epoch" function.
     explicit cluster_epoch_service(
-      ss::noncopyable_function<ss::future<int64_t>(typename Clock::duration)>
-        fn) noexcept;
+      ss::noncopyable_function<
+        ss::future<std::expected<int64_t, std::error_code>>(
+          typename Clock::duration)> fn) noexcept;
     cluster_epoch_service(const cluster_epoch_service&) = delete;
     cluster_epoch_service(cluster_epoch_service&&) = delete;
     cluster_epoch_service& operator=(const cluster_epoch_service&) = delete;
@@ -95,7 +98,10 @@ public:
     // Returns the current epoch (with caching) for the cluster.
     //
     // May be called on any shard.
-    ss::future<int64_t> get_cached_epoch();
+    //
+    // The future may end up returning an error code if cached epoch is too old
+    // and we have not been able to reach the controller leader to update it.
+    ss::future<std::expected<int64_t, std::error_code>> get_cached_epoch();
 
     // Returns the current epoch for the cluster.
     //
@@ -126,12 +132,14 @@ private:
     // shard, which might be different from the current shard's low_res::clock
     // but it should be "good enough" in practice, since they are all based on
     // the system clock.
-    ss::future<std::tuple<int64_t, typename Clock::time_point>>
+    ss::future<std::expected<
+      std::tuple<int64_t, typename Clock::time_point>,
+      std::error_code>>
     shard0_get_epoch();
     // Update the epoch
-    ss::future<> do_update_epoch();
+    ss::future<std::error_code> do_update_epoch();
     // Fetch the epoch from the leader node
-    ss::future<int64_t> fetch_leader_epoch();
+    ss::future<std::expected<int64_t, std::error_code>> fetch_leader_epoch();
 
     // The currently cached epoch
     int64_t _cached_epoch{-1};
@@ -145,7 +153,8 @@ private:
 
     ss::gate _gate;
 
-    ss::noncopyable_function<ss::future<int64_t>(typename Clock::duration)>
+    ss::noncopyable_function<ss::future<
+      std::expected<int64_t, std::error_code>>(typename Clock::duration)>
       _do_fetch_leader_epoch_fn;
 
     std::unique_ptr<raft0_state> _shard0_state;

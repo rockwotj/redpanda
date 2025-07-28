@@ -2100,9 +2100,13 @@ void application::wire_up_redpanda_services(
 
             seastar::future<experimental::cloud_topics::cluster_epoch>
             current_epoch() override {
-                int64_t epoch
+                std::expected<int64_t, std::error_code> epoch
                   = co_await _epoch_service->local().get_cached_epoch();
-                co_return experimental::cloud_topics::cluster_epoch(epoch);
+                if (!epoch) {
+                    throw std::system_error(epoch.error());
+                }
+                co_return experimental::cloud_topics::cluster_epoch(
+                  epoch.value());
             }
 
         private:

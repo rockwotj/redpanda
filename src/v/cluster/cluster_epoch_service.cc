@@ -28,6 +28,7 @@
 
 #include <fmt/chrono.h>
 
+#include <algorithm>
 #include <exception>
 #include <stdexcept>
 
@@ -38,39 +39,44 @@ namespace {
 using namespace std::chrono_literals;
 
 template<typename Clock>
-ss::future<int64_t> do_fetch_leader_epoch_impl(
+ss::future<std::expected<int64_t, std::error_code>> do_fetch_leader_epoch_impl(
   model::node_id self,
   ss::sharded<partition_leaders_table>* leaders,
   ss::sharded<rpc::connection_cache>* rpc_conn,
   typename Clock::duration timeout) {
     auto cluster_leader = leaders->local().get_leader(model::controller_ntp);
     if (!cluster_leader) {
-        throw std::runtime_error(
-          "No leader for controller ntp, cannot fetch cluster epoch");
+        co_return std::unexpected(make_error_code(errc::no_leader_controller));
     }
-    auto result
-      = co_await rpc_conn->local().with_node_client<controller_client_protocol>(
-        self,
-        ss::this_shard_id(),
-        *cluster_leader,
-        timeout,
-        [timeout](controller_client_protocol client) {
-            return client.get_current_cluster_epoch(
-              get_current_cluster_epoch_request{.timeout = timeout},
-              rpc::client_opts(timeout));
-        });
-    if (!result) {
-        auto ec = result.error();
-        throw std::runtime_error(
-          fmt::format("Failed to fetch cluster epoch from leader: {}", ec));
+    try {
+        auto result = co_await rpc_conn->local()
+                        .with_node_client<controller_client_protocol>(
+                          self,
+                          ss::this_shard_id(),
+                          *cluster_leader,
+                          timeout,
+                          [timeout](controller_client_protocol client) {
+                              return client.get_current_cluster_epoch(
+                                get_current_cluster_epoch_request{
+                                  .timeout = timeout},
+                                rpc::client_opts(timeout));
+                          });
+        if (!result) {
+            co_return std::unexpected(result.error());
+        }
+        auto resp = result.value().data;
+        if (resp.ec != errc::success) {
+            co_return std::unexpected(make_error_code(resp.ec));
+        }
+        co_return resp.epoch;
+    } catch (...) {
+        vlog(
+          clusterlog.error,
+          "Unknown error fetching current cluster epoch from leader {}: {}",
+          cluster_leader,
+          std::current_exception());
+        co_return std::unexpected(make_error_code(errc::timeout));
     }
-    auto resp = result.value().data;
-    if (resp.ec != errc::success) {
-        throw std::runtime_error(fmt::format(
-          "Failed to fetch cluster epoch from leader: {}",
-          errc_category().message(static_cast<int>(resp.ec))));
-    }
-    co_return resp.epoch;
 }
 
 } // namespace
@@ -253,8 +259,8 @@ cluster_epoch_service<Clock>::cluster_epoch_service(
 
 template<typename Clock>
 cluster_epoch_service<Clock>::cluster_epoch_service(
-  ss::noncopyable_function<ss::future<int64_t>(typename Clock::duration)>
-    fn) noexcept
+  ss::noncopyable_function<ss::future<std::expected<int64_t, std::error_code>>(
+    typename Clock::duration)> fn) noexcept
   : _do_fetch_leader_epoch_fn(std::move(fn)) {}
 
 template<typename Clock>
@@ -299,23 +305,31 @@ ss::future<> cluster_epoch_service<Clock>::invalidate_epoch_cache(
 }
 
 template<typename Clock>
-ss::future<int64_t> cluster_epoch_service<Clock>::get_cached_epoch() {
+ss::future<std::expected<int64_t, std::error_code>>
+cluster_epoch_service<Clock>::get_cached_epoch() {
     auto holder = _gate.hold();
     // If the cache entry is needing an update, then block until
     // that update is complete.
     if (cache_entry_needs_updated()) {
         auto units = co_await _mu.get_units();
         if (cache_entry_needs_updated()) {
-            co_await do_update_epoch();
+            auto ec = co_await do_update_epoch();
+            if (ec) {
+                co_return std::unexpected(ec);
+            }
             if (cache_entry_needs_updated()) {
-                if (_epoch_updated_time == Clock::time_point::min()) {
-                    throw std::runtime_error(
-                      "epoch has never been successfully updated");
+                if (_epoch_updated_time != Clock::time_point::min()) {
+                    vlog(
+                      clusterlog.warn,
+                      "epoch too old, has not successfully updated in {}",
+                      std::chrono::duration_cast<std::chrono::seconds>(
+                        Clock::now() - _epoch_updated_time));
+                } else {
+                    vlog(
+                      clusterlog.warn,
+                      "epoch invalid, has not successfully updated");
                 }
-                throw std::runtime_error(fmt::format(
-                  "epoch too old, has not successfully updated in {}",
-                  std::chrono::duration_cast<std::chrono::seconds>(
-                    Clock::now() - _epoch_updated_time)));
+                co_return std::unexpected(errc::timeout);
             }
         }
     }
@@ -327,8 +341,16 @@ ss::future<int64_t> cluster_epoch_service<Clock>::get_cached_epoch() {
         if (maybe_units) {
             ssx::spawn_with_gate(
               _gate, [this, units = std::move(*maybe_units)]() mutable {
-                  return do_update_epoch().finally(
-                    [units = std::move(units)] {});
+                  return do_update_epoch()
+                    .then([](std::error_code ec) {
+                        if (ec) {
+                            vlog(
+                              clusterlog.warn,
+                              "Failed to update cluster epoch async: {}",
+                              ec);
+                        }
+                    })
+                    .finally([units = std::move(units)] {});
               });
         }
     }
@@ -336,22 +358,25 @@ ss::future<int64_t> cluster_epoch_service<Clock>::get_cached_epoch() {
 }
 
 template<typename Clock>
-ss::future<> cluster_epoch_service<Clock>::do_update_epoch() {
+ss::future<std::error_code> cluster_epoch_service<Clock>::do_update_epoch() {
     auto maybe_epoch = co_await this->container().invoke_on(
       controller_stm_shard, &cluster_epoch_service::get_current_epoch);
     auto update_time = Clock::now();
     if (!maybe_epoch && ss::this_shard_id() == controller_stm_shard) {
-        try {
-            maybe_epoch = co_await fetch_leader_epoch();
-            update_time = Clock::now();
-        } catch (...) {
-            // fetch_leader_epoch logged, we can just return
-            co_return;
+        auto epoch_result = co_await fetch_leader_epoch();
+        if (!epoch_result) {
+            co_return epoch_result.error();
         }
+        maybe_epoch = epoch_result.value();
+        update_time = Clock::now();
     } else if (!maybe_epoch) {
-        auto [epoch0, update_time0] = co_await this->container().invoke_on(
+        auto result = co_await this->container().invoke_on(
           controller_stm_shard,
           &cluster_epoch_service<Clock>::shard0_get_epoch);
+        if (!result) {
+            co_return result.error();
+        }
+        auto [epoch0, update_time0] = result.value();
         maybe_epoch = epoch0;
         // Change our update_time to be the time from shard0, this prevents
         // cases where non-shard0 could have an epoch twice as stale as the
@@ -371,10 +396,13 @@ ss::future<> cluster_epoch_service<Clock>::do_update_epoch() {
         _epoch_updated_time = _cached_epoch_time;
     }
     _cached_epoch = new_epoch;
+    co_return std::error_code{};
 }
 
 template<typename Clock>
-ss::future<std::tuple<int64_t, typename Clock::time_point>>
+ss::future<std::expected<
+  std::tuple<int64_t, typename Clock::time_point>,
+  std::error_code>>
 cluster_epoch_service<Clock>::shard0_get_epoch() {
     vassert(
       ss::this_shard_id() == controller_stm_shard,
@@ -386,35 +414,27 @@ cluster_epoch_service<Clock>::shard0_get_epoch() {
     if (!cache_entry_expired()) {
         co_return std::make_tuple(_cached_epoch, _cached_epoch_time);
     }
-    co_await do_update_epoch();
+    auto ec = co_await do_update_epoch();
+    if (!ec) {
+        co_return std::unexpected(ec);
+    }
     co_return std::make_tuple(_cached_epoch, _cached_epoch_time);
 }
 
 template<typename Clock>
-ss::future<int64_t> cluster_epoch_service<Clock>::fetch_leader_epoch() {
+ss::future<std::expected<int64_t, std::error_code>>
+cluster_epoch_service<Clock>::fetch_leader_epoch() {
     constexpr std::chrono::milliseconds rpc_timeout = 3s;
     constexpr int max_retries = 3;
-    std::exception_ptr last_exception;
     int retries = 0;
     while (true) {
         _gate.check();
-        try {
-            co_return co_await _do_fetch_leader_epoch_fn(rpc_timeout);
-        } catch (...) {
-            const auto& current = std::current_exception();
-            auto done = _gate.is_closed() || ++retries > max_retries;
-            vlogl(
-              clusterlog,
-              done && !ssx::is_shutdown_exception(current)
-                ? ss::log_level::warn
-                : ss::log_level::debug,
-              "Cluster epoch fetch attempt ({} of {}) failed: {}",
-              retries,
-              max_retries,
-              current);
-            if (done) {
-                throw;
-            }
+        auto maybe_epoch = co_await _do_fetch_leader_epoch_fn(rpc_timeout);
+        if (maybe_epoch) {
+            co_return maybe_epoch;
+        }
+        if (++retries > max_retries) {
+            co_return maybe_epoch;
         }
     }
 }

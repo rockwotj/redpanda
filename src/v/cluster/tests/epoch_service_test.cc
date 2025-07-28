@@ -21,13 +21,14 @@ class ClusterEpochService : public seastar_test {
 protected:
     ss::future<> SetUpAsync() override {
         co_await service.start(ss::sharded_parameter([this] {
-            return [this](ss::manual_clock::duration) { return get_epoch(); };
+            return
+              [this](ss::manual_clock::duration) { return get_leader_epoch(); };
         }));
         co_await service.invoke_on_all(&epoch_service::start);
     }
     ss::future<> TearDownAsync() override { co_await service.stop(); }
 
-    ss::future<int64_t> get_epoch() {
+    ss::future<std::expected<int64_t, std::error_code>> get_leader_epoch() {
         auto guard = co_await ss::smp::submit_to(0, [this] {
             return ss::get_shared_lock(_mutex).then([](auto guard) {
                 return ss::make_foreign(ss::make_lw_shared(std::move(guard)));
@@ -36,16 +37,36 @@ protected:
         ++accesses;
         if (injected_failure_count > 0) {
             --injected_failure_count;
-            throw std::runtime_error("Fetch failed");
+            co_return std::unexpected(
+              cluster::make_error_code(cluster::errc::shutting_down));
         }
         co_return cluster_epoch.load();
     }
 
     auto acquire_barrier() { return ss::get_unique_lock(_mutex); }
 
-    auto all_epochs() {
-        return service.map(
+    ss::future<int64_t> get_cached_epoch() {
+        auto result = co_await service.local().get_cached_epoch();
+        if (!result) {
+            throw std::runtime_error(
+              fmt::format("unable to fetch epoch: {}", result.error()));
+        }
+        co_return result.value();
+    }
+
+    ss::future<std::vector<int64_t>> all_epochs() {
+        auto results = co_await service.map(
           [](epoch_service& es) { return es.get_cached_epoch(); });
+        std::vector<int64_t> epochs;
+        for (const auto& res : results) {
+            if (res.has_value()) {
+                epochs.push_back(res.value());
+            } else {
+                throw std::runtime_error(
+                  fmt::format("unable to fetch epoch: {}", res.error()));
+            }
+        }
+        co_return epochs;
     }
 
     ss::shared_mutex _mutex;
@@ -56,32 +77,32 @@ protected:
 };
 
 TEST_F_CORO(ClusterEpochService, TestCaching) {
-    EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch);
+    EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch);
     EXPECT_EQ(accesses, 1);
     ++cluster_epoch;
     // Value is cached
-    EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch - 1);
+    EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch - 1);
     co_await tests::drain_task_queue();
     EXPECT_EQ(accesses, 1);
     // After the timeout we async re-fetch the value
     ss::manual_clock::advance(epoch_service::epoch_cache_timeout + 1us);
     auto barrier = co_await acquire_barrier();
-    EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch - 1);
+    EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch - 1);
     barrier.unlock();
     co_await tests::drain_task_queue();
     EXPECT_EQ(accesses, 2);
-    EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch);
+    EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch);
     EXPECT_EQ(accesses, 2);
     // After the max duration we wait to fetch the value
     ++cluster_epoch;
     ss::manual_clock::advance(
       epoch_service::max_same_epoch_cache_duration + 1us);
-    EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch);
+    EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch);
     EXPECT_EQ(accesses, 3);
 }
 
 TEST_F_CORO(ClusterEpochService, IncrementMustHappenEventually) {
-    EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch);
+    EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch);
     EXPECT_EQ(accesses, 1);
     auto must_refresh_deadline = ss::manual_clock::now()
                                  + epoch_service::max_same_epoch_cache_duration;
@@ -89,19 +110,19 @@ TEST_F_CORO(ClusterEpochService, IncrementMustHappenEventually) {
     ss::manual_clock::advance(epoch_service::epoch_cache_timeout + 1us);
     while (ss::manual_clock::now() < must_refresh_deadline) {
         auto accesses_before = accesses.load();
-        EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch);
+        EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch);
         co_await tests::drain_task_queue();
         EXPECT_EQ(accesses, accesses_before + 1);
         ss::manual_clock::advance(epoch_service::epoch_cache_timeout + 1us);
     }
     // After the max duration we wait to fetch the value, and will fail if we
     // cannot
-    EXPECT_ANY_THROW(co_await service.local().get_cached_epoch());
-    EXPECT_ANY_THROW(co_await service.local().get_cached_epoch());
+    EXPECT_ANY_THROW(co_await get_cached_epoch());
+    EXPECT_ANY_THROW(co_await get_cached_epoch());
     // After the epoch is updated we can fetch again successfully
     ++cluster_epoch;
     auto accesses_before = accesses.load();
-    EXPECT_EQ(co_await service.local().get_cached_epoch(), cluster_epoch);
+    EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch);
     EXPECT_EQ(accesses, accesses_before + 1);
 }
 
