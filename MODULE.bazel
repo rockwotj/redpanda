@@ -153,12 +153,12 @@ COMPILERS = {
     "current": {
         "tars": {
             "aarch64": {
-                "build_date": "2025-07-22",
-                "sha": "ce0a8d7f4df980dd3aa0deacd390804f887d31065cd79b71827bba6cd4d2e2e8",
+                "build_date": "2025-08-12",
+                "sha": "270e3ac59f76d36349c6dcf6d9aed6e9d1282d5817bfe78b9f56ad5d8db73907",
             },
             "x86_64": {
-                "build_date": "2025-07-22",
-                "sha": "c424df0195e1641b6226dbb380a849d2013975150af40932392361d9893005ac",
+                "build_date": "2025-08-12",
+                "sha": "cd177710f79bb08ff27e88cda809017c915b760ea01c063cda82d3d099ff0f59",
             },
         },
         "version": "20.1.8",

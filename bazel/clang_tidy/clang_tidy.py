@@ -7,14 +7,15 @@ from pathlib import Path
 def main():
     if len(sys.argv) < 3:
         print(
-            f"Usage: {sys.argv[0]} <CLANG_TIDY_BIN> <FAKE_OUTPUT> <CONFIG> [ARGS...]"
+            f"Usage: {sys.argv[0]} <CLANG_TIDY_BIN> <FAKE_OUTPUT> <CONFIG> <PLUGIN> [ARGS...]"
         )
         sys.exit(1)
 
     clang_tidy_bin = sys.argv[1]
     fake_output = sys.argv[2]
     config_file = sys.argv[3]
-    remaining_args = sys.argv[4:]
+    plugin_path = sys.argv[4]
+    remaining_args = sys.argv[5:]
 
     # Bazel requires some kind of output file must be specified
     # so always create it
@@ -22,15 +23,14 @@ def main():
 
     try:
         verify_command = [
-            clang_tidy_bin, f"--config-file={config_file}", "--quiet",
-            "--verify-config"
+            clang_tidy_bin, f"--load={plugin_path}", f"--config-file={config_file}", "--verify-config"
         ]
         _ = subprocess.run(verify_command,
                            check=True,
                            capture_output=True,
                            text=True)
 
-        run_command = [clang_tidy_bin, f"--config-file={config_file}"
+        run_command = [clang_tidy_bin, f"--load={plugin_path}", f"--config-file={config_file}"
                        ] + remaining_args
 
         _ = subprocess.run(run_command,
