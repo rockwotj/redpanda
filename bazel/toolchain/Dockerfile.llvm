@@ -58,7 +58,6 @@ set(LLVM_USE_LINKER lld CACHE STRING "")
 set(LLVM_BUILD_TOOLS ON CACHE BOOL "")
 set(LLVM_BINUTILS_INCDIR ON CACHE BOOL "")
 set(CLANG_INCLUDE_TESTS OFF CACHE BOOL "")
-set(CLANG_PLUGIN_SUPPORT OFF CACHE BOOL "")
 set(COMPILER_RT_INCLUDE_TESTS OFF CACHE BOOL "")
 set(COMPILER_RT_BUILD_SANITIZERS ON CACHE BOOL "")
 set(COMPILER_RT_ENABLE_IOS OFF CACHE BOOL "")
@@ -66,11 +65,14 @@ set(COMPILER_RT_ENABLE_WATCHOS OFF CACHE BOOL "")
 set(COMPILER_RT_ENABLE_TVOS OFF CACHE BOOL "")
 set(LIBCXX_INSTALL_EXPERIMENTAL_LIBRARY ON CACHE STRING "")
 set(LIBCXX_CXX_ABI libcxxabi CACHE STRING "")
-# in clang-18 this appears to be on by default, but we don't use libunwind
+# starting in clang-18 this appears to be on by default, but we don't use libunwind
 set(LIBCXXABI_USE_LLVM_UNWINDER OFF CACHE BOOL "")
-set(LLVM_INSTALL_TOOLCHAIN_ONLY ON CACHE BOOL "")
 set(LLVM_ENABLE_LTO Thin CACHE STRING "")
 set(LLVM_PARALLEL_LINK_JOBS ${MAX_LINK_JOBS} CACHE STRING "")
+# Enable runtime loaded libraries in clang tidy
+set(CLANG_PLUGIN_SUPPORT ON CACHE BOOL "")
+# In order to get development headers, we have to disable this option, even if it installs a bunch of extra stuff.
+set(LLVM_INSTALL_TOOLCHAIN_ONLY OFF CACHE BOOL "")
 EOF
 
 # Create build directory
