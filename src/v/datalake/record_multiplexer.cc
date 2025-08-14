@@ -355,8 +355,9 @@ ss::future<writer_error> record_multiplexer::flush_writers() {
     if (_error && !is_recoverable_error(_error.value())) {
         co_return *_error;
     }
-    auto result = co_await ss::coroutine::as_future(ss::max_concurrent_for_each(
-      _writers, 10, [](auto& entry) { return entry.second->flush(); }));
+    auto result = co_await ss::coroutine::as_future(
+      ss::max_concurrent_for_each(
+        _writers, 10, [](auto& entry) { return entry.second->flush(); }));
     if (result.failed()) {
         vlog(_log.warn, "Error flushing writers: {}", result.get_exception());
         _error = writer_error::flush_error;
@@ -562,17 +563,13 @@ record_multiplexer::handle_invalid_record(
         int64_t estimated_size = (key ? key->size_bytes() : 0)
                                  + (val ? val->size_bytes() : 0);
 
-        auto invalid_record_type_resolver = binary_type_resolver{};
-        auto resolved_buf_type
-          = co_await invalid_record_type_resolver.resolve_buf_type(
-            std::move(val), {});
-
+        auto resolved_buf_type = type_and_buf::make_raw_binary(std::move(val));
         auto record_data_res = co_await key_value_translator{}.translate_data(
           _ntp.tp.partition,
           offset,
           std::move(key),
-          resolved_buf_type.value().type,
-          std::move(resolved_buf_type.value().parsable_buf),
+          resolved_buf_type.type,
+          std::move(resolved_buf_type.parsable_buf),
           ts,
           headers);
         if (record_data_res.has_error()) {
