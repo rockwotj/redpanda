@@ -145,6 +145,7 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                                  + (val ? val->size_bytes() : 0);
         chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
           header_kvs;
+        header_kvs.reserve(record.headers().size());
         for (auto& hdr : record.headers()) {
             header_kvs.emplace_back(hdr.share_key_opt(), hdr.share_value_opt());
         }
@@ -355,9 +356,8 @@ ss::future<writer_error> record_multiplexer::flush_writers() {
     if (_error && !is_recoverable_error(_error.value())) {
         co_return *_error;
     }
-    auto result = co_await ss::coroutine::as_future(
-      ss::max_concurrent_for_each(
-        _writers, 10, [](auto& entry) { return entry.second->flush(); }));
+    auto result = co_await ss::coroutine::as_future(ss::max_concurrent_for_each(
+      _writers, 10, [](auto& entry) { return entry.second->flush(); }));
     if (result.failed()) {
         vlog(_log.warn, "Error flushing writers: {}", result.get_exception());
         _error = writer_error::flush_error;
