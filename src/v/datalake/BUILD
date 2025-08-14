@@ -368,6 +368,7 @@ redpanda_cc_library(
         "//src/v/iceberg/conversion:schema_protobuf",
         "//src/v/iceberg/conversion/json_schema:frontend",
         "//src/v/metrics",
+        "//src/v/model",
         "//src/v/pandaproxy/schema_registry:registry",
         "//src/v/schema:registry",
         "@avro",

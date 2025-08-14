@@ -14,6 +14,7 @@
 #include "datalake/schema_identifier.h"
 #include "iceberg/datatypes.h"
 #include "metrics/metrics.h"
+#include "model/record.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "utils/chunked_kv_cache.h"
 
@@ -137,8 +138,10 @@ public:
         invalid_config,
     };
     friend std::ostream& operator<<(std::ostream&, const errc&);
-    virtual ss::future<checked<type_and_buf, errc>>
-    resolve_buf_type(std::optional<iobuf> b) const = 0;
+    virtual ss::future<checked<type_and_buf, errc>> resolve_buf_type(
+      std::optional<iobuf> payload,
+      std::span<model::record_header> headers) const
+      = 0;
     // TODO(iceberg): This should be it's own interface.
     virtual ss::future<checked<resolved_type, errc>>
       resolve_identifier(schema_identifier) const = 0;
@@ -149,8 +152,9 @@ public:
 // iceberg.
 class binary_type_resolver : public type_resolver {
 public:
-    ss::future<checked<type_and_buf, type_resolver::errc>>
-    resolve_buf_type(std::optional<iobuf> b) const override;
+    ss::future<checked<type_and_buf, type_resolver::errc>> resolve_buf_type(
+      std::optional<iobuf> payload,
+      std::span<model::record_header> headers) const override;
 
     ss::future<checked<resolved_type, errc>>
       resolve_identifier(schema_identifier) const override;
@@ -167,8 +171,9 @@ public:
       : sr_(sr)
       , cache_(sc) {}
 
-    ss::future<checked<type_and_buf, type_resolver::errc>>
-    resolve_buf_type(std::optional<iobuf> b) const override;
+    ss::future<checked<type_and_buf, type_resolver::errc>> resolve_buf_type(
+      std::optional<iobuf> payload,
+      std::span<model::record_header> headers) const override;
 
     ss::future<checked<resolved_type, errc>>
       resolve_identifier(schema_identifier) const override;
@@ -203,8 +208,9 @@ public:
       = delete;
     ~latest_subject_schema_resolver() override = default;
 
-    ss::future<checked<type_and_buf, type_resolver::errc>>
-    resolve_buf_type(std::optional<iobuf> b) const override;
+    ss::future<checked<type_and_buf, type_resolver::errc>> resolve_buf_type(
+      std::optional<iobuf> payload,
+      std::span<model::record_header> headers) const override;
 
     ss::future<checked<resolved_type, errc>>
       resolve_identifier(schema_identifier) const override;

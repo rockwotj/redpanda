@@ -150,7 +150,7 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
         }
 
         auto val_type_res = co_await _type_resolver.resolve_buf_type(
-          std::move(val));
+          std::move(val), record.headers());
         if (val_type_res.has_error()) {
             auto err = val_type_res.error();
             vlog(
@@ -563,8 +563,9 @@ record_multiplexer::handle_invalid_record(
                                  + (val ? val->size_bytes() : 0);
 
         auto invalid_record_type_resolver = binary_type_resolver{};
-        auto resolved_buf_type = co_await invalid_record_type_resolver
-                                   .resolve_buf_type(std::move(val));
+        auto resolved_buf_type
+          = co_await invalid_record_type_resolver.resolve_buf_type(
+            std::move(val), {});
 
         auto record_data_res = co_await key_value_translator{}.translate_data(
           _ntp.tp.partition,

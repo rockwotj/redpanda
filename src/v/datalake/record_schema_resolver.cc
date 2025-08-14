@@ -347,7 +347,8 @@ type_and_buf type_and_buf::make_raw_binary(std::optional<iobuf> b) {
 }
 
 ss::future<checked<type_and_buf, type_resolver::errc>>
-binary_type_resolver::resolve_buf_type(std::optional<iobuf> b) const {
+binary_type_resolver::resolve_buf_type(
+  std::optional<iobuf> b, std::span<model::record_header>) const {
     co_return type_and_buf::make_raw_binary(std::move(b));
 }
 
@@ -359,7 +360,8 @@ binary_type_resolver::resolve_identifier(schema_identifier) const {
 }
 
 ss::future<checked<type_and_buf, type_resolver::errc>>
-record_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
+record_schema_resolver::resolve_buf_type(
+  std::optional<iobuf> b, std::span<model::record_header>) const {
     if (!b.has_value()) {
         vlog(datalake_log.trace, "Ignoring tombstone value");
         co_return errc::bad_input;
@@ -434,7 +436,8 @@ checked<std::vector<int32_t>, type_resolver::errc> compute_message_offsets(
 } // namespace
 
 ss::future<checked<type_and_buf, type_resolver::errc>>
-latest_subject_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
+latest_subject_schema_resolver::resolve_buf_type(
+  std::optional<iobuf> b, std::span<model::record_header>) const {
     auto duration = std::chrono::duration_cast<ss::lowres_clock::duration>(
       cache_duration_());
     if (

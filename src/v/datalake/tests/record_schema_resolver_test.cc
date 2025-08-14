@@ -145,7 +145,7 @@ TEST_F(RecordSchemaResolverTest, TestAvroSchemaHappyPath) {
     buf.append(generate_dummy_body());
 
     auto resolver = record_schema_resolver(*sr);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -175,7 +175,7 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPath) {
     buf.append(generate_dummy_body());
 
     auto resolver = record_schema_resolver(*sr);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -204,7 +204,7 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPathNested) {
     buf.append(generate_dummy_body());
 
     auto resolver = record_schema_resolver(*sr);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -275,7 +275,7 @@ message NestedMessage {
     buf.append(generate_dummy_body());
 
     auto resolver = record_schema_resolver(*sr);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -305,7 +305,7 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPathNoOffsets) {
     buf.append(generate_dummy_body());
 
     auto resolver = record_schema_resolver(*sr);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -331,7 +331,7 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaBadOffsets) {
     buf.append(generate_dummy_body());
 
     auto resolver = record_schema_resolver(*sr);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_TRUE(res.has_error());
     ASSERT_EQ(res.error(), type_resolver::errc::bad_input);
 }
@@ -343,7 +343,7 @@ TEST_F(RecordSchemaResolverTest, TestJsonSchemaHappyPath) {
     buf.append(generate_dummy_body());
 
     auto resolver = record_schema_resolver(*sr);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -369,7 +369,7 @@ TEST_F(RecordSchemaResolverTest, TestMissingMagic) {
     // Write body but no magic.
     buf.append(generate_dummy_body());
     auto resolver = record_schema_resolver(*sr);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_TRUE(res.has_error());
     ASSERT_EQ(res.error(), type_resolver::errc::bad_input);
 }
@@ -382,14 +382,14 @@ TEST_F(RecordSchemaResolverTest, TestSchemaRegistryError) {
       std::make_exception_ptr(std::runtime_error("injected")));
 
     auto resolver = record_schema_resolver(*sr);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_TRUE(res.has_error());
     ASSERT_EQ(res.error(), type_resolver::errc::registry_error);
 
     // We can try again when there are no injected errors and there should be
     // no issue.
     sr->set_inject_failures(nullptr);
-    res = resolver.resolve_buf_type(buf.copy()).get();
+    res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -408,7 +408,7 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Protobuf) {
       std::nullopt,
       config::mock_binding(std::chrono::milliseconds(0s)),
       std::nullopt);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -433,7 +433,7 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Protobuf_MessageName) {
       "datalake.proto.nested_message.inner_message_t1",
       config::mock_binding(std::chrono::milliseconds(0s)),
       std::nullopt);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -468,7 +468,7 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Avro) {
       std::nullopt,
       config::mock_binding(std::chrono::milliseconds(0s)),
       std::nullopt);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -498,7 +498,7 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Json) {
       std::nullopt,
       config::mock_binding(std::chrono::milliseconds(0s)),
       std::nullopt);
-    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
@@ -666,7 +666,7 @@ TEST(CachedRecordSchemaResolverTest, TestProtobufSchemaCache) {
         sr->reset_counts();
         size_t expected_sr_count = expect_sr_access ? 1 : 0;
 
-        auto res = resolver.resolve_buf_type(buf.copy()).get();
+        auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
         ASSERT_FALSE(res.has_error());
         auto& resolved_buf = res.value();
         ASSERT_TRUE(resolved_buf.type.has_value());
@@ -707,7 +707,7 @@ TEST(CachedRecordSchemaResolverTest, TestAvroSchemaCache) {
         sr->reset_counts();
         size_t expected_sr_count = expect_sr_access ? 1 : 0;
 
-        auto res = resolver.resolve_buf_type(buf.copy()).get();
+        auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
         ASSERT_FALSE(res.has_error());
         auto& resolved_buf = res.value();
         ASSERT_TRUE(resolved_buf.type.has_value());
@@ -747,7 +747,7 @@ TEST(CachedRecordSchemaResolverTest, TestJsonSchemaCache) {
         sr->reset_counts();
         size_t expected_sr_count = expect_sr_access ? 1 : 0;
 
-        auto res = resolver.resolve_buf_type(buf.copy()).get();
+        auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
         ASSERT_FALSE(res.has_error());
         auto& resolved_buf = res.value();
         ASSERT_TRUE(resolved_buf.type.has_value());
@@ -793,7 +793,7 @@ TEST(CachedRecordSchemaResolverTest, TestSchemaCacheEviction) {
         sr->reset_counts();
         size_t expected_sr_count = expect_sr_access ? 1 : 0;
 
-        auto res = resolver.resolve_buf_type(buf.copy()).get();
+        auto res = resolver.resolve_buf_type(buf.copy(), {}).get();
         ASSERT_FALSE(res.has_error());
         auto& resolved_buf = res.value();
         ASSERT_TRUE(resolved_buf.type.has_value());
