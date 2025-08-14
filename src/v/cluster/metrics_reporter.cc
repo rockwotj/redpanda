@@ -298,7 +298,10 @@ metrics_reporter::build_metrics_snapshot() {
             ++snapshot.topics_with_iceberg_kv;
             break;
         case model::iceberg_mode::variant::value_schema_id_prefix:
-            ++snapshot.topics_with_iceberg_schema_id;
+            ++snapshot.topics_with_iceberg_schema_id_prefix;
+            break;
+        case model::iceberg_mode::variant::value_schema_id_header:
+            ++snapshot.topics_with_iceberg_schema_id_header;
             break;
         case model::iceberg_mode::variant::value_schema_latest:
             ++snapshot.topics_with_iceberg_schema_latest;
@@ -609,7 +612,9 @@ void rjson_serialize(
     w.Key("topics_with_iceberg_key_value");
     w.Uint64(snapshot.topics_with_iceberg_kv);
     w.Key("topics_with_iceberg_value_schema_id_prefix");
-    w.Uint64(snapshot.topics_with_iceberg_schema_id);
+    w.Uint64(snapshot.topics_with_iceberg_schema_id_prefix);
+    w.Key("topics_with_iceberg_value_schema_id_header");
+    w.Uint64(snapshot.topics_with_iceberg_schema_id_header);
     w.Key("topics_with_iceberg_latest_protobuf_value");
     w.Uint64(snapshot.topics_with_iceberg_schema_latest);
 

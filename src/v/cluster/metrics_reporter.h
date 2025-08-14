@@ -94,7 +94,8 @@ public:
         uint32_t partition_count{0};
 
         uint32_t topics_with_iceberg_kv{0};
-        uint32_t topics_with_iceberg_schema_id{0};
+        uint32_t topics_with_iceberg_schema_id_prefix{0};
+        uint32_t topics_with_iceberg_schema_id_header{0};
         uint32_t topics_with_iceberg_schema_latest{0};
 
         cluster_version active_logical_version{invalid_version};

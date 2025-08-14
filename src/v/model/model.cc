@@ -611,6 +611,8 @@ iceberg_mode iceberg_mode::key_value
   = iceberg_mode::make<iceberg_mode::variant::key_value>();
 iceberg_mode iceberg_mode::value_schema_id_prefix
   = iceberg_mode::make<iceberg_mode::variant::value_schema_id_prefix>();
+iceberg_mode iceberg_mode::value_schema_id_header
+  = iceberg_mode::make<iceberg_mode::variant::value_schema_id_header>();
 
 void write(iobuf& out, const iceberg_mode& m) {
     using serde::write;
@@ -636,6 +638,9 @@ void read_nested(
     case iceberg_mode::variant::value_schema_id_prefix:
         m = iceberg_mode::value_schema_id_prefix;
         return;
+    case iceberg_mode::variant::value_schema_id_header:
+        m = iceberg_mode::value_schema_id_header;
+        return;
     case iceberg_mode::variant::value_schema_latest:
         ss::sstring msg_name;
         read_nested(in, msg_name, bytes_left_limit);
@@ -656,6 +661,8 @@ std::ostream& operator<<(std::ostream& os, const iceberg_mode& mode) {
         return os << "key_value";
     case iceberg_mode::variant::value_schema_id_prefix:
         return os << "value_schema_id_prefix";
+    case iceberg_mode::variant::value_schema_id_header:
+        return os << "value_schema_id_header";
     case iceberg_mode::variant::value_schema_latest:
         os << "value_schema_latest";
         bool delimiter = false;
@@ -715,6 +722,8 @@ std::istream& operator>>(std::istream& is, iceberg_mode& mode) {
         mode = iceberg_mode::key_value;
     } else if (s == "value_schema_id_prefix") {
         mode = iceberg_mode::value_schema_id_prefix;
+    } else if (s == "value_schema_id_header") {
+        mode = iceberg_mode::value_schema_id_header;
     } else if (s.starts_with("value_schema_latest")) {
         s = s.substr(std::strlen("value_schema_latest"));
         auto options = parse_config_options(s);

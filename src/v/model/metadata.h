@@ -613,12 +613,18 @@ public:
         // in the file descriptor. However these can both be overridden by the
         // user.
         value_schema_latest = 3,
+        // Iceberg translation interprets the record value using the schema
+        // id embedded in the header. Kafka serializers record the magic byte
+        // and schema ID in a header named `__value_schema_id`.
+        value_schema_id_header = 4,
     };
     static iceberg_mode disabled;
 
     static iceberg_mode key_value;
 
     static iceberg_mode value_schema_id_prefix;
+
+    static iceberg_mode value_schema_id_header;
 
     // Creates a new iceberg mode with the latest protobuf value kind and the
     // protobuf full name.
@@ -691,6 +697,9 @@ private:
     struct value_schema_id_prefix_impl {
         bool operator==(const value_schema_id_prefix_impl&) const = default;
     };
+    struct value_schema_id_header_impl {
+        bool operator==(const value_schema_id_header_impl&) const = default;
+    };
     struct value_schema_latest_impl {
         ss::sstring message_full_name;
         ss::sstring subject_name;
@@ -701,6 +710,7 @@ private:
       disabled_impl,
       key_value_impl,
       value_schema_id_prefix_impl,
+      value_schema_id_header_impl,
       value_schema_latest_impl>
       _impl;
 };
