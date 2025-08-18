@@ -92,8 +92,6 @@ RUN cmake -G Ninja \
     ../llvm-project/llvm
 
 RUN ninja -j$(nproc) && ninja install
-# This exists as an alias, but it's not in the default installation.
-RUN (cd /opt/install/bin && ln -s llvm-symbolizer llvm-addr2line)
 
 FROM scratch
 
