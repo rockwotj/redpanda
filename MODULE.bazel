@@ -1,7 +1,4 @@
-module(
-    name = "redpanda",
-    repo_name = "com_github_redpanda_data_redpanda",
-)
+module(name = "redpanda")
 
 bazel_dep(name = "rules_boost", repo_name = "com_github_nelhage_rules_boost")
 archive_override(
@@ -153,12 +150,12 @@ COMPILERS = {
     "current": {
         "tars": {
             "aarch64": {
-                "build_date": "2025-08-12",
-                "sha": "270e3ac59f76d36349c6dcf6d9aed6e9d1282d5817bfe78b9f56ad5d8db73907",
+                "build_date": "2025-08-18",
+                "sha": "379689940d133daaa7e559d1b6d426fc90ae3ee5f6b47bc5f2e6801d5ac5cf3e",
             },
             "x86_64": {
-                "build_date": "2025-08-12",
-                "sha": "cd177710f79bb08ff27e88cda809017c915b760ea01c063cda82d3d099ff0f59",
+                "build_date": "2025-08-18",
+                "sha": "aafc4104039bf939b080ffe68829f7589262a0fd59eece1303374889499837e2",
             },
         },
         "version": "20.1.8",

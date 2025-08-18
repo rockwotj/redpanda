@@ -9,6 +9,9 @@ using namespace clang;
 using namespace clang::tidy;
 using namespace clang::ast_matchers;
 
+// Declare the anchor to ensure linkage
+extern volatile int AwesomePrefixCheckModuleAnchor;
+
 class AwesomePrefixCheck : public ClangTidyCheck {
 public:
     AwesomePrefixCheck(StringRef Name, ClangTidyContext* Context)
@@ -40,16 +43,22 @@ namespace {
 class AwesomePrefixCheckModule : public ClangTidyModule {
 public:
     void addCheckFactories(ClangTidyCheckFactories& CheckFactories) override {
-        CheckFactories.registerCheck<AwesomePrefixCheck>("awesomeprefixcheck");
+        CheckFactories.registerCheck<AwesomePrefixCheck>(
+          "redpanda-example-check");
     }
 };
 
 } // namespace
 
-namespace clang::tidy {
-
 // Register the module using this statically initialized variable.
 static ClangTidyModuleRegistry::Add<::AwesomePrefixCheckModule>
-  awesomePrefixCheckInit("redpanda", "Adds 'redpanda' checks.");
+  X("redpanda", "Add redpanda checks.");
 
-} // namespace clang::tidy
+// This anchor is used to force the linker to link in the generated object file
+// and thus register the module.
+volatile int AwesomePrefixCheckModuleAnchor = 0;
+
+// Force reference to the anchor to ensure it gets linked
+__attribute__((constructor)) void ForceReference() {
+  (void)AwesomePrefixCheckModuleAnchor;
+}
