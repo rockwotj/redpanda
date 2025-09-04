@@ -52,7 +52,7 @@ public:
     ss::future<> apply_raft_snapshot(const iobuf&) final { co_return; }
 
     ss::future<iobuf>
-    take_snapshot(model::offset /*last_included_offset*/) final {
+    take_raft_snapshot(model::offset /*last_included_offset*/) final {
         co_return iobuf{};
     }
 

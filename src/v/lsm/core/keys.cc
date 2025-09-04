@@ -11,9 +11,9 @@
 
 #include "lsm/core/keys.h"
 
-#include <seastar/core/bitops.hh>
+#include "base/vassert.h"
 
-#include <absl/strings/escaping.h>
+#include <seastar/core/bitops.hh>
 
 #include <limits>
 #include <type_traits>
@@ -24,9 +24,9 @@ namespace lsm::core {
 core::internal_key core::internal_key::encode(parts p) {
     core::internal_key::value_t v(
       value_t::initialized_later{}, p.key.size() + 1 + sizeof(uint64_t));
-    assert(
-      std::ranges::find(p.key, '\0') == p.key.end()
-      && "key must not contain null characters");
+    dassert(
+      std::ranges::find(p.key, '\0') == p.key.end(),
+      "key must not contain null characters");
     // First we append the user key.
     std::ranges::copy(p.key, v.data());
     // Then we null terminate, so that keys of different lengths compare
@@ -62,21 +62,39 @@ internal_key::parts internal_key::decode() const {
     return p;
 }
 
-std::ostream& operator<<(std::ostream& os, const internal_key::parts& p) {
-    return os << fmt::format(
-             "internal_key_parts={{key={},offset={},type={}}}",
-             p.key,
-             p.offset,
-             std::to_underlying(p.type));
+fmt::iterator internal_key::parts::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "internal_key_parts={{key={},offset={},type={}}}",
+      key,
+      offset,
+      std::to_underlying(type));
 }
 
-std::ostream& operator<<(std::ostream& os, const internal_key& k) {
+fmt::iterator internal_key::format_to(fmt::iterator it) const {
     uint64_t encoded; // NOLINT
     std::memcpy(
-      &encoded, &k._value[k._value.size() - sizeof(encoded)], sizeof(encoded));
+      &encoded, &_value[_value.size() - sizeof(encoded)], sizeof(encoded));
     encoded = ~ss::be_to_cpu(encoded);
-    return os << fmt::format(
-             "internal_key={{user={},suffix=o{:08o}}}", k.user_key(), encoded);
+    return fmt::format_to(
+      it, "internal_key={{user={},suffix=o{:08o}}}", user_key(), encoded);
 }
 
+fmt::iterator internal_key_view::format_to(fmt::iterator it) const {
+    uint64_t encoded; // NOLINT
+    std::memcpy(
+      &encoded, &_value[_value.size() - sizeof(encoded)], sizeof(encoded));
+    encoded = ~ss::be_to_cpu(encoded);
+    return fmt::format_to(
+      it, "internal_key_view={{user={},suffix=o{:08o}}}", user_key(), encoded);
+}
+
+internal_key::parts
+internal_key::parts::value(std::string_view key, model::offset offset) {
+    return {.key = key, .offset = offset, .type = value_type::value};
+}
+internal_key::parts
+internal_key::parts::tombstone(std::string_view key, model::offset offset) {
+    return {.key = key, .offset = offset, .type = value_type::tombstone};
+}
 } // namespace lsm::core

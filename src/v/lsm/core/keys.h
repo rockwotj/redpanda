@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/sstring.hh>
@@ -30,7 +31,7 @@ enum class value_type : uint8_t {
 // And internal key is an encoded key for internal DB usage.
 //
 // It is made up of three parts:
-//  1. The user key.
+//  1. The user key, which must NOT contain a `null` byte.
 //  2. The sequence number, which is the offset in the log.
 //  3. The value type, which is either a regular value or a tombstone.
 //
@@ -49,8 +50,12 @@ public:
         model::offset offset = model::offset(0);
         value_type type = value_type::value;
 
+        // Create a value internal key
+        static parts value(std::string_view key, model::offset offset);
+        // Create a tombstone internal key
+        static parts tombstone(std::string_view key, model::offset offset);
         bool operator==(const parts& other) const = default;
-        friend std::ostream& operator<<(std::ostream& os, const parts&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     internal_key() = default;
@@ -73,7 +78,7 @@ public:
     auto operator<=>(const internal_key&) const = default;
     bool operator<(const internal_key&) const = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const internal_key&);
+    fmt::iterator format_to(fmt::iterator) const;
 
 private:
     friend class internal_key_view;
@@ -109,12 +114,13 @@ public:
         k._value = internal_key::value_t(_value);
         return k;
     }
-    //
+    // This internal key as a string view.
     explicit operator std::string_view() const { return _value; }
 
     bool operator==(const internal_key_view& other) const = default;
     auto operator<=>(const internal_key_view&) const = default;
     bool operator<(const internal_key_view&) const = default;
+    fmt::iterator format_to(fmt::iterator) const;
 
 private:
     explicit internal_key_view(std::string_view v)

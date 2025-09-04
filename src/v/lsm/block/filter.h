@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "lsm/block/contents.h"
 #include "lsm/core/keys.h"
 

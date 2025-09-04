@@ -28,7 +28,7 @@ builder::builder(ss::output_stream<char>&& os, options opts)
   : _output(std::move(os))
   , _opts(opts) {}
 
-ss::future<> builder::add(ss::sstring key, iobuf value) {
+ss::future<> builder::add(core::internal_key key, iobuf value) {
     _block.add(std::move(key), std::move(value));
     if (_block.current_size_estimate() > _opts.block_size) {
         co_await flush();
@@ -47,13 +47,12 @@ ss::future<> builder::flush() {
 }
 
 ss::future<block::handle>
-builder::write_raw_block(iobuf buf, compression::type comp_type) {
-    if (comp_type != compression::type::none) {
-        buf = co_await compression::stream_compressor::compress(
-          std::move(buf), _opts.compression);
+builder::write_raw_block(iobuf buf, compression_type comp_type) {
+    if (comp_type != compression_type::none) {
+        buf = co_await compress(std::move(buf), comp_type);
     }
     // Make sure the CRC covers the type
-    buf.append(std::to_array({static_cast<uint8_t>(_opts.compression)}));
+    buf.append(std::to_array({std::to_underlying(comp_type)}));
     crc::crc32c crc;
     crc_extend_iobuf(crc, buf);
     buf.append(
@@ -73,17 +72,18 @@ ss::future<> builder::finish() {
 
     if (_filter) {
         filter_block_handle = co_await write_raw_block(
-          _filter->finish(), compression::type::none);
+          _filter->finish(), compression_type::none);
     }
 
     // write metaindex block
     block::builder meta_index_block;
     if (_filter) {
-        ss::sstring key = "filter.RedpandaBloomV0";
-        meta_index_block.add(key, filter_block_handle.as_iobuf());
+        auto key = core::internal_key::encode(
+          {.key = "filter.RedpandaBloomV0"});
+        meta_index_block.add(std::move(key), filter_block_handle.as_iobuf());
     }
     metaindex_block_handle = co_await write_raw_block(
-      meta_index_block.finish(), compression::type::none);
+      meta_index_block.finish(), compression_type::none);
 
     // write index block
     block::builder index_block;
@@ -95,7 +95,7 @@ ss::future<> builder::finish() {
         // r->pending_index_entry = false;
     }
     index_block_handle = co_await write_raw_block(
-      index_block.finish(), compression::type::none);
+      index_block.finish(), compression_type::none);
 
     // write footer
 

@@ -134,7 +134,6 @@ redpanda_cc_library(
     implementation_deps = [
         ":iobuf_parser",
     ],
-    include_prefix = "bytes",
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",

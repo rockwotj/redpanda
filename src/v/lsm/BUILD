@@ -10,7 +10,6 @@ redpanda_cc_library(
     hdrs = [
         "memtable.h",
     ],
-    include_prefix = "lsm",
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",

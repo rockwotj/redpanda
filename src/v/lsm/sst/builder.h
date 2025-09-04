@@ -13,10 +13,11 @@
 
 #include "base/seastarx.h"
 #include "base/units.h"
-#include "compression/compression.h"
 #include "lsm/block/builder.h"
 #include "lsm/block/filter.h"
 #include "lsm/block/handle.h"
+#include "lsm/core/compression.h"
+#include "lsm/core/keys.h"
 
 #include <seastar/core/iostream.hh>
 
@@ -33,7 +34,7 @@ public:
         // much smaller.
         size_t block_size = 4_KiB;
         // The compression type to use for SST blocks.
-        compression::type compression = compression::type::none;
+        compression_type compression;
     };
 
     // Construct a new builder that will write to the given file.
@@ -41,7 +42,7 @@ public:
 
     // Add key, value to the table being constructed.
     // REQUIRES: key is after any previously added key according to comparator.
-    ss::future<> add(ss::sstring key, iobuf value);
+    ss::future<> add(core::internal_key key, iobuf value);
 
     // Finish building the table. Stops using the file passed to the
     // constructor after this function returns.
@@ -54,7 +55,7 @@ public:
 private:
     explicit builder(ss::output_stream<char>&&, options);
 
-    ss::future<block::handle> write_raw_block(iobuf, compression::type);
+    ss::future<block::handle> write_raw_block(iobuf, compression_type);
     ss::future<> flush();
 
     size_t _written_bytes = 0;

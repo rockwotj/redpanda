@@ -9,14 +9,13 @@
  * by the Apache License, Version 2.0
  */
 
+#include "absl/container/fixed_array.h"
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "bytes/iobuf.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/temporary_buffer.hh>
-
-#include <absl/container/fixed_array.h>
 
 #include <compare>
 #include <ranges>

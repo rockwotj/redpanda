@@ -8,7 +8,6 @@ redpanda_cc_library(
     hdrs = [
         "iterator.h",
     ],
-    include_prefix = "lsm/core",
     visibility = ["//visibility:public"],
     deps = [
         ":keys",
@@ -24,13 +23,23 @@ redpanda_cc_library(
     hdrs = [
         "keys.h",
     ],
-    include_prefix = "lsm/core",
     deps = [
         "//src/v/base",
-        "//src/v/bytes",
         "//src/v/model",
         "//src/v/utils:named_type",
-        "@abseil-cpp//absl/strings",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "compression",
+    srcs = ["compression.cc"],
+    hdrs = ["compression.h"],
+    implementation_deps = [
+        "//src/v/compression",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
         "@seastar",
     ],
 )
