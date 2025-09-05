@@ -11,15 +11,14 @@
 
 #pragma once
 
-namespace lsm::sst {
+#include "lsm/io/persistence.h"
 
-class table {
-public:
-    ~table();
-    static ss::future<table> open();
+#include <filesystem>
 
-private:
-    explicit table(std::unique_ptr<impl>);
-};
+namespace lsm::io {
 
-} // namespace lsm::sst
+// Open a persistence object at the specified directory.
+ss::future<std::unique_ptr<persistence>>
+open_disk_persistence(std::filesystem::path directory);
+
+} // namespace lsm::io

@@ -32,7 +32,7 @@ public:
     virtual ~sequential_file_reader() = default;
 
     // Read up to "n" bytes from the file.
-    virtual ss::future<ioarray> read(size_t n) = 0;
+    virtual ss::future<iobuf> read(size_t n) = 0;
 
     // Skip "n" bytes form the file.
     //

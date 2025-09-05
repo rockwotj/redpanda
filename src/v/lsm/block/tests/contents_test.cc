@@ -11,29 +11,32 @@
 
 #include "base/seastarx.h"
 #include "lsm/block/contents.h"
+#include "lsm/io/memory_persistence.h"
 #include "test_utils/test.h"
-#include "utils/file_io.h"
 
 #include <seastar/core/file.hh>
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
-// NOLINTNEXTLINE(*err58*)
-static const std::filesystem::path test_path = std::getenv("TEST_TMPDIR");
-
 TEST_CORO(Contents, StringView) {
+    auto persistence = lsm::io::make_memory_persistence();
     iobuf b;
-    for (char c : {'a', 'b', 'c'}) {
-        b.append_str(std::string(128_KiB, c));
+    {
+        for (char c : {'a', 'b', 'c'}) {
+            b.append(iobuf::from(std::string(128_KiB, c)));
+        }
+        auto file = co_await persistence->open_sequential_writer("foo.txt");
+        co_await file->append(b.share());
+        co_await file->close();
     }
-    co_await write_fully(test_path / "foo.txt", b.share(0, b.size_bytes()));
-    auto file = co_await ss::open_file_dma(
-      std::string(test_path / "foo.txt"), ss::open_flags::ro);
+    auto file = co_await persistence->open_random_access_reader("foo.txt");
+    ASSERT_TRUE_CORO(bool(file));
     for (auto offset : std::to_array<size_t>({0, 1, 2, 3, 4, 5, 10, 64_KiB})) {
         auto buf = b.share(offset, b.size_bytes() - offset);
         auto contents = co_await lsm::block::contents::read(
-          file, lsm::block::handle{.offset = offset, .size = buf.size_bytes()});
+          file->get(),
+          lsm::block::handle{.offset = offset, .size = buf.size_bytes()});
         std::vector<std::pair<size_t, size_t>> testcases{
           // clang-format off
           {0, 1},
@@ -65,20 +68,28 @@ TEST_CORO(Contents, StringView) {
               << ", len: " << len << ", expected: " << expected;
         }
     }
+    co_await (*file)->close();
+    co_await persistence->close();
 }
 
 TEST_CORO(Contents, IobufShare) {
+    auto persistence = lsm::io::make_memory_persistence();
     iobuf b;
-    for (char c : {'a', 'b', 'c'}) {
-        b.append_str(std::string(128_KiB, c));
+    {
+        for (char c : {'a', 'b', 'c'}) {
+            b.append(iobuf::from(std::string(128_KiB, c)));
+        }
+        auto file = co_await persistence->open_sequential_writer("foo.txt");
+        co_await file->append(b.share());
+        co_await file->close();
     }
-    co_await write_fully(test_path / "foo.txt", b.share(0, b.size_bytes()));
-    auto file = co_await ss::open_file_dma(
-      std::string(test_path / "foo.txt"), ss::open_flags::ro);
+    auto file = co_await persistence->open_random_access_reader("foo.txt");
+    ASSERT_TRUE_CORO(bool(file));
     for (auto offset : std::to_array<size_t>({0, 1, 2, 3, 4, 5, 10, 64_KiB})) {
         auto buf = b.share(offset, b.size_bytes() - offset);
         auto contents = co_await lsm::block::contents::read(
-          file, lsm::block::handle{.offset = offset, .size = buf.size_bytes()});
+          file->get(),
+          lsm::block::handle{.offset = offset, .size = buf.size_bytes()});
         std::vector<std::pair<size_t, size_t>> testcases{
           // clang-format off
           {0, 1},
@@ -106,4 +117,6 @@ TEST_CORO(Contents, IobufShare) {
               << ", actual: " << actual;
         }
     }
+    co_await (*file)->close();
+    co_await persistence->close();
 }

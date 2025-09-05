@@ -51,6 +51,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:ioarray",
         "//src/v/bytes:iobuf",
+        "//src/v/lsm/io:persistence",
         "@seastar",
     ],
 )

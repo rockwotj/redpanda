@@ -10,6 +10,7 @@ redpanda_cc_gtest(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/lsm/block:contents",
+        "//src/v/lsm/io:memory_persistence",
         "//src/v/test_utils:gtest",
         "//src/v/utils:file_io",
         "@googletest//:gtest",

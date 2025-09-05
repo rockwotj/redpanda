@@ -18,24 +18,10 @@
 
 namespace lsm::block {
 
-ss::future<ss::lw_shared_ptr<contents>> contents::read(ss::file f, handle h) {
-    size_t alignment = f.disk_read_dma_alignment();
-    size_t adjusted_offset = ss::align_down(h.offset, alignment);
-    size_t offset_delta = h.offset - adjusted_offset;
-    auto array = ioarray::aligned(
-      alignment, ss::align_up(h.size + offset_delta, alignment));
-    size_t amt = co_await f.dma_read(adjusted_offset, array.as_iovec());
-    if (amt != array.size()) {
-        throw std::runtime_error(
-          fmt::format(
-            "short read: failed to read {} bytes from block at offset {}, got: "
-            "{}",
-            array.size(),
-            adjusted_offset,
-            amt));
-    }
-    co_return ss::make_lw_shared<contents>(
-      contents(array.share(offset_delta, h.size)));
+ss::future<ss::lw_shared_ptr<contents>>
+contents::read(io::random_access_file_reader* f, handle h) {
+    auto data = co_await f->read(h.offset, h.size);
+    co_return ss::make_lw_shared<contents>(contents(std::move(data)));
 }
 
 ss::lw_shared_ptr<contents> contents::copy_from(const iobuf& buf) {

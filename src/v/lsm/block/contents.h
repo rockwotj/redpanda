@@ -15,6 +15,7 @@
 #include "bytes/ioarray.h"
 #include "bytes/iobuf.h"
 #include "lsm/block/handle.h"
+#include "lsm/io/persistence.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -27,10 +28,8 @@ namespace lsm::block {
 class contents {
 public:
     // Read a block's contents from a file using the given handle.
-    //
-    // TODO: Add a file abstraction to be able to easily switch to remote
-    // storage.
-    static ss::future<ss::lw_shared_ptr<contents>> read(ss::file, handle);
+    static ss::future<ss::lw_shared_ptr<contents>>
+    read(io::random_access_file_reader*, handle);
 
     // Create block contents from copying out of an iobuf.
     //

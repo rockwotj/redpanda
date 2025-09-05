@@ -18,6 +18,8 @@
 
 namespace lsm::io {
 
+namespace {
+
 struct memory_file_state {
     iobuf data;
     int32_t open_read_handles = 0;
@@ -39,11 +41,11 @@ public:
         vassert(_closed, "files must be closed before destructing");
     };
 
-    ss::future<ioarray> read(size_t n) override {
+    ss::future<iobuf> read(size_t n) override {
         auto off = std::min(_offset, _state->data.size_bytes());
         auto max_len = _state->data.size_bytes() - off;
         auto len = std::min(max_len, n);
-        co_return ioarray::copy_from(_state->data.share(off, len));
+        co_return _state->data.share(off, len);
     }
 
     ss::future<> skip(size_t n) override {
@@ -128,10 +130,10 @@ private:
     ss::shared_ptr<memory_file_state> _state;
 };
 
-class memory_persistence::impl {
+class impl : public persistence {
 public:
     ss::future<optional_pointer<sequential_file_reader>>
-    open_sequential_reader(std::string_view name) {
+    open_sequential_reader(std::string_view name) override {
         auto it = _data.find(ss::sstring(name));
         std::unique_ptr<sequential_file_reader> ptr;
         if (it != _data.end()) {
@@ -141,7 +143,7 @@ public:
     }
 
     ss::future<optional_pointer<random_access_file_reader>>
-    open_random_access_reader(std::string_view name) {
+    open_random_access_reader(std::string_view name) override {
         auto it = _data.find(ss::sstring(name));
         std::unique_ptr<random_access_file_reader> ptr;
         if (it != _data.end()) {
@@ -152,7 +154,7 @@ public:
     }
 
     ss::future<std::unique_ptr<sequential_file_writer>>
-    open_sequential_writer(std::string_view name) {
+    open_sequential_writer(std::string_view name) override {
         auto key = std::string(name);
         auto it = _data.try_emplace(
           ss::sstring(name), ss::make_shared<memory_file_state>());
@@ -160,7 +162,7 @@ public:
           it.first->second);
     }
 
-    ss::future<> remove_file(std::string_view name) {
+    ss::future<> remove_file(std::string_view name) override {
         auto it = _data.find(ss::sstring(name));
         if (it == _data.end()) {
             co_return;
@@ -174,7 +176,7 @@ public:
         _data.erase(it);
     }
 
-    ss::coroutine::experimental::generator<ss::sstring> list_files() {
+    ss::coroutine::experimental::generator<ss::sstring> list_files() override {
         auto it = _data.begin();
         while (it != _data.end()) {
             auto key = it->first;
@@ -183,7 +185,7 @@ public:
         }
     }
 
-    ss::future<> close() {
+    ss::future<> close() override {
         for (const auto& [file, state] : _data) {
             vassert(
               state->open_handles() == 0,
@@ -194,42 +196,16 @@ public:
         co_return;
     }
 
-    ~impl() { vassert(_closed, "persistence not properly closed"); }
+    ~impl() override { vassert(_closed, "persistence not properly closed"); }
 
 private:
     bool _closed = false;
     std::map<ss::sstring, ss::shared_ptr<memory_file_state>> _data;
 };
 
-memory_persistence::memory_persistence()
-  : _impl(std::make_unique<impl>()) {}
+} // namespace
 
-memory_persistence::~memory_persistence() = default;
-
-ss::future<optional_pointer<sequential_file_reader>>
-memory_persistence::open_sequential_reader(std::string_view name) {
-    return _impl->open_sequential_reader(name);
+std::unique_ptr<persistence> make_memory_persistence() {
+    return std::make_unique<impl>();
 }
-
-ss::future<optional_pointer<random_access_file_reader>>
-memory_persistence::open_random_access_reader(std::string_view name) {
-    return _impl->open_random_access_reader(name);
-}
-
-ss::future<std::unique_ptr<sequential_file_writer>>
-memory_persistence::open_sequential_writer(std::string_view name) {
-    return _impl->open_sequential_writer(name);
-}
-
-ss::future<> memory_persistence::close() { return _impl->close(); }
-
-ss::future<> memory_persistence::remove_file(std::string_view name) {
-    return _impl->remove_file(name);
-}
-
-ss::coroutine::experimental::generator<ss::sstring>
-memory_persistence::list_files() {
-    return _impl->list_files();
-}
-
 } // namespace lsm::io
