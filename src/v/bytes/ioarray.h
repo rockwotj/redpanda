@@ -9,6 +9,8 @@
  * by the Apache License, Version 2.0
  */
 
+#pragma once
+
 #include "absl/container/fixed_array.h"
 #include "base/seastarx.h"
 #include "base/units.h"

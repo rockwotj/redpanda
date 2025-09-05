@@ -11,7 +11,6 @@
 
 #include "lsm/sst/builder.h"
 
-#include "bytes/iostream.h"
 #include "hashing/crc32c.h"
 #include "lsm/sst/footer.h"
 
@@ -19,14 +18,8 @@
 
 namespace lsm::sst {
 
-ss::future<builder> builder::create(ss::file f, options opts) {
-    auto stream = co_await ss::make_file_output_stream(
-      f, ss::file_output_stream_options{});
-    co_return builder{std::move(stream), opts};
-}
-
-builder::builder(ss::output_stream<char>&& os, options opts)
-  : _output(std::move(os))
+builder::builder(std::unique_ptr<io::sequential_file_writer> w, options opts)
+  : _writer(std::move(w))
   , _opts(opts) {}
 
 ss::future<> builder::add(core::internal_key key, iobuf value) {
@@ -88,7 +81,7 @@ builder::write_raw_block(iobuf buf, compression_type comp_type) {
         crc::mask(crc.value())));
     block::handle h = {.offset = _written_bytes, .size = buf.size_bytes()};
     _written_bytes += h.size;
-    co_await write_iobuf_to_output_stream(std::move(buf), _output);
+    co_await _writer->append(std::move(buf));
     co_return h;
 }
 
@@ -127,13 +120,13 @@ ss::future<> builder::finish() {
       .index_handle = index_block_handle,
     }.as_iobuf();
     _written_bytes += encoded_footer.size_bytes();
-    co_await write_iobuf_to_output_stream(std::move(encoded_footer), _output);
+    co_await _writer->append(std::move(encoded_footer));
 }
 
 size_t builder::num_entries() const { return _added_entries; }
 
 size_t builder::file_size() const { return _written_bytes; }
 
-ss::future<> builder::close() { return _output.close(); }
+ss::future<> builder::close() { return _writer->close(); }
 
 } // namespace lsm::sst

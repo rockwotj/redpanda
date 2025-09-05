@@ -18,6 +18,7 @@
 #include "lsm/block/handle.h"
 #include "lsm/core/compression.h"
 #include "lsm/core/keys.h"
+#include "lsm/io/persistence.h"
 
 #include <seastar/core/iostream.hh>
 
@@ -38,7 +39,7 @@ public:
     };
 
     // Construct a new builder that will write to the given file.
-    static ss::future<builder> create(ss::file, options);
+    builder(std::unique_ptr<io::sequential_file_writer>, options);
 
     // Add key, value to the table being constructed.
     // REQUIRES: key is after any previously added key according to comparator.
@@ -60,21 +61,19 @@ public:
     size_t file_size() const;
 
 private:
-    explicit builder(ss::output_stream<char>&&, options);
-
     ss::future<block::handle> write_raw_block(iobuf, compression_type);
     ss::future<> flush();
 
     size_t _added_entries = 0;
     size_t _written_bytes = 0;
-    bool _pending_index_entry = false;
     block::builder _data_block;
     block::builder _index_block;
     block::handle _pending_handle;
     core::internal_key _last_key;
-    std::optional<block::filter_builder> _filter;
-    ss::output_stream<char> _output;
+    std::unique_ptr<io::sequential_file_writer> _writer;
     options _opts;
+    std::optional<block::filter_builder> _filter;
+    bool _pending_index_entry = false;
 };
 
 } // namespace lsm::sst

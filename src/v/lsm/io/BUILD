@@ -1,0 +1,27 @@
+load("//bazel:build.bzl", "redpanda_cc_library")
+
+package(default_visibility = ["//src/v/lsm:__subpackages__"])
+
+redpanda_cc_library(
+    name = "persistence",
+    hdrs = ["persistence.h"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:ioarray",
+        "//src/v/bytes:iobuf",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "memory_persistence",
+    srcs = ["memory_persistence.cc"],
+    hdrs = ["memory_persistence.h"],
+    deps = [
+        ":persistence",
+        "//src/v/base",
+        "//src/v/bytes:ioarray",
+        "//src/v/bytes:iobuf",
+        "@seastar",
+    ],
+)
