@@ -18,6 +18,8 @@
 namespace lsm {
 
 // The type of compression
+//
+// NOTE: these values are serialized so take care to change them
 enum class compression_type : uint8_t {
     none = 0,
     zstd = 1,

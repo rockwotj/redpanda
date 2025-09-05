@@ -12,6 +12,9 @@ redpanda_cc_library(
     hdrs = [
         "builder.h",
     ],
+    implementation_deps = [
+        ":footer",
+    ],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
@@ -23,5 +26,23 @@ redpanda_cc_library(
         "//src/v/lsm/core:compression",
         "//src/v/lsm/core:keys",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "footer",
+    srcs = [
+        "footer.cc",
+    ],
+    hdrs = [
+        "footer.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf_parser",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/block:handle",
     ],
 )

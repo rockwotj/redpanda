@@ -13,6 +13,7 @@
 
 #include "bytes/iostream.h"
 #include "hashing/crc32c.h"
+#include "lsm/sst/footer.h"
 
 #include <seastar/core/fstream.hh>
 
@@ -29,28 +30,55 @@ builder::builder(ss::output_stream<char>&& os, options opts)
   , _opts(opts) {}
 
 ss::future<> builder::add(core::internal_key key, iobuf value) {
-    _block.add(std::move(key), std::move(value));
-    if (_block.current_size_estimate() > _opts.block_size) {
+    if (_pending_index_entry) {
+        // TODO(lsm): We can compute shorter block boundaries for our index
+        // here. For example: consider a block that ends with "the quick brown
+        // fox" and the next block starts with "the who". In this case, we can
+        // encode the index entry with "the r" because it's >= everything in the
+        // previous block and < all entries in the next block.
+        _index_block.add(_last_key, _pending_handle.as_iobuf());
+        _pending_index_entry = false;
+    }
+    if (_filter) {
+        _filter->add_key(key);
+    }
+    // TODO(lsm): It's a bummer we make so many copies of the key here
+    // we only need it when we get to a block boundary (or at the end of the
+    // stream). It might be better to only set the last key when we're about
+    // to flush, otherwise we could decode the last key in the last _data_block
+    // as well. For now, just copy leveldb and do the simple copy.
+    _last_key = key;
+    _data_block.add(std::move(key), std::move(value));
+    ++_added_entries;
+    if (_data_block.current_size_estimate() > _opts.block_size) {
         co_await flush();
     }
 }
 
 ss::future<> builder::flush() {
-    if (_block.empty()) {
+    if (_data_block.empty()) {
         co_return;
     }
-    // File format contains a sequence of blocks where each block has:
-    //    block_data: uint8[n]
-    //    type: uint8
-    //    crc: uint32
-    auto buf = _block.finish();
+    auto buf = _data_block.finish();
+    _pending_handle = co_await write_raw_block(
+      std::move(buf), _opts.compression);
+    _pending_index_entry = true;
+    if (_filter) {
+        _filter->start_block(_written_bytes);
+    }
 }
 
 ss::future<block::handle>
 builder::write_raw_block(iobuf buf, compression_type comp_type) {
     if (comp_type != compression_type::none) {
+        // TODO(lsm): only use compressed version if it actually saves enough
+        // bytes.
         buf = co_await compress(std::move(buf), comp_type);
     }
+    // File format contains a sequence of blocks where each block has:
+    //    block_data: uint8[n]
+    //    type: uint8
+    //    crc: uint32
     // Make sure the CRC covers the type
     buf.append(std::to_array({std::to_underlying(comp_type)}));
     crc::crc32c crc;
@@ -83,24 +111,28 @@ ss::future<> builder::finish() {
         meta_index_block.add(std::move(key), filter_block_handle.as_iobuf());
     }
     metaindex_block_handle = co_await write_raw_block(
-      meta_index_block.finish(), compression_type::none);
+      meta_index_block.finish(), _opts.compression);
 
-    // write index block
-    block::builder index_block;
-    if (_filter) {
-        // r->options.comparator->FindShortSuccessor(&r->last_key);
-        // std::string handle_encoding;
-        // r->pending_handle.EncodeTo(&handle_encoding);
-        // r->index_block.Add(r->last_key, Slice(handle_encoding));
-        // r->pending_index_entry = false;
+    if (_pending_index_entry) {
+        // TODO(lsm): See the TODO in builder::add
+        _index_block.add(_last_key, _pending_handle.as_iobuf());
+        _pending_index_entry = false;
     }
     index_block_handle = co_await write_raw_block(
-      index_block.finish(), compression_type::none);
+      _index_block.finish(), compression_type::none);
 
     // write footer
-
-    co_return;
+    iobuf encoded_footer = footer{
+      .metaindex_handle = metaindex_block_handle,
+      .index_handle = index_block_handle,
+    }.as_iobuf();
+    _written_bytes += encoded_footer.size_bytes();
+    co_await write_iobuf_to_output_stream(std::move(encoded_footer), _output);
 }
+
+size_t builder::num_entries() const { return _added_entries; }
+
+size_t builder::file_size() const { return _written_bytes; }
 
 ss::future<> builder::close() { return _output.close(); }
 

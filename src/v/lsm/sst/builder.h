@@ -52,14 +52,26 @@ public:
     // after finish is called in the case of a successful table build.
     ss::future<> close();
 
+    // The number of calls to `add` so far.
+    size_t num_entries() const;
+    // Size of the file generated so far.
+    //
+    // If invoked after `finish`, returns the size of the final generated file.
+    size_t file_size() const;
+
 private:
     explicit builder(ss::output_stream<char>&&, options);
 
     ss::future<block::handle> write_raw_block(iobuf, compression_type);
     ss::future<> flush();
 
+    size_t _added_entries = 0;
     size_t _written_bytes = 0;
-    block::builder _block;
+    bool _pending_index_entry = false;
+    block::builder _data_block;
+    block::builder _index_block;
+    block::handle _pending_handle;
+    core::internal_key _last_key;
     std::optional<block::filter_builder> _filter;
     ss::output_stream<char> _output;
     options _opts;

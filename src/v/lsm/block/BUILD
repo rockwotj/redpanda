@@ -26,6 +26,10 @@ redpanda_cc_library(
     hdrs = [
         "handle.h",
     ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf_parser",
+    ],
     deps = [
         "//src/v/bytes:iobuf",
     ],

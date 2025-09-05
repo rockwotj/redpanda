@@ -22,9 +22,12 @@ struct handle {
     uint64_t offset = 0;
     uint64_t size = 0;
 
-    bool operator==(const handle& other) const = default;
+    bool operator==(const handle&) const = default;
 
+    // Encode this handle to an iobuf.
     iobuf as_iobuf() const;
+    // Decode this handle from an iobuf.
+    static handle from_iobuf(iobuf);
 };
 
 } // namespace lsm::block
