@@ -44,14 +44,14 @@ private:
 // A reader for a filter block in an SST.
 class filter_reader {
 public:
-    explicit filter_reader(ss::lw_shared_ptr<block::contents>);
+    explicit filter_reader(ss::lw_shared_ptr<contents>);
 
     // Check if it's possible that the user's key exists in the block at this
     // offset within the SST.
     bool key_may_match(uint64_t block_offset, core::internal_key_view key);
 
 private:
-    ss::lw_shared_ptr<block::contents> _contents;
+    ss::lw_shared_ptr<contents> _contents;
     size_t _offset; // The offset at which the data ends
     size_t _num;
     uint8_t _base_lg;

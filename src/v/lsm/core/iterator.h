@@ -9,12 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
+#pragma once
+
 #include "bytes/iobuf.h"
 #include "lsm/core/keys.h"
 
 #include <seastar/core/future.hh>
-
-#include <string_view>
 
 namespace lsm::core {
 

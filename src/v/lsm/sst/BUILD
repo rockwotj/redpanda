@@ -46,3 +46,31 @@ redpanda_cc_library(
         "//src/v/lsm/block:handle",
     ],
 )
+
+redpanda_cc_library(
+    name = "table",
+    srcs = [
+        "table.cc",
+        "two_level_iterator.cc",
+        "two_level_iterator.h",
+    ],
+    hdrs = [
+        "table.h",
+    ],
+    implementation_deps = [
+        ":footer",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/block",
+        "//src/v/lsm/block:contents",
+        "//src/v/lsm/block:filter",
+        "//src/v/lsm/block:handle",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/core:iterator",
+        "//src/v/lsm/core:keys",
+        "//src/v/lsm/io:persistence",
+        "@abseil-cpp//absl/functional:function_ref",
+        "@seastar",
+    ],
+)
