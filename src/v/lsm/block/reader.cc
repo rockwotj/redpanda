@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "lsm/block/block.h"
+#include "lsm/block/reader.h"
 
 #include "lsm/core/keys.h"
 
@@ -56,13 +56,7 @@ public:
       , _restarts(restarts)
       , _num_restarts(num_restarts)
       , _current(restarts)
-      , _restart_index(num_restarts) {
-        std::print(
-          std::cerr,
-          "iter created with restarts: {}, num_restarts: {}\n",
-          _restarts,
-          _num_restarts);
-    }
+      , _restart_index(num_restarts) {}
 
     bool valid() const final { return _current < _restarts; }
     ss::future<> seek_to_first() final {
@@ -246,7 +240,7 @@ uint32_t num_restarts(const contents& c) {
 
 } // namespace
 
-block::block(ss::lw_shared_ptr<contents> c)
+reader::reader(ss::lw_shared_ptr<contents> c)
   : _data(std::move(c))
   , _restart_offset(0) {
     if (_data->size() > sizeof(uint32_t)) {
@@ -260,7 +254,7 @@ block::block(ss::lw_shared_ptr<contents> c)
     }
 }
 
-std::unique_ptr<core::iterator> block::create_iterator() {
+std::unique_ptr<core::iterator> reader::create_iterator() {
     if (_data->size() < sizeof(uint32_t)) {
         throw std::runtime_error(
           fmt::format("bad block contents, size: {}", _data->size()));

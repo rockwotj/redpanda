@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_gtest(
     name = "keys_test",
@@ -12,5 +12,17 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "iterator_test_harness",
+    hdrs = ["iterator_test_harness.h"],
+    visibility = ["//src/v/lsm:__subpackages__"],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/core:iterator",
+        "//src/v/lsm/core:keys",
+        "@googletest//:gtest",
     ],
 )

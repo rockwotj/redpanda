@@ -45,9 +45,11 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/lsm/block",
         "//src/v/lsm/block:builder",
         "//src/v/lsm/block:contents",
+        "//src/v/lsm/block:reader",
+        "//src/v/lsm/core:keys",
+        "//src/v/lsm/core/tests:iterator_test_harness",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",

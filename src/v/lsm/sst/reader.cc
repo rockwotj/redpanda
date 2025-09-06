@@ -9,12 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
-#include "lsm/sst/table.h"
+#include "lsm/sst/reader.h"
 
-#include "lsm/block/block.h"
 #include "lsm/block/contents.h"
 #include "lsm/block/filter.h"
 #include "lsm/block/handle.h"
+#include "lsm/block/reader.h"
 #include "lsm/io/persistence.h"
 #include "lsm/sst/footer.h"
 #include "two_level_iterator.h"
@@ -25,8 +25,8 @@ namespace lsm::sst {
 
 namespace {
 
-ss::future<std::optional<block::filter_reader>>
-read_filter(io::random_access_file_reader* file, block::block metaindex_block) {
+ss::future<std::optional<block::filter_reader>> read_filter(
+  io::random_access_file_reader* file, block::reader metaindex_block) {
     auto iter = metaindex_block.create_iterator();
     auto key = core::internal_key::encode({.key = "filter.RedpandaBloomV0"});
     co_await iter->seek(key);
@@ -40,10 +40,10 @@ read_filter(io::random_access_file_reader* file, block::block metaindex_block) {
 
 } // namespace
 
-class table::impl {
+class reader::impl {
 public:
     impl(
-      block::block index_block,
+      block::reader index_block,
       std::unique_ptr<io::random_access_file_reader> file,
       std::optional<block::filter_reader> filter)
       : _file(std::move(file))
@@ -85,20 +85,22 @@ private:
         auto handle = block::handle::from_iobuf(std::move(index_value));
         // TODO(lsm): use block cache here
         auto contents = co_await block::contents::read(_file.get(), handle);
-        co_return block::block(std::move(contents)).create_iterator();
+        co_return block::reader(std::move(contents)).create_iterator();
     }
 
     std::unique_ptr<io::random_access_file_reader> _file;
-    block::block _index_block;
+    block::reader _index_block;
     std::optional<block::filter_reader> _filter;
 };
 
-table::table(std::unique_ptr<impl> impl)
+reader::reader(std::unique_ptr<impl> impl)
   : _impl(std::move(impl)) {}
 
-table::~table() = default;
+reader::~reader() = default;
+reader::reader(reader&&) noexcept = default;
+reader& reader::operator=(reader&&) noexcept = default;
 
-ss::future<table> table::open(
+ss::future<reader> reader::open(
   std::unique_ptr<io::random_access_file_reader> file, size_t file_size) {
     if (file_size < footer::encoded_length) {
         throw std::runtime_error(
@@ -112,20 +114,20 @@ ss::future<table> table::open(
     auto metaindex_block_contents = co_await block::contents::read(
       file.get(), footer.metaindex_handle);
 
-    block::block index_block(std::move(index_block_contents));
+    block::reader index_block(std::move(index_block_contents));
 
-    block::block metaindex_block(std::move(metaindex_block_contents));
+    block::reader metaindex_block(std::move(metaindex_block_contents));
     auto filter = co_await read_filter(file.get(), metaindex_block);
-    co_return table(
+    co_return reader(
       std::make_unique<impl>(
         std::move(index_block), std::move(file), std::move(filter)));
 }
 
-std::unique_ptr<core::iterator> table::create_iterator() {
+std::unique_ptr<core::iterator> reader::create_iterator() {
     return _impl->create_iterator();
 }
 
-ss::future<> table::internal_get(
+ss::future<> reader::internal_get(
   core::internal_key_view key,
   absl::FunctionRef<ss::future<>(core::internal_key_view, iobuf)> fn) {
     return _impl->internal_get(key, fn);

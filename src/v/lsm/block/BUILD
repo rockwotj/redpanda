@@ -78,12 +78,12 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "block",
+    name = "reader",
     srcs = [
-        "block.cc",
+        "reader.cc",
     ],
     hdrs = [
-        "block.h",
+        "reader.h",
     ],
     deps = [
         ":contents",

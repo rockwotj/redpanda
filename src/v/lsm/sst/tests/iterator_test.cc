@@ -1,0 +1,54 @@
+/*
+ * Copyright 2025 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+#include "base/seastarx.h"
+#include "lsm/core/keys.h"
+#include "lsm/core/tests/iterator_test_harness.h"
+#include "lsm/io/memory_persistence.h"
+#include "lsm/sst/builder.h"
+#include "lsm/sst/reader.h"
+
+#include <seastar/core/file.hh>
+
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
+
+namespace {
+class sst_iterator_factory {
+public:
+    std::unique_ptr<lsm::core::iterator>
+    make_iterator(std::map<lsm::core::internal_key, iobuf> map) {
+        size_t file_size = 0;
+        {
+            auto file = _persistence->open_sequential_writer("foo.sst").get();
+            lsm::sst::builder builder(std::move(file), {});
+            for (auto& [key, value] : map) {
+                builder.add(key, std::move(value)).get();
+            }
+            builder.finish().get();
+            builder.close().get();
+            file_size = builder.file_size();
+        }
+        auto file = _persistence->open_random_access_reader("foo.sst").get();
+        auto reader = lsm::sst::reader::open(std::move(*file), file_size).get();
+        return reader.create_iterator();
+    }
+
+private:
+    std::unique_ptr<lsm::io::persistence> _persistence
+      = lsm::io::make_memory_persistence();
+};
+} // namespace
+
+using SSTIteratorType = ::testing::Types<sst_iterator_factory>;
+
+INSTANTIATE_TYPED_TEST_SUITE_P(
+  SSTIteratorSuite, CoreIteratorTest, SSTIteratorType);

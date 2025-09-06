@@ -18,9 +18,9 @@
 
 namespace lsm::block {
 
-class block {
+class reader {
 public:
-    explicit block(ss::lw_shared_ptr<contents>);
+    explicit reader(ss::lw_shared_ptr<contents>);
 
     std::unique_ptr<core::iterator> create_iterator();
 

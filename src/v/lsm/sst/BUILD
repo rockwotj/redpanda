@@ -48,22 +48,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "table",
+    name = "reader",
     srcs = [
-        "table.cc",
+        "reader.cc",
         "two_level_iterator.cc",
         "two_level_iterator.h",
     ],
     hdrs = [
-        "table.h",
+        "reader.h",
     ],
     implementation_deps = [
         ":footer",
         "//src/v/bytes:iobuf",
-        "//src/v/lsm/block",
         "//src/v/lsm/block:contents",
         "//src/v/lsm/block:filter",
         "//src/v/lsm/block:handle",
+        "//src/v/lsm/block:reader",
     ],
     deps = [
         "//src/v/base",

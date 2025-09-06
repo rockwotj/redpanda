@@ -35,7 +35,7 @@ public:
         // much smaller.
         size_t block_size = 4_KiB;
         // The compression type to use for SST blocks.
-        compression_type compression;
+        compression_type compression = compression_type::none;
     };
 
     // Construct a new builder that will write to the given file.
