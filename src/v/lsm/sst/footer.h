@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "bytes/iobuf.h"
 #include "lsm/block/handle.h"
 
@@ -28,6 +29,7 @@ struct footer {
                                              + sizeof(uint64_t);
 
     bool operator==(const footer&) const = default;
+    fmt::iterator format_to(fmt::iterator) const;
     // Encode this footer as an iobuf.
     iobuf as_iobuf() const;
     // Decode this footer as an iobuf.

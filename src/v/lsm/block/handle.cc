@@ -35,4 +35,8 @@ handle handle::from_iobuf(iobuf buf) {
     return {.offset = o, .size = s};
 }
 
+fmt::iterator handle::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{offset:{},size:{}}}", offset, size);
+}
+
 } // namespace lsm::block

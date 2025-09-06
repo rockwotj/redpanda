@@ -18,10 +18,15 @@
 
 namespace lsm::block {
 
+// A reader of an SST data block.
 class reader {
 public:
     explicit reader(ss::lw_shared_ptr<contents>);
 
+    // Create an iterator for an SST data block.
+    //
+    // The iterator's lifetime is independent from it's reader. The iterator may
+    // (or may not) outlive the reader.
     std::unique_ptr<core::iterator> create_iterator();
 
 private:

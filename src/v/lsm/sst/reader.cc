@@ -79,6 +79,8 @@ public:
         }
     }
 
+    ss::future<> close() { return _file->close(); }
+
 private:
     ss::future<std::unique_ptr<core::iterator>>
     block_reader(iobuf index_value) {
@@ -132,4 +134,7 @@ ss::future<> reader::internal_get(
   absl::FunctionRef<ss::future<>(core::internal_key_view, iobuf)> fn) {
     return _impl->internal_get(key, fn);
 }
+
+ss::future<> reader::close() { return _impl->close(); }
+
 } // namespace lsm::sst

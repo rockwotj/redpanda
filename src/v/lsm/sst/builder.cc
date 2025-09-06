@@ -68,6 +68,7 @@ builder::write_raw_block(iobuf buf, compression_type comp_type) {
         // bytes.
         buf = co_await compress(std::move(buf), comp_type);
     }
+    block::handle h = {.offset = _written_bytes, .size = buf.size_bytes()};
     // File format contains a sequence of blocks where each block has:
     //    block_data: uint8[n]
     //    type: uint8
@@ -79,8 +80,7 @@ builder::write_raw_block(iobuf buf, compression_type comp_type) {
     buf.append(
       std::bit_cast<std::array<uint8_t, sizeof(crc.value())>>(
         crc::mask(crc.value())));
-    block::handle h = {.offset = _written_bytes, .size = buf.size_bytes()};
-    _written_bytes += h.size;
+    _written_bytes += buf.size_bytes();
     co_await _writer->append(std::move(buf));
     co_return h;
 }
@@ -115,10 +115,12 @@ ss::future<> builder::finish() {
       _index_block.finish(), compression_type::none);
 
     // write footer
-    iobuf encoded_footer = footer{
+    footer foot{
       .metaindex_handle = metaindex_block_handle,
       .index_handle = index_block_handle,
-    }.as_iobuf();
+    };
+    fmt::print(stderr, "footer: {}, written_bytes: {}\n", foot, _written_bytes);
+    iobuf encoded_footer = foot.as_iobuf();
     _written_bytes += encoded_footer.size_bytes();
     co_await _writer->append(std::move(encoded_footer));
 }

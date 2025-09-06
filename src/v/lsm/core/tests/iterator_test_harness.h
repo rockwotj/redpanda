@@ -17,6 +17,11 @@
 
 using data = std::map<std::string, std::string>;
 
+template<typename T>
+concept Closeable = requires(T t) {
+    { t.close() } -> std::same_as<void>;
+};
+
 template<typename IteratorFactory>
 class CoreIteratorTest : public ::testing::Test {
 protected:
@@ -26,9 +31,17 @@ protected:
             auto encoded_key = lsm::core::internal_key::encode({.key = key});
             encoded[std::move(encoded_key)] = iobuf::from(value);
         }
-        IteratorFactory factory;
-        return factory.make_iterator(std::move(encoded));
+        return _factory.make_iterator(std::move(encoded));
     }
+
+    void TearDown() override {
+        if constexpr (Closeable<IteratorFactory>) {
+            _factory.close();
+        }
+    }
+
+private:
+    IteratorFactory _factory;
 };
 
 inline lsm::core::internal_key operator""_key(const char* str, size_t) {

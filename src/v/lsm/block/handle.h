@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "bytes/iobuf.h"
 
 #include <cstdint>
@@ -23,6 +24,7 @@ struct handle {
     uint64_t size = 0;
 
     bool operator==(const handle&) const = default;
+    fmt::iterator format_to(fmt::iterator) const;
 
     // Encode this handle to an iobuf.
     iobuf as_iobuf() const;

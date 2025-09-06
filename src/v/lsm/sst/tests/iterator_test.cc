@@ -27,8 +27,9 @@ public:
     std::unique_ptr<lsm::core::iterator>
     make_iterator(std::map<lsm::core::internal_key, iobuf> map) {
         size_t file_size = 0;
+        auto filename = fmt::format("test{}.sst", ++_counter);
         {
-            auto file = _persistence->open_sequential_writer("foo.sst").get();
+            auto file = _persistence->open_sequential_writer(filename).get();
             lsm::sst::builder builder(std::move(file), {});
             for (auto& [key, value] : map) {
                 builder.add(key, std::move(value)).get();
@@ -37,12 +38,23 @@ public:
             builder.close().get();
             file_size = builder.file_size();
         }
-        auto file = _persistence->open_random_access_reader("foo.sst").get();
+        auto file = _persistence->open_random_access_reader(filename).get();
         auto reader = lsm::sst::reader::open(std::move(*file), file_size).get();
-        return reader.create_iterator();
+        auto it = reader.create_iterator();
+        _readers.push_back(std::move(reader));
+        return it;
+    }
+
+    void close() {
+        for (auto& reader : _readers) {
+            reader.close().get();
+        }
+        _persistence->close().get();
     }
 
 private:
+    int _counter = 0;
+    std::vector<lsm::sst::reader> _readers;
     std::unique_ptr<lsm::io::persistence> _persistence
       = lsm::io::make_memory_persistence();
 };

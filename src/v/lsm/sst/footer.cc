@@ -59,4 +59,12 @@ footer footer::from_iobuf(iobuf buf) {
     return {.metaindex_handle = metaindex_handle, .index_handle = index_handle};
 }
 
+fmt::iterator footer::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{metaindex_handle:{},index_handle:{}}}",
+      metaindex_handle,
+      index_handle);
+}
+
 } // namespace lsm::sst

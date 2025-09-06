@@ -10,6 +10,8 @@
  */
 #include "base/vassert.h"
 
+#include "absl/debugging/stacktrace.h"
+#include "absl/debugging/symbolize.h"
 #include "base/seastarx.h"
 #include "base/vassert-register.h"
 
@@ -17,6 +19,7 @@
 #include <seastar/util/log.hh>
 
 #include <atomic>
+#include <span>
 #include <string_view>
 
 using namespace base;
@@ -30,9 +33,24 @@ std::atomic<assert_cb_func> _cb_func{nullptr};
 std::once_flag _cb_func_onceflag{};
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
 
-void assert_handler(const ss::saved_backtrace& bt, std::string_view text) {
+void assert_handler(const ss::saved_backtrace&, std::string_view text) {
     assert_logger.error("{}", text);
-    assert_logger.error("Backtrace:\n{}", bt);
+    static constexpr size_t max_frames = 16;
+    std::array<void*, max_frames> result{};
+    std::array<int, max_frames> sizes{};
+    int depth = absl::GetStackFrames(
+      result.data(), sizes.data(), max_frames, 3);
+    static constexpr int max_sym_len = 64;
+    std::string backtrace;
+    std::string sym;
+    for (void* pc : std::span(result).subspan(0, depth)) {
+        sym.resize(max_sym_len);
+        if (!absl::Symbolize(pc, sym.data(), max_sym_len)) {
+            sym = "(unknown)";
+        }
+        backtrace += fmt::format("\n{}  {}", fmt::ptr(pc), sym);
+    }
+    assert_logger.error("Absl Backtrace:{}", backtrace);
 
     auto cb_func = _cb_func.load();
     if (cb_func != nullptr) {

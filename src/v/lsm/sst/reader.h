@@ -21,8 +21,7 @@
 
 namespace lsm::sst {
 
-// A table is a sorted map from string to string. Tables are immutable and
-// persistent. A table does not need external synchronization to be used.
+// A reader for an SST file.
 class reader {
     class impl;
 
@@ -38,7 +37,9 @@ public:
     static ss::future<reader>
     open(std::unique_ptr<io::random_access_file_reader> file, size_t file_size);
 
-    // Returns a new iterator over the table contents.
+    // Returns a new iterator over the table contents. The iterator may only be
+    // used while the reader is alive, or said another way, the reader must
+    // outlive any iterators to it.
     //
     // The result of create_iterator is initially invalid (caller must call one
     // of the seek* methods on the iterator before using it).
@@ -50,6 +51,11 @@ public:
     ss::future<> internal_get(
       core::internal_key_view key,
       absl::FunctionRef<ss::future<>(core::internal_key_view, iobuf)> fn);
+
+    // Closes the reader and the closes the file it's referencing.
+    //
+    // This must be called before destructing.
+    ss::future<> close();
 
 private:
     explicit reader(std::unique_ptr<impl>);

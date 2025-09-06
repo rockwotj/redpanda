@@ -22,6 +22,8 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "@abseil-cpp//absl/debugging:stacktrace",
+        "@abseil-cpp//absl/debugging:symbolize",
         "@boost//:outcome",
         "@fmt",
         "@seastar",

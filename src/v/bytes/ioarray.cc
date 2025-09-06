@@ -158,10 +158,9 @@ ioarray::string_view ioarray::read_string(size_t pos, size_t length) const {
       length <= max_chunk_size, "length {} must be <= max_chunk_size", length);
     dassert(
       (pos + length) <= _size,
-      "pos {} + length {} must be <= size {} {}",
+      "pos {} + length {} must be <= size {}",
       pos,
       length,
-      _buffers.size(),
       _size);
     pos += _offset;
     auto& buf = _buffers[pos / max_chunk_size];

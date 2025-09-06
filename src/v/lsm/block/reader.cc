@@ -260,7 +260,11 @@ std::unique_ptr<core::iterator> reader::create_iterator() {
           fmt::format("bad block contents, size: {}", _data->size()));
     }
     uint32_t n_restarts = num_restarts(*_data);
-    std::print(std::cerr, "num_restarts: {}\n", n_restarts);
+    fmt::print(
+      stderr,
+      "n_restarts: {} _restart_offset {}\n",
+      n_restarts,
+      _restart_offset);
     if (n_restarts == 0) {
         return core::iterator::create_empty();
     } else {
