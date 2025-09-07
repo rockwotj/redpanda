@@ -22,7 +22,7 @@ builder::builder(std::unique_ptr<io::sequential_file_writer> w, options opts)
   : _writer(std::move(w))
   , _opts(opts) {}
 
-ss::future<> builder::add(core::internal_key key, iobuf value) {
+ss::future<> builder::add(internal::key key, iobuf value) {
     if (_pending_index_entry) {
         // TODO(lsm): We can compute shorter block boundaries for our index
         // here. For example: consider a block that ends with "the quick brown
@@ -99,8 +99,7 @@ ss::future<> builder::finish() {
     // write metaindex block
     block::builder meta_index_block;
     if (_filter) {
-        auto key = core::internal_key::encode(
-          {.key = "filter.RedpandaBloomV0"});
+        auto key = internal::key::encode({.key = "filter.RedpandaBloomV0"});
         meta_index_block.add(std::move(key), filter_block_handle.as_iobuf());
     }
     metaindex_block_handle = co_await write_raw_block(
@@ -119,7 +118,6 @@ ss::future<> builder::finish() {
       .metaindex_handle = metaindex_block_handle,
       .index_handle = index_block_handle,
     };
-    fmt::print(stderr, "footer: {}, written_bytes: {}\n", foot, _written_bytes);
     iobuf encoded_footer = foot.as_iobuf();
     _written_bytes += encoded_footer.size_bytes();
     co_await _writer->append(std::move(encoded_footer));

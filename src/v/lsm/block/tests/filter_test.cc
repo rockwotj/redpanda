@@ -12,7 +12,7 @@
 #include "base/seastarx.h"
 #include "lsm/block/contents.h"
 #include "lsm/block/filter.h"
-#include "lsm/core/keys.h"
+#include "lsm/core/internal/keys.h"
 
 #include <seastar/core/file.hh>
 
@@ -29,19 +29,15 @@ lsm::block::filter_reader make_filter(const keys_by_block& keys) {
     for (const auto& [block, keys_in_block] : keys) {
         builder.start_block(block);
         for (const auto& key : keys_in_block) {
-            builder.add_key(lsm::core::internal_key::encode({.key = key}));
+            builder.add_key(lsm::internal::key::encode({.key = key}));
         }
     }
     auto c = lsm::block::contents::copy_from(builder.finish());
     return lsm::block::filter_reader(std::move(c));
 }
 
-lsm::core::internal_key operator""_key(const char* str, size_t) {
-    return lsm::core::internal_key::encode({
-      .key = str,
-      .offset = model::offset(0),
-      .type = lsm::core::value_type::value,
-    });
+lsm::internal::key operator""_key(const char* str, size_t) {
+    return lsm::internal::key::encode({.key = str});
 }
 } // namespace
 

@@ -12,8 +12,8 @@
 #include "base/seastarx.h"
 #include "lsm/block/builder.h"
 #include "lsm/block/reader.h"
-#include "lsm/core/keys.h"
-#include "lsm/core/tests/iterator_test_harness.h"
+#include "lsm/core/internal/keys.h"
+#include "lsm/core/internal/tests/iterator_test_harness.h"
 
 #include <seastar/core/file.hh>
 
@@ -23,8 +23,8 @@
 namespace {
 class block_iterator_factory {
 public:
-    std::unique_ptr<lsm::core::iterator>
-    make_iterator(std::map<lsm::core::internal_key, iobuf> map) {
+    std::unique_ptr<lsm::internal::iterator>
+    make_iterator(std::map<lsm::internal::key, iobuf> map) {
         lsm::block::builder builder;
         for (auto& [key, value] : map) {
             builder.add(key, std::move(value));

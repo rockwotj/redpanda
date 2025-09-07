@@ -15,7 +15,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/lsm/core:keys",
+        "//src/v/lsm/core/internal:keys",
         "@seastar",
     ],
 )
@@ -72,7 +72,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:chunked_vector",
-        "//src/v/lsm/core:keys",
+        "//src/v/lsm/core/internal:keys",
         "@seastar",
     ],
 )
@@ -88,8 +88,8 @@ redpanda_cc_library(
     deps = [
         ":contents",
         "//src/v/base",
-        "//src/v/lsm/core:iterator",
-        "//src/v/lsm/core:keys",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
         "@seastar",
     ],
 )

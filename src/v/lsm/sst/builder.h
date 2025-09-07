@@ -17,7 +17,7 @@
 #include "lsm/block/filter.h"
 #include "lsm/block/handle.h"
 #include "lsm/core/compression.h"
-#include "lsm/core/keys.h"
+#include "lsm/core/internal/keys.h"
 #include "lsm/io/persistence.h"
 
 #include <seastar/core/iostream.hh>
@@ -43,7 +43,7 @@ public:
 
     // Add key, value to the table being constructed.
     // REQUIRES: key is after any previously added key according to comparator.
-    ss::future<> add(core::internal_key key, iobuf value);
+    ss::future<> add(internal::key key, iobuf value);
 
     // Finish building the table. Stops using the file passed to the
     // constructor after this function returns.
@@ -69,7 +69,7 @@ private:
     block::builder _data_block;
     block::builder _index_block;
     block::handle _pending_handle;
-    core::internal_key _last_key;
+    internal::key _last_key;
     std::unique_ptr<io::sequential_file_writer> _writer;
     options _opts;
     std::optional<block::filter_builder> _filter;

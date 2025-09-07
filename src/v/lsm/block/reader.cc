@@ -11,7 +11,7 @@
 
 #include "lsm/block/reader.h"
 
-#include "lsm/core/keys.h"
+#include "lsm/core/internal/keys.h"
 
 #include <array>
 #include <compare>
@@ -45,7 +45,7 @@ decode_entry(const contents& data, uint32_t offset, uint32_t limit) {
     });
 }
 
-class iter final : public core::iterator {
+class iter final : public internal::iterator {
 public:
     iter(
       ss::lw_shared_ptr<contents> data,
@@ -71,7 +71,7 @@ public:
         }
         return ss::now();
     }
-    ss::future<> seek(core::internal_key_view target) final {
+    ss::future<> seek(internal::key_view target) final {
         // Binary search in restart array to find the last restart point
         // with a key < target
         uint32_t left = 0;
@@ -162,8 +162,8 @@ public:
         } while (parse_next_key() && next_entry_offset() < original);
         return ss::now();
     }
-    core::internal_key_view key() final {
-        return core::internal_key_view::from_encoded(_key);
+    internal::key_view key() final {
+        return internal::key_view::from_encoded(_key);
     }
     iobuf value() final { return _data->share(_value.offset, _value.length); }
 
@@ -254,7 +254,7 @@ reader::reader(ss::lw_shared_ptr<contents> c)
     }
 }
 
-std::unique_ptr<core::iterator> reader::create_iterator() {
+std::unique_ptr<internal::iterator> reader::create_iterator() {
     if (_data->size() < sizeof(uint32_t)) {
         throw std::runtime_error(
           fmt::format("bad block contents, size: {}", _data->size()));
@@ -266,7 +266,7 @@ std::unique_ptr<core::iterator> reader::create_iterator() {
       n_restarts,
       _restart_offset);
     if (n_restarts == 0) {
-        return core::iterator::create_empty();
+        return internal::iterator::create_empty();
     } else {
         return std::make_unique<iter>(_data, _restart_offset, n_restarts);
     }

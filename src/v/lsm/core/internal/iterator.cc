@@ -9,23 +9,23 @@
  * by the Apache License, Version 2.0
  */
 
-#include "lsm/core/iterator.h"
+#include "lsm/core/internal/iterator.h"
 
-namespace lsm::core {
+namespace lsm::internal {
 
 namespace {
 class empty_iterator final : public iterator {
     bool valid() const final { return false; }
     ss::future<> seek_to_first() final { return ss::now(); }
     ss::future<> seek_to_last() final { return ss::now(); }
-    ss::future<> seek(internal_key_view) final { return ss::now(); }
+    ss::future<> seek(key_view) final { return ss::now(); }
     ss::future<> next() final {
         throw std::runtime_error("next() called on empty iterator");
     }
     ss::future<> prev() final {
         throw std::runtime_error("prev() called on empty iterator");
     }
-    internal_key_view key() final {
+    key_view key() final {
         throw std::runtime_error("key() called on empty iterator");
     }
     iobuf value() final {
@@ -38,4 +38,4 @@ std::unique_ptr<iterator> iterator::create_empty() {
     return std::make_unique<empty_iterator>();
 }
 
-} // namespace lsm::core
+} // namespace lsm::internal

@@ -10,8 +10,8 @@
  */
 
 #include "base/seastarx.h"
-#include "lsm/core/keys.h"
-#include "lsm/core/tests/iterator_test_harness.h"
+#include "lsm/core/internal/keys.h"
+#include "lsm/core/internal/tests/iterator_test_harness.h"
 #include "lsm/io/memory_persistence.h"
 #include "lsm/sst/builder.h"
 #include "lsm/sst/reader.h"
@@ -25,8 +25,8 @@ namespace {
 template<lsm::compression_type CompressionType>
 class sst_iterator_factory {
 public:
-    std::unique_ptr<lsm::core::iterator>
-    make_iterator(std::map<lsm::core::internal_key, iobuf> map) {
+    std::unique_ptr<lsm::internal::iterator>
+    make_iterator(std::map<lsm::internal::key, iobuf> map) {
         size_t file_size = 0;
         auto filename = fmt::format("test{}.sst", ++_counter);
         {

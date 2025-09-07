@@ -29,7 +29,7 @@ size_t builder::current_size_estimate() const { return _buf.size_bytes(); }
 
 uint32_t builder::restart_interval() const { return _restarts.capacity(); }
 
-void builder::add(core::internal_key key, iobuf&& value) {
+void builder::add(internal::key key, iobuf&& value) {
     if (_counter >= restart_interval()) {
         _last_key = {};
         _counter = 0;

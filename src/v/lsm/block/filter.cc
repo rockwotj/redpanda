@@ -13,7 +13,7 @@
 
 #include "base/units.h"
 #include "hashing/xx.h"
-#include "lsm/core/keys.h"
+#include "lsm/core/internal/keys.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -107,7 +107,7 @@ void filter_builder::start_block(size_t block_offset) {
     }
 }
 
-void filter_builder::add_key(core::internal_key_view key) {
+void filter_builder::add_key(internal::key_view key) {
     _keys.emplace_back(key.user_key());
 }
 
@@ -161,7 +161,7 @@ filter_reader::filter_reader(ss::lw_shared_ptr<block::contents> c)
 }
 
 bool filter_reader::key_may_match(
-  uint64_t block_offset, core::internal_key_view key) {
+  uint64_t block_offset, internal::key_view key) {
     uint64_t index = block_offset >> _base_lg;
     if (index < _num) {
         // TODO(perf): This is very much on the hot path, and decoding int32

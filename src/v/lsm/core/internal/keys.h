@@ -12,13 +12,17 @@
 #pragma once
 
 #include "base/format_to.h"
-#include "model/fundamental.h"
+#include "base/seastarx.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
 
 #include <string_view>
 
-namespace lsm::core {
+namespace lsm::internal {
+
+// The sequence number for a write into the database.
+using seqno = named_type<uint64_t, struct seqno_tag>;
 
 // The type of the key
 enum class value_type : uint8_t {
@@ -37,31 +41,31 @@ enum class value_type : uint8_t {
 //
 // Internal keys are encoded in a way that allows them to be compared
 // lexicographically, in the following manner: key ASC, offset DESC, type DESC
-class internal_key {
+class key {
     constexpr static size_t sso_size = 23;
     using value_t = ss::basic_sstring<char, uint32_t, sso_size, false>;
 
-    explicit internal_key(value_t v)
+    explicit key(value_t v)
       : _value(std::move(v)) {}
 
 public:
     struct parts {
         std::string_view key;
-        model::offset offset = model::offset(0);
+        seqno seq_num = seqno(0);
         value_type type = value_type::value;
 
         // Create a value internal key
-        static parts value(std::string_view key, model::offset offset);
+        static parts value(std::string_view key, seqno);
         // Create a tombstone internal key
-        static parts tombstone(std::string_view key, model::offset offset);
+        static parts tombstone(std::string_view key, seqno);
         bool operator==(const parts& other) const = default;
         fmt::iterator format_to(fmt::iterator) const;
     };
 
-    internal_key() = default;
+    key() = default;
 
     // Encode a key into an internal key.
-    static internal_key encode(parts);
+    static key encode(parts);
     // Decode a key into its parts.
     parts decode() const;
 
@@ -74,31 +78,29 @@ public:
         return {_value.data(), _value.size() - sizeof(uint64_t) - 1};
     }
 
-    bool operator==(const internal_key& other) const = default;
-    auto operator<=>(const internal_key&) const = default;
-    bool operator<(const internal_key&) const = default;
+    bool operator==(const key& other) const = default;
+    auto operator<=>(const key&) const = default;
+    bool operator<(const key&) const = default;
 
     fmt::iterator format_to(fmt::iterator) const;
 
 private:
-    friend class internal_key_view;
+    friend class key_view;
 
     value_t _value;
 };
 
 // An internal key view is a lightweight view of an internal key that does not
 // own the data.
-class internal_key_view {
+class key_view {
 public:
     // Convert an owned key into a view.
     // NOLINTNEXTLINE(*explicit-conversions*)
-    internal_key_view(internal_key k)
+    key_view(key k)
       : _value(k._value.data(), k._value.size()) {}
 
     // Create a view from an already encoded string.
-    static internal_key_view from_encoded(std::string_view v) {
-        return internal_key_view{v};
-    }
+    static key_view from_encoded(std::string_view v) { return key_view{v}; }
 
     const char* data() const { return _value.data(); }
     size_t size() const { return _value.size(); }
@@ -109,24 +111,24 @@ public:
     }
 
     // Make a copy of the view as an internal_key.
-    explicit operator internal_key() const {
-        internal_key k;
-        k._value = internal_key::value_t(_value);
+    explicit operator key() const {
+        key k;
+        k._value = key::value_t(_value);
         return k;
     }
     // This internal key as a string view.
     explicit operator std::string_view() const { return _value; }
 
-    bool operator==(const internal_key_view& other) const = default;
-    auto operator<=>(const internal_key_view&) const = default;
-    bool operator<(const internal_key_view&) const = default;
+    bool operator==(const key_view& other) const = default;
+    auto operator<=>(const key_view&) const = default;
+    bool operator<(const key_view&) const = default;
     fmt::iterator format_to(fmt::iterator) const;
 
 private:
-    explicit internal_key_view(std::string_view v)
+    explicit key_view(std::string_view v)
       : _value(v) {}
 
     std::string_view _value;
 };
 
-} // namespace lsm::core
+} // namespace lsm::internal

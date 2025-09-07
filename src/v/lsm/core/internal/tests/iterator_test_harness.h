@@ -9,8 +9,8 @@
  * by the Apache License, Version 2.0
  */
 
-#include "lsm/core/iterator.h"
-#include "lsm/core/keys.h"
+#include "lsm/core/internal/iterator.h"
+#include "lsm/core/internal/keys.h"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -25,10 +25,10 @@ concept Closeable = requires(T t) {
 template<typename IteratorFactory>
 class CoreIteratorTest : public ::testing::Test {
 protected:
-    std::unique_ptr<lsm::core::iterator> make_iterator(const data& d) {
-        std::map<lsm::core::internal_key, iobuf> encoded;
+    std::unique_ptr<lsm::internal::iterator> make_iterator(const data& d) {
+        std::map<lsm::internal::key, iobuf> encoded;
         for (const auto& [key, value] : d) {
-            auto encoded_key = lsm::core::internal_key::encode({.key = key});
+            auto encoded_key = lsm::internal::key::encode({.key = key});
             encoded[std::move(encoded_key)] = iobuf::from(value);
         }
         return _factory.make_iterator(std::move(encoded));
@@ -44,8 +44,8 @@ private:
     IteratorFactory _factory;
 };
 
-inline lsm::core::internal_key operator""_key(const char* str, size_t) {
-    return lsm::core::internal_key::encode({.key = str});
+inline lsm::internal::key operator""_key(const char* str, size_t) {
+    return lsm::internal::key::encode({.key = str});
 }
 
 TYPED_TEST_SUITE_P(CoreIteratorTest);
@@ -65,36 +65,37 @@ TYPED_TEST_P(CoreIteratorTest, Empty) {
 }
 
 TYPED_TEST_P(CoreIteratorTest, Single) {
-    auto check_first = [](lsm::core::iterator* it) {
+    auto check_first = [](lsm::internal::iterator* it) {
         it->seek_to_first().get();
         ASSERT_TRUE(it->valid());
         EXPECT_EQ(it->key(), "foo"_key);
         EXPECT_EQ(it->value(), iobuf::from("bar"));
     };
-    auto check_last = [](lsm::core::iterator* it) {
+    auto check_last = [](lsm::internal::iterator* it) {
         it->seek_to_last().get();
         ASSERT_TRUE(it->valid());
         EXPECT_EQ(it->key(), "foo"_key);
         EXPECT_EQ(it->value(), iobuf::from("bar"));
     };
-    auto check_seek_at = [](lsm::core::iterator* it) {
+    auto check_seek_at = [](lsm::internal::iterator* it) {
         it->seek("foo"_key).get();
         ASSERT_TRUE(it->valid());
         EXPECT_EQ(it->key(), "foo"_key);
         EXPECT_EQ(it->value(), iobuf::from("bar"));
     };
-    auto check_seek_before = [](lsm::core::iterator* it) {
+    auto check_seek_before = [](lsm::internal::iterator* it) {
         it->seek("fo"_key).get();
         ASSERT_TRUE(it->valid());
         EXPECT_EQ(it->key(), "foo"_key);
         EXPECT_EQ(it->value(), iobuf::from("bar"));
     };
-    auto check_seek_after = [](lsm::core::iterator* it) {
+    auto check_seek_after = [](lsm::internal::iterator* it) {
         it->seek("fooo"_key).get();
         EXPECT_FALSE(it->valid());
     };
     auto it = this->make_iterator({{"foo", "bar"}});
-    for (auto& check : std::vector<std::function<void(lsm::core::iterator*)>>{
+    for (auto& check :
+         std::vector<std::function<void(lsm::internal::iterator*)>>{
            check_first,
            check_last,
            check_seek_at,

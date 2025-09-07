@@ -12,7 +12,7 @@
 #pragma once
 
 #include "lsm/block/contents.h"
-#include "lsm/core/iterator.h"
+#include "lsm/core/internal/iterator.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -27,7 +27,7 @@ public:
     //
     // The iterator's lifetime is independent from it's reader. The iterator may
     // (or may not) outlive the reader.
-    std::unique_ptr<core::iterator> create_iterator();
+    std::unique_ptr<internal::iterator> create_iterator();
 
 private:
     ss::lw_shared_ptr<contents> _data;

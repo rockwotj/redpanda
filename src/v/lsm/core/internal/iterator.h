@@ -12,11 +12,11 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "lsm/core/keys.h"
+#include "lsm/core/internal/keys.h"
 
 #include <seastar/core/future.hh>
 
-namespace lsm::core {
+namespace lsm::internal {
 
 // A bi-directional iterator over sorted key-value pairs.
 class iterator {
@@ -46,7 +46,7 @@ public:
     // Position at the first key in the source that is at or past target.
     // The iterator is valid() after this call iff the source contains
     // an entry that comes at or past target.
-    virtual ss::future<> seek(internal_key_view target) = 0;
+    virtual ss::future<> seek(key_view target) = 0;
 
     // Moves to the next entry in the source. After this call, Valid() is
     // true iff the iterator was not positioned at the last entry in the source.
@@ -61,11 +61,11 @@ public:
     // Return the key for the current entry. The returned value is only valid
     // until the iterator is moved.
     // REQUIRES: valid()
-    virtual internal_key_view key() = 0;
+    virtual key_view key() = 0;
 
     // Return the value for the current entry.
     // REQUIRES: valid()
     virtual iobuf value() = 0;
 };
 
-} // namespace lsm::core
+} // namespace lsm::internal

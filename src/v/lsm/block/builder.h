@@ -12,7 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "lsm/core/keys.h"
+#include "lsm/core/internal/keys.h"
 
 #include <vector>
 
@@ -61,7 +61,7 @@ public:
 
     // Adds a key-value pair to the block.
     // REQUIRES: key must be lexicographically greater than the last key
-    void add(core::internal_key key, iobuf&& value);
+    void add(internal::key key, iobuf&& value);
 
     // Returns an estimate of the current (uncompressed) size of the block
     // we are building.
@@ -80,7 +80,7 @@ public:
 private:
     uint32_t restart_interval() const;
 
-    core::internal_key _last_key;
+    internal::key _last_key;
     iobuf _buf;
     // Allows up to 32K restart points per block before oversized allocs.
     std::vector<uint32_t> _restarts;

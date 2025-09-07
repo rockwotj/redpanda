@@ -67,7 +67,7 @@ read_block(io::random_access_file_reader* file, block::handle handle) {
 ss::future<std::optional<block::filter_reader>> read_filter(
   io::random_access_file_reader* file, block::reader metaindex_block) {
     auto iter = metaindex_block.create_iterator();
-    auto key = core::internal_key::encode({.key = "filter.RedpandaBloomV0"});
+    auto key = internal::key::encode({.key = "filter.RedpandaBloomV0"});
     co_await iter->seek(key);
     if (!iter->valid() || iter->key() != key) {
         co_return std::nullopt;
@@ -89,15 +89,15 @@ public:
       , _index_block(std::move(index_block))
       , _filter(std::move(filter)) {}
 
-    std::unique_ptr<core::iterator> create_iterator() {
+    std::unique_ptr<internal::iterator> create_iterator() {
         return create_two_level_iterator(
           _index_block.create_iterator(), [this](iobuf index_value) {
               return block_reader(std::move(index_value));
           });
     }
     ss::future<> internal_get(
-      core::internal_key_view key,
-      absl::FunctionRef<ss::future<>(core::internal_key_view, iobuf)> fn) {
+      internal::key_view key,
+      absl::FunctionRef<ss::future<>(internal::key_view, iobuf)> fn) {
         auto iiter = _index_block.create_iterator();
         co_await iiter->seek(key);
         if (!iiter->valid()) {
@@ -121,7 +121,7 @@ public:
     ss::future<> close() { return _file->close(); }
 
 private:
-    ss::future<std::unique_ptr<core::iterator>>
+    ss::future<std::unique_ptr<internal::iterator>>
     block_reader(iobuf index_value) {
         auto handle = block::handle::from_iobuf(std::move(index_value));
         // TODO(lsm): use block cache here
@@ -164,13 +164,13 @@ ss::future<reader> reader::open(
         std::move(index_block), std::move(file), std::move(filter)));
 }
 
-std::unique_ptr<core::iterator> reader::create_iterator() {
+std::unique_ptr<internal::iterator> reader::create_iterator() {
     return _impl->create_iterator();
 }
 
 ss::future<> reader::internal_get(
-  core::internal_key_view key,
-  absl::FunctionRef<ss::future<>(core::internal_key_view, iobuf)> fn) {
+  internal::key_view key,
+  absl::FunctionRef<ss::future<>(internal::key_view, iobuf)> fn) {
     return _impl->internal_get(key, fn);
 }
 

@@ -9,8 +9,8 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/lsm/core:keys",
-        "//src/v/lsm/core/tests:iterator_test_harness",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal/tests:iterator_test_harness",
         "//src/v/lsm/io:memory_persistence",
         "//src/v/lsm/sst:builder",
         "//src/v/lsm/sst:reader",

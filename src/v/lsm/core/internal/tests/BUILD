@@ -8,7 +8,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/base",
-        "//src/v/lsm/core:keys",
+        "//src/v/lsm/core/internal:keys",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
@@ -21,8 +21,8 @@ redpanda_test_cc_library(
     visibility = ["//src/v/lsm:__subpackages__"],
     deps = [
         "//src/v/base",
-        "//src/v/lsm/core:iterator",
-        "//src/v/lsm/core:keys",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
         "@googletest//:gtest",
     ],
 )

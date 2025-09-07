@@ -17,9 +17,10 @@ namespace lsm::sst {
 
 namespace {
 
-class impl : public core::iterator {
+class impl : public internal::iterator {
 public:
-    impl(std::unique_ptr<core::iterator> index_iter, block_function block_fn)
+    impl(
+      std::unique_ptr<internal::iterator> index_iter, block_function block_fn)
       : _index_iter(std::move(index_iter))
       , _block_fn(std::move(block_fn)) {}
 
@@ -45,7 +46,7 @@ public:
         co_await skip_empty_data_blocks_backward();
     }
 
-    ss::future<> seek(core::internal_key_view target) override {
+    ss::future<> seek(internal::key_view target) override {
         co_await _index_iter->seek(target);
         co_await init_data_block();
         if (_data_iter) {
@@ -66,7 +67,7 @@ public:
         co_await skip_empty_data_blocks_backward();
     }
 
-    core::internal_key_view key() override {
+    internal::key_view key() override {
         assert(valid());
         return _data_iter->key();
     }
@@ -112,16 +113,16 @@ private:
         }
     }
 
-    std::unique_ptr<core::iterator> _index_iter;
+    std::unique_ptr<internal::iterator> _index_iter;
     block_function _block_fn;
     // May be nullptr
-    std::unique_ptr<core::iterator> _data_iter;
+    std::unique_ptr<internal::iterator> _data_iter;
 };
 
 } // namespace
 
-std::unique_ptr<core::iterator> create_two_level_iterator(
-  std::unique_ptr<core::iterator> index_iter, block_function block_fn) {
+std::unique_ptr<internal::iterator> create_two_level_iterator(
+  std::unique_ptr<internal::iterator> index_iter, block_function block_fn) {
     return std::make_unique<impl>(std::move(index_iter), std::move(block_fn));
 }
 

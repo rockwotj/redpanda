@@ -15,7 +15,7 @@
 #include "bytes/iobuf.h"
 #include "container/chunked_vector.h"
 #include "lsm/block/contents.h"
-#include "lsm/core/keys.h"
+#include "lsm/core/internal/keys.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
@@ -30,7 +30,7 @@ namespace lsm::block {
 class filter_builder {
 public:
     void start_block(size_t block_offset);
-    void add_key(core::internal_key_view key);
+    void add_key(internal::key_view key);
     iobuf finish();
 
 private:
@@ -48,7 +48,7 @@ public:
 
     // Check if it's possible that the user's key exists in the block at this
     // offset within the SST.
-    bool key_may_match(uint64_t block_offset, core::internal_key_view key);
+    bool key_may_match(uint64_t block_offset, internal::key_view key);
 
 private:
     ss::lw_shared_ptr<contents> _contents;

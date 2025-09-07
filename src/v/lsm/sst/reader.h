@@ -13,8 +13,8 @@
 
 #include "absl/functional/function_ref.h"
 #include "base/seastarx.h"
-#include "lsm/core/iterator.h"
-#include "lsm/core/keys.h"
+#include "lsm/core/internal/iterator.h"
+#include "lsm/core/internal/keys.h"
 #include "lsm/io/persistence.h"
 
 #include <seastar/core/future.hh>
@@ -43,14 +43,14 @@ public:
     //
     // The result of create_iterator is initially invalid (caller must call one
     // of the seek* methods on the iterator before using it).
-    std::unique_ptr<core::iterator> create_iterator();
+    std::unique_ptr<internal::iterator> create_iterator();
 
     // Calls the function with the key/value pair with the entry found after a
     // call to `create_iterator()->seek(key)`. May not make such a call if the
     // filter policy says that key is not present.
     ss::future<> internal_get(
-      core::internal_key_view key,
-      absl::FunctionRef<ss::future<>(core::internal_key_view, iobuf)> fn);
+      internal::key_view key,
+      absl::FunctionRef<ss::future<>(internal::key_view, iobuf)> fn);
 
     // Closes the reader and the closes the file it's referencing.
     //
