@@ -11,6 +11,8 @@
 
 #include "lsm/core/internal/iterator.h"
 
+#include "lsm/core/exceptions.h"
+
 namespace lsm::internal {
 
 namespace {
@@ -20,16 +22,16 @@ class empty_iterator final : public iterator {
     ss::future<> seek_to_last() final { return ss::now(); }
     ss::future<> seek(key_view) final { return ss::now(); }
     ss::future<> next() final {
-        throw std::runtime_error("next() called on empty iterator");
+        throw invalid_argument_exception("next() called on empty iterator");
     }
     ss::future<> prev() final {
-        throw std::runtime_error("prev() called on empty iterator");
+        throw invalid_argument_exception("prev() called on empty iterator");
     }
     key_view key() final {
-        throw std::runtime_error("key() called on empty iterator");
+        throw invalid_argument_exception("key() called on empty iterator");
     }
     iobuf value() final {
-        throw std::runtime_error("value() called on empty iterator");
+        throw invalid_argument_exception("value() called on empty iterator");
     }
 };
 } // namespace

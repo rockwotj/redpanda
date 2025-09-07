@@ -13,6 +13,7 @@
 
 #include "base/vassert.h"
 #include "bytes/iobuf_parser.h"
+#include "lsm/core/exceptions.h"
 
 #include <bit>
 
@@ -49,8 +50,8 @@ footer footer::from_iobuf(iobuf buf) {
     auto magic
       = parser.consume_type<std::decay_t<decltype(table_magic_number)>>();
     if (magic != table_magic_number) {
-        throw std::runtime_error(
-          fmt::format("sstable corruption, bad magic number: {}", magic));
+        throw corruption_exception(
+          "sstable corruption, bad magic number: {}", magic);
     }
     dassert(
       parser.bytes_left() == 0,

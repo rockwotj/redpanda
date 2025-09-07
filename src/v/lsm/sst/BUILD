@@ -40,6 +40,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
+        "//src/v/lsm/core:exceptions",
     ],
     deps = [
         "//src/v/bytes:iobuf",
@@ -66,6 +67,7 @@ redpanda_cc_library(
         "//src/v/lsm/block:handle",
         "//src/v/lsm/block:reader",
         "//src/v/lsm/core:compression",
+        "//src/v/lsm/core:exceptions",
     ],
     deps = [
         "//src/v/base",

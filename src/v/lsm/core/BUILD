@@ -7,6 +7,7 @@ redpanda_cc_library(
     srcs = ["compression.cc"],
     hdrs = ["compression.h"],
     implementation_deps = [
+        ":exceptions",
         "//src/v/compression",
     ],
     deps = [
@@ -14,4 +15,10 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "@seastar",
     ],
+)
+
+redpanda_cc_library(
+    name = "exceptions",
+    hdrs = ["exceptions.h"],
+    deps = ["@fmt"],
 )

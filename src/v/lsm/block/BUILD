@@ -85,6 +85,9 @@ redpanda_cc_library(
     hdrs = [
         "reader.h",
     ],
+    implementation_deps = [
+        "//src/v/lsm/core:exceptions",
+    ],
     deps = [
         ":contents",
         "//src/v/base",

@@ -11,6 +11,7 @@
 
 #include "lsm/block/reader.h"
 
+#include "lsm/core/exceptions.h"
 #include "lsm/core/internal/keys.h"
 
 #include <array>
@@ -32,11 +33,10 @@ std::array<uint32_t, 3>
 decode_entry(const contents& data, uint32_t offset, uint32_t limit) {
     assert(data.size() >= limit);
     if (offset + (3 * sizeof(uint32_t)) > limit) [[unlikely]] {
-        throw std::runtime_error(
-          fmt::format(
-            "corruption: entry too small: {} < {}",
-            3 * sizeof(uint32_t),
-            data.size() - offset));
+        throw corruption_exception(
+          "corruption: entry too small: {} < {}",
+          3 * sizeof(uint32_t),
+          data.size() - offset);
     }
     return std::to_array({
       data.read_fixed32(offset),
@@ -101,11 +101,10 @@ public:
               *_data, region_offset, _restarts);
             uint32_t p = region_offset + (3 * sizeof(uint32_t));
             if (shared != 0) {
-                throw std::runtime_error(
-                  fmt::format(
-                    "corruption: restart key should have no shared prefix, "
-                    "got: {}",
-                    shared));
+                throw corruption_exception(
+                  "corruption: restart key should have no shared prefix, "
+                  "got: {}",
+                  shared);
             }
             auto mid_key = _data->read_string(p, non_shared);
             if (mid_key < std::string_view(target)) {
@@ -201,11 +200,8 @@ private:
           *_data, _current, _restarts);
         uint32_t p = _current + (3 * sizeof(uint32_t));
         if (_key.size() < shared) {
-            throw std::runtime_error(
-              fmt::format(
-                "corruption: shared key too short: {} < {}",
-                _key.size(),
-                shared));
+            throw corruption_exception(
+              "corruption: shared key too short: {} < {}", _key.size(), shared);
         } else {
             _key.resize(shared + non_shared);
             auto it = _key.begin();
@@ -256,8 +252,8 @@ reader::reader(ss::lw_shared_ptr<contents> c)
 
 std::unique_ptr<internal::iterator> reader::create_iterator() {
     if (_data->size() < sizeof(uint32_t)) {
-        throw std::runtime_error(
-          fmt::format("bad block contents, size: {}", _data->size()));
+        throw corruption_exception(
+          "corruption: bad block contents, size: {}", _data->size());
     }
     uint32_t n_restarts = num_restarts(*_data);
     fmt::print(

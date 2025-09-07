@@ -11,6 +11,8 @@
 
 #include "lsm/io/memory_persistence.h"
 
+#include "lsm/core/exceptions.h"
+
 #include <seastar/core/coroutine.hh>
 
 #include <map>
@@ -100,10 +102,9 @@ public:
       ss::shared_ptr<memory_file_state> state)
       : _state(std::move(state)) {
         if (_state->open_handles() > 0) {
-            throw std::runtime_error(
-              fmt::format(
-                "unable to open new writable file with open handles: {}",
-                _state->open_handles()));
+            throw io_error_exception(
+              "unable to open new writable file with open handles: {}",
+              _state->open_handles());
         }
         ++_state->open_write_handles;
         _state->data.clear();
@@ -168,10 +169,8 @@ public:
             co_return;
         }
         if (it->second->open_handles() != 0) {
-            throw std::runtime_error(
-              fmt::format(
-                "unable to remove file {}, there are still open handles",
-                name));
+            throw io_error_exception(
+              "unable to remove file {}, there are still open handles", name);
         }
         _data.erase(it);
     }

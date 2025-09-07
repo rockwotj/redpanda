@@ -8,6 +8,9 @@ redpanda_cc_library(
     hdrs = [
         "iterator.h",
     ],
+    implementation_deps = [
+        "//src/v/lsm/core:exceptions",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":keys",

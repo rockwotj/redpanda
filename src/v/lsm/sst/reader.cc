@@ -17,6 +17,7 @@
 #include "lsm/block/handle.h"
 #include "lsm/block/reader.h"
 #include "lsm/core/compression.h"
+#include "lsm/core/exceptions.h"
 #include "lsm/io/persistence.h"
 #include "lsm/sst/footer.h"
 #include "two_level_iterator.h"
@@ -51,11 +52,10 @@ read_block(io::random_access_file_reader* file, block::handle handle) {
         actual_crc.extend(chunk.get(), chunk.size());
     }
     if (expected_crc != actual_crc.value()) {
-        throw std::runtime_error(
-          fmt::format(
-            "unexpected crc, got: {}, want: {}",
-            actual_crc.value(),
-            expected_crc));
+        throw corruption_exception(
+          "unexpected crc, got: {}, want: {}",
+          actual_crc.value(),
+          expected_crc);
     }
     data.trim_back(sizeof(compression_type));
     if (compression != compression_type::none) {
@@ -144,8 +144,8 @@ reader& reader::operator=(reader&&) noexcept = default;
 ss::future<reader> reader::open(
   std::unique_ptr<io::random_access_file_reader> file, size_t file_size) {
     if (file_size < footer::encoded_length) {
-        throw std::runtime_error(
-          fmt::format("file is too short to be an sstable"));
+        throw corruption_exception(
+          "corruption: file is too short to be an sstable");
     }
     auto encoded_footer = co_await file->read(
       file_size - footer::encoded_length, footer::encoded_length);

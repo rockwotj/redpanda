@@ -12,6 +12,7 @@
 #include "lsm/core/compression.h"
 
 #include "compression/compression.h"
+#include "lsm/core/exceptions.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -61,7 +62,7 @@ compression_type compression_type_from_raw(uint8_t v) {
     case compression_type::gzip:
         return ct;
     }
-    throw std::runtime_error(fmt::format("unknown compression type: {}", v));
+    throw corruption_exception("unknown compression type: {}", v);
 }
 
 } // namespace lsm
