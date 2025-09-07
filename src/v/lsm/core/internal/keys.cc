@@ -45,24 +45,21 @@ key key::encode(parts p) {
 }
 
 key::parts key::decode() const {
-    parts p;
-    // The user key is everything up to the last byte, which is the sequence
-    // number and type.
-    p.key = user_key();
-    // The sequence number is the rest of the bytes, which we decode from BE
-    // form and invert the bits.
-    uint64_t encoded; // NOLINT
-    std::memcpy(&encoded, &_value[p.key.size() + 1], sizeof(encoded));
-    encoded = ~ss::be_to_cpu(encoded);
-    // The last byte is the type.
-    p.type = static_cast<value_type>(
-      encoded & std::numeric_limits<std::underlying_type_t<value_type>>::max());
-    // Shift to get back the seqno, which is the rest of the bits.
-    p.seq_num = seqno(encoded >> CHAR_WIDTH);
-    return p;
+    key_view view{*this};
+    return key::parts(view.decode());
 }
+value_type key::type() const { return key_view{*this}.type(); }
 
 fmt::iterator key::parts::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "internal_key_parts={{key={},seqno={},type={}}}",
+      key,
+      seq_num,
+      std::to_underlying(type));
+}
+
+fmt::iterator key_view::parts::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
       "internal_key_parts={{key={},seqno={},type={}}}",
@@ -90,9 +87,48 @@ fmt::iterator key_view::format_to(fmt::iterator it) const {
 }
 
 key::parts key::parts::value(std::string_view key, seqno seq_num) {
-    return {.key = key, .seq_num = seq_num, .type = value_type::value};
+    return {
+      .key = ss::sstring(key), .seq_num = seq_num, .type = value_type::value};
 }
 key::parts key::parts::tombstone(std::string_view key, seqno seq_num) {
-    return {.key = key, .seq_num = seq_num, .type = value_type::tombstone};
+    return {
+      .key = ss::sstring(key),
+      .seq_num = seq_num,
+      .type = value_type::tombstone};
 }
+
+key_view::parts key_view::decode() const {
+    key_view::parts p;
+    // The user key is everything up to the last byte, which is the sequence
+    // number and type.
+    p.key = user_key();
+    // The sequence number is the rest of the bytes, which we decode from BE
+    // form and invert the bits.
+    uint64_t encoded; // NOLINT
+    std::memcpy(&encoded, &_value[p.key.size() + 1], sizeof(encoded));
+    encoded = ~ss::be_to_cpu(encoded);
+    // The last byte is the type.
+    p.type = static_cast<value_type>(
+      encoded & std::numeric_limits<std::underlying_type_t<value_type>>::max());
+    // Shift to get back the seqno, which is the rest of the bits.
+    p.seq_num = seqno(encoded >> CHAR_WIDTH);
+    return p;
+}
+
+value_type key_view::type() const {
+    auto v = static_cast<std::underlying_type_t<value_type>>(_value.back());
+    v = ~v;
+    return value_type{v};
+}
+
+key_view::parts::operator key::parts() const {
+    return {.key = ss::sstring(key), .seq_num = seq_num, .type = type};
+}
+
+internal::key_view key_view::without_type() const {
+    auto str = std::string_view(*this);
+    str.remove_suffix(1);
+    return internal::key_view{str};
+}
+
 } // namespace lsm::internal

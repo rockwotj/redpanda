@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "model/fundamental.h"
+#include "lsm/core/internal/keys.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -39,15 +39,21 @@ public:
 
     // Add a key-value pair to the memtable.
     //
-    // The offset is used as the seqno for the entry and should be
-    // record's offset in the raft write-ahead log.
-    void add(model::offset, ss::sstring key, iobuf value);
+    // REQUIRES: key.value_type is value
+    void add(internal::key key, iobuf value);
+
+    // Remove a key-value pair to the memtable.
+    //
+    // REQUIRES: key.value_type is tombstone
+    void remove(internal::key key);
 
     // Get the value for a given key.
     //
     // The offset here limits values to those that were written at or before
     // the given offset.
-    std::optional<iobuf> get(model::offset, std::string_view key);
+    //
+    // REQUIRES: key.value_type is value
+    std::optional<iobuf> get(internal::key_view);
 
 private:
     std::unique_ptr<impl> _impl;

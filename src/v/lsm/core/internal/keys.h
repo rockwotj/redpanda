@@ -50,7 +50,7 @@ class key {
 
 public:
     struct parts {
-        std::string_view key;
+        ss::sstring key;
         seqno seq_num = seqno(0);
         value_type type = value_type::value;
 
@@ -68,6 +68,8 @@ public:
     static key encode(parts);
     // Decode a key into its parts.
     parts decode() const;
+    // Returns this key's value type
+    value_type type() const;
 
     const char& operator[](size_t i) const { return _value[i]; }
     const char* data() const { return _value.data(); }
@@ -94,6 +96,15 @@ private:
 // own the data.
 class key_view {
 public:
+    struct parts {
+        std::string_view key;
+        seqno seq_num = seqno(0);
+        value_type type = value_type::value;
+
+        bool operator==(const parts& other) const = default;
+        fmt::iterator format_to(fmt::iterator) const;
+        explicit operator key::parts() const;
+    };
     // Convert an owned key into a view.
     // NOLINTNEXTLINE(*explicit-conversions*)
     key_view(key k)
@@ -109,6 +120,17 @@ public:
     std::string_view user_key() const {
         return {_value.data(), _value.size() - sizeof(uint64_t) - 1};
     }
+    // Returns this key's value type
+    value_type type() const;
+    // Decode a key into its parts.
+    parts decode() const;
+
+    // A key view without the tailing type marker so that the value sorts before
+    // all types. This can be used to get the lexicographically first key at or
+    // after a specific seqno.
+    //
+    // DO NOT TRY AND DECODE THIS KEY OR DO ANYTHING BUT USE IT FOR COMPARISON.
+    internal::key_view without_type() const;
 
     // Make a copy of the view as an internal_key.
     explicit operator key() const {
