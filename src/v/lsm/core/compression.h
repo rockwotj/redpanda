@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "bytes/ioarray.h"
 #include "bytes/iobuf.h"
 
 #include <seastar/core/future.hh>
@@ -28,6 +29,9 @@ enum class compression_type : uint8_t {
     gzip = 4,
 };
 
+// Convert a raw byte to a compression type (or throw)
+compression_type compression_type_from_raw(uint8_t);
+
 // Compress the iobuf and return the compressed iobuf.
 //
 // REQUIRES: compression_type is not `none`.
@@ -36,6 +40,6 @@ ss::future<iobuf> compress(iobuf, compression_type);
 // Uncompress the iobuf and return the uncompressed iobuf.
 //
 // REQUIRES: compression_type is not `none`.
-ss::future<iobuf> uncompress(iobuf, compression_type);
+ss::future<ioarray> uncompress(ioarray, compression_type);
 
 } // namespace lsm

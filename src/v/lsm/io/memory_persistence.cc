@@ -186,13 +186,13 @@ public:
     }
 
     ss::future<> close() override {
+        _closed = true;
         for (const auto& [file, state] : _data) {
             vassert(
               state->open_handles() == 0,
               "tried to close with open handles on file {}",
               file);
         }
-        _closed = true;
         co_return;
     }
 

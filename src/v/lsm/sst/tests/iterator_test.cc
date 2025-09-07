@@ -22,6 +22,7 @@
 #include <gtest/gtest.h>
 
 namespace {
+template<lsm::compression_type CompressionType>
 class sst_iterator_factory {
 public:
     std::unique_ptr<lsm::core::iterator>
@@ -30,7 +31,8 @@ public:
         auto filename = fmt::format("test{}.sst", ++_counter);
         {
             auto file = _persistence->open_sequential_writer(filename).get();
-            lsm::sst::builder builder(std::move(file), {});
+            lsm::sst::builder builder(
+              std::move(file), {.compression = CompressionType});
             for (auto& [key, value] : map) {
                 builder.add(key, std::move(value)).get();
             }
@@ -60,7 +62,10 @@ private:
 };
 } // namespace
 
-using SSTIteratorType = ::testing::Types<sst_iterator_factory>;
+using SSTIteratorType = ::testing::Types<
+  sst_iterator_factory<lsm::compression_type::none>,
+  sst_iterator_factory<lsm::compression_type::zstd>,
+  sst_iterator_factory<lsm::compression_type::gzip>>;
 
 INSTANTIATE_TYPED_TEST_SUITE_P(
   SSTIteratorSuite, CoreIteratorTest, SSTIteratorType);

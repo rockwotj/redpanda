@@ -20,6 +20,8 @@ namespace crc {
 
 class crc32c {
 public:
+    using value_type = uint32_t;
+
     template<typename T>
     void extend(T num) noexcept
     requires(std::is_integral_v<T>)
@@ -37,26 +39,26 @@ public:
           size);
     }
 
-    uint32_t value() const { return _crc; }
+    value_type value() const { return _crc; }
 
 private:
-    uint32_t _crc = 0;
+    value_type _crc = 0;
 };
 
-static const uint32_t mask_delta = 0xa282ead8ul;
+static const crc32c::value_type mask_delta = 0xa282ead8ul;
 
 // Return a masked representation of crc.
 //
 // Motivation: it is problematic to compute the CRC of a string that
 // contains embedded CRCs. Therefore we recommend that CRCs stored
 // somewhere (e.g., in files) should be masked before being stored.
-inline uint32_t mask(uint32_t crc) {
+inline crc32c::value_type mask(crc32c::value_type crc) {
     // Rotate right by 15 bits and add a constant.
     return ((crc >> 15) | (crc << 17)) + mask_delta;
 }
 
 // Return the crc whose masked representation is masked_crc.
-inline uint32_t unmask(uint32_t masked_crc) {
+inline crc32c::value_type unmask(crc32c::value_type masked_crc) {
     uint32_t rot = masked_crc - mask_delta;
     return ((rot >> 17) | (rot << 15));
 }

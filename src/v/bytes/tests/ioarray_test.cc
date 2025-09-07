@@ -145,3 +145,19 @@ TEST(IOArray, Range) {
     std::ranges::copy(b.as_range(), std::back_inserter(s));
     EXPECT_EQ("0123456789abcdefg", s);
 }
+
+TEST(IOArray, TrimBack) {
+    auto b = ioarray::copy_from(iobuf::from("0123456789abcdefg"));
+    b.trim_back(3);
+    std::string s;
+    std::ranges::copy(b.as_range(), std::back_inserter(s));
+    EXPECT_EQ("0123456789abcd", s);
+
+    std::string large_string(150_KiB, 'a');
+    b = ioarray::copy_from(iobuf::from(large_string));
+    b.trim_back(50_KiB);
+    large_string = large_string.substr(0, 100_KiB);
+    s.clear();
+    std::ranges::copy(b.as_range(), std::back_inserter(s));
+    EXPECT_EQ(large_string.size(), s.size());
+}

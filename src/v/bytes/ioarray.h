@@ -107,6 +107,9 @@ public:
     char& operator[](size_t i);
     char operator[](size_t i) const;
 
+    // Remove the last n bytes from this ioarray.
+    void trim_back(size_t n);
+
     // The size of the ioarray.
     size_t size() const { return _size; }
     // If the ioarray is empty.
@@ -116,9 +119,12 @@ public:
         return _buffers | std::views::join | std::views::drop(_offset)
                | std::views::take(_size);
     }
-
     // Return this ioarray for scatter/gather IO.
     std::vector<::iovec> as_iovec();
+    // Get readonly access to the raw underlying buffers.
+    const std::span<const ss::temporary_buffer<char>> buffers() const {
+        return _buffers;
+    }
 
 private:
     // An internal constructor for creating an ioarray without initializing data

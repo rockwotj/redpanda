@@ -13,6 +13,10 @@
 
 #include "compression/compression.h"
 
+#include <seastar/core/coroutine.hh>
+
+#include <utility>
+
 namespace lsm {
 
 namespace {
@@ -40,9 +44,24 @@ ss::future<iobuf> compress(iobuf buf, compression_type type) {
       std::move(buf), convert_type(type));
 }
 
-ss::future<iobuf> uncompress(iobuf buf, compression_type type) {
-    return compression::stream_compressor::uncompress(
-      std::move(buf), convert_type(type));
+ss::future<ioarray> uncompress(ioarray array, compression_type type) {
+    // TODO(lsm): support uncompression directly into ioarray?
+    auto iobuf = co_await compression::stream_compressor::uncompress(
+      array.as_iobuf(), convert_type(type));
+    co_return ioarray::copy_from(iobuf);
+}
+
+compression_type compression_type_from_raw(uint8_t v) {
+    auto ct = static_cast<compression_type>(v);
+    switch (ct) {
+    case compression_type::none:
+    case compression_type::zstd:
+    case compression_type::java_snappy:
+    case compression_type::lz4:
+    case compression_type::gzip:
+        return ct;
+    }
+    throw std::runtime_error(fmt::format("unknown compression type: {}", v));
 }
 
 } // namespace lsm

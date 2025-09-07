@@ -39,6 +39,7 @@ redpanda_cc_library(
         "//src/v/compression",
     ],
     deps = [
+        "//src/v/bytes:ioarray",
         "//src/v/bytes:iobuf",
         "@seastar",
     ],

@@ -31,6 +31,8 @@ public:
     static ss::future<ss::lw_shared_ptr<contents>>
     read(io::random_access_file_reader*, handle);
 
+    explicit contents(ioarray data);
+
     // Create block contents from copying out of an iobuf.
     //
     // NOTE: This intended to be used for testing.
@@ -56,8 +58,6 @@ public:
     uint32_t read_fixed32(size_t offset) const;
 
 private:
-    explicit contents(ioarray data);
-
     ioarray _data;
 };
 

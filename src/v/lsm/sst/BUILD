@@ -14,11 +14,11 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":footer",
+        "//src/v/hashing:crc32c",
     ],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/hashing:crc32c",
         "//src/v/lsm/block:builder",
         "//src/v/lsm/block:filter",
         "//src/v/lsm/block:handle",
@@ -60,10 +60,12 @@ redpanda_cc_library(
     implementation_deps = [
         ":footer",
         "//src/v/bytes:iobuf",
+        "//src/v/hashing:crc32c",
         "//src/v/lsm/block:contents",
         "//src/v/lsm/block:filter",
         "//src/v/lsm/block:handle",
         "//src/v/lsm/block:reader",
+        "//src/v/lsm/core:compression",
     ],
     deps = [
         "//src/v/base",

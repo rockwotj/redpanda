@@ -11,10 +11,12 @@
 
 #include "lsm/sst/reader.h"
 
+#include "hashing/crc32c.h"
 #include "lsm/block/contents.h"
 #include "lsm/block/filter.h"
 #include "lsm/block/handle.h"
 #include "lsm/block/reader.h"
+#include "lsm/core/compression.h"
 #include "lsm/io/persistence.h"
 #include "lsm/sst/footer.h"
 #include "two_level_iterator.h"
@@ -25,6 +27,43 @@ namespace lsm::sst {
 
 namespace {
 
+ss::future<ss::lw_shared_ptr<block::contents>>
+read_block(io::random_access_file_reader* file, block::handle handle) {
+    // File format contains a sequence of blocks where each block has:
+    //    block_data: uint8[n]
+    //    type: uint8
+    //    crc: uint32
+    static constexpr size_t block_footer_size
+      = sizeof(compression_type) + sizeof(crc::crc32c::value_type);
+    auto data = co_await file->read(
+      handle.offset, handle.size + block_footer_size);
+    auto compression = compression_type_from_raw(
+      data[data.size() - block_footer_size]);
+    auto last_word_slice = ss::sstring(data.read_string(
+      data.size() - block_footer_size + sizeof(compression_type),
+      sizeof(crc::crc32c::value_type)));
+    uint32_t expected_crc = 0;
+    std::memcpy(&expected_crc, last_word_slice.data(), last_word_slice.size());
+    expected_crc = crc::unmask(ss::le_to_cpu(expected_crc));
+    crc::crc32c actual_crc;
+    data.trim_back(sizeof(crc::crc32c::value_type));
+    for (const auto& chunk : data.buffers()) {
+        actual_crc.extend(chunk.get(), chunk.size());
+    }
+    if (expected_crc != actual_crc.value()) {
+        throw std::runtime_error(
+          fmt::format(
+            "unexpected crc, got: {}, want: {}",
+            actual_crc.value(),
+            expected_crc));
+    }
+    data.trim_back(sizeof(compression_type));
+    if (compression != compression_type::none) {
+        data = co_await uncompress(std::move(data), compression);
+    }
+    co_return ss::make_lw_shared<block::contents>(std::move(data));
+}
+
 ss::future<std::optional<block::filter_reader>> read_filter(
   io::random_access_file_reader* file, block::reader metaindex_block) {
     auto iter = metaindex_block.create_iterator();
@@ -34,7 +73,7 @@ ss::future<std::optional<block::filter_reader>> read_filter(
         co_return std::nullopt;
     }
     auto filter_handle = block::handle::from_iobuf(iter->value());
-    auto filter_contents = co_await block::contents::read(file, filter_handle);
+    auto filter_contents = co_await read_block(file, filter_handle);
     co_return block::filter_reader(std::move(filter_contents));
 }
 
@@ -86,7 +125,7 @@ private:
     block_reader(iobuf index_value) {
         auto handle = block::handle::from_iobuf(std::move(index_value));
         // TODO(lsm): use block cache here
-        auto contents = co_await block::contents::read(_file.get(), handle);
+        auto contents = co_await read_block(_file.get(), handle);
         co_return block::reader(std::move(contents)).create_iterator();
     }
 
@@ -111,9 +150,9 @@ ss::future<reader> reader::open(
     auto encoded_footer = co_await file->read(
       file_size - footer::encoded_length, footer::encoded_length);
     auto footer = footer::from_iobuf(encoded_footer.as_iobuf());
-    auto index_block_contents = co_await block::contents::read(
+    auto index_block_contents = co_await read_block(
       file.get(), footer.index_handle);
-    auto metaindex_block_contents = co_await block::contents::read(
+    auto metaindex_block_contents = co_await read_block(
       file.get(), footer.metaindex_handle);
 
     block::reader index_block(std::move(index_block_contents));

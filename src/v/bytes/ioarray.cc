@@ -187,13 +187,40 @@ std::vector<::iovec> ioarray::as_iovec() {
 }
 
 char& ioarray::operator[](size_t i) {
-    dassert(i < _size, "i {} must be <= size {}", i, _size, _size);
+    dassert(i < _size, "i {} must be < size {}", i, _size);
     char* it = _buffers[i / max_chunk_size].get_write();
     std::advance(it, i % max_chunk_size);
     return *it;
 }
 
 char ioarray::operator[](size_t i) const {
-    dassert(i < _size, "i {} must be <= size {}", i, _size, _size);
+    dassert(i < _size, "i {} must be < size {}", i, _size);
     return _buffers[i / max_chunk_size][i % max_chunk_size];
+}
+
+void ioarray::trim_back(size_t n) {
+    dassert(n <= _size, "n {} must be <= size {}", n, _size);
+    _size -= n;
+    size_t i = _buffers.size() - 1;
+    while (n > 0) {
+        auto& last_buf = _buffers[i];
+        size_t amt = std::min(n, last_buf.size());
+        n -= amt;
+        last_buf.trim(last_buf.size() - amt);
+        if (last_buf.empty()) {
+            --i;
+        }
+    }
+    auto end = _buffers.begin();
+    std::advance(end, i + 1);
+    if (end == _buffers.end()) {
+        return;
+    }
+    // Absl very annoyingly does not support move operators, so we have to do it
+    // the hard way by manually destructing and reconstructing in-place.
+    decltype(_buffers) replacement(
+      std::make_move_iterator(_buffers.begin()), std::make_move_iterator(end));
+    auto* buffers_ptr = &_buffers;
+    buffers_ptr->~FixedArray();
+    new (buffers_ptr) absl::FixedArray(std::move(replacement));
 }
