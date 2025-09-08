@@ -20,6 +20,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_cache",
+    srcs = [
+        "table_cache.cc",
+    ],
+    hdrs = [
+        "table_cache.h",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/io:persistence",
+        "//src/v/lsm/sst:reader",
+        "//src/v/utils:chunked_kv_cache",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "version_set",
     srcs = [
         "version_edit.cc",
@@ -36,6 +53,7 @@ redpanda_cc_library(
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/io:persistence",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@seastar",
     ],

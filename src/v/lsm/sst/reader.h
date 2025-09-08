@@ -54,6 +54,8 @@ public:
 
     // Closes the reader and the closes the file it's referencing.
     //
+    // There must not be any active iterators when this is called.
+    //
     // This must be called before destructing.
     ss::future<> close();
 

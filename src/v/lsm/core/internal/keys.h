@@ -21,12 +21,6 @@
 
 namespace lsm::internal {
 
-// The level in the LSM tree.
-using level = named_type<uint8_t, struct level_tag>;
-
-// The numeric ID of an sst file
-using file_id = named_type<uint64_t, struct file_id_tag>;
-
 // The sequence number for a write into the database.
 using seqno = named_type<uint64_t, struct seqno_tag>;
 

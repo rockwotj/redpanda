@@ -15,6 +15,7 @@
 #include "lsm/core/internal/keys.h"
 #include "lsm/db/version_edit.h"
 #include "lsm/db/weak_intrusive_list.h"
+#include "lsm/io/persistence.h"
 
 namespace lsm::db {
 
@@ -70,6 +71,7 @@ private:
     void set_current(ss::lw_shared_ptr<version>);
 
     ss::lw_shared_ptr<version> _current;
+    io::persistence* _persistence;
 };
 
 // Encapulate information about a compaction event.

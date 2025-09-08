@@ -37,18 +37,18 @@ template<
   typename EqualTo = std::equal_to<Key>>
 class chunked_kv_cache {
     struct cached_value;
-    struct evict;
+    struct eviction;
     using cache_t = s3_fifo::cache<
       cached_value,
       &cached_value::hook,
-      evict,
+      eviction,
       s3_fifo::default_cache_cost>;
 
 public:
     using config = cache_t::config;
 
     explicit chunked_kv_cache(config config)
-      : _cache{config, evict{*this}} {}
+      : _cache{config, eviction{*this}} {}
 
     ~chunked_kv_cache() noexcept = default;
 
@@ -72,6 +72,11 @@ public:
      * Returns std::nullopt if the key doesn't have a value in the cache.
      */
     ss::optimized_optional<ss::shared_ptr<Value>> get_value(const Key& key);
+
+    /**
+     * Manually evict an entry from the cache.
+     */
+    void evict(const Key& key);
 
     using cache_stat = struct cache_t::stat;
     /**
@@ -119,7 +124,7 @@ private:
 };
 
 template<typename Key, typename Value, typename Hash, typename EqualTo>
-struct chunked_kv_cache<Key, Value, Hash, EqualTo>::evict {
+struct chunked_kv_cache<Key, Value, Hash, EqualTo>::eviction {
     chunked_kv_cache& kv_c;
 
     bool operator()(cached_value& e) noexcept {
@@ -176,6 +181,18 @@ chunked_kv_cache<Key, Value, Hash, EqualTo>::get_value(const Key& key) {
     entry.hook.touch();
     _hit_count++;
     return entry.value;
+}
+
+template<typename Key, typename Value, typename Hash, typename EqualTo>
+void chunked_kv_cache<Key, Value, Hash, EqualTo>::evict(const Key& key) {
+    gc_ghost_fifo();
+    auto it = _map.find(key);
+    if (it == _map.end()) {
+        return;
+    }
+    _cache.remove(*it->second);
+    _ghost_fifo.erase(_ghost_fifo.iterator_to(*it->second));
+    _map.erase(it);
 }
 
 template<typename Key, typename Value, typename Hash, typename EqualTo>

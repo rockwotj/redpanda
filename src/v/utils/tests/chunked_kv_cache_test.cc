@@ -143,3 +143,32 @@ TEST(ChunkedKVTest, GhostToMainTest) {
     EXPECT_EQ(stat.small_queue_size, 4);
     EXPECT_EQ(stat.index_size, 6);
 }
+
+TEST(ChunkedKVTest, ManuallyEvict) {
+    using cache_type = utils::chunked_kv_cache<int, std::string>;
+
+    cache_type cache(cache_type::config{.cache_size = 4, .small_size = 1});
+    auto str = "avaluestr";
+
+    // Fill the cache
+    for (int i = 0; i < 5; i++) {
+        EXPECT_EQ(cache.try_insert(i, ss::make_shared<std::string>(str)), true);
+        auto stat = cache.stat();
+        EXPECT_EQ(stat.main_queue_size, 0);
+        EXPECT_EQ(stat.small_queue_size, i + 1);
+        EXPECT_EQ(stat.index_size, i + 1);
+    }
+
+    // Remove an entry
+    cache.evict(3);
+    auto stat = cache.stat();
+    EXPECT_EQ(stat.main_queue_size, 0);
+    EXPECT_EQ(stat.small_queue_size, 4);
+    EXPECT_EQ(stat.index_size, 4);
+
+    // Noop evict
+    cache.evict(5);
+    EXPECT_EQ(stat.main_queue_size, 0);
+    EXPECT_EQ(stat.small_queue_size, 4);
+    EXPECT_EQ(stat.index_size, 4);
+}
