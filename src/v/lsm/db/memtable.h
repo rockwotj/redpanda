@@ -17,7 +17,7 @@
 
 #include <seastar/core/sstring.hh>
 
-namespace lsm {
+namespace lsm::db {
 
 // A memtable is a sorted map that stores key-value pairs in memory.
 //
@@ -59,4 +59,4 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
-} // namespace lsm
+} // namespace lsm::db

@@ -14,7 +14,7 @@
 #include "absl/container/btree_map.h"
 #include "base/vassert.h"
 
-namespace lsm {
+namespace lsm::db {
 
 class memtable::impl {
 public:
@@ -67,4 +67,4 @@ std::optional<iobuf> memtable::get(internal::key_view key) {
     return _impl->get(key);
 }
 
-} // namespace lsm
+} // namespace lsm::db

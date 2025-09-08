@@ -36,7 +36,7 @@ lsm::internal::key operator""_key(const char* s, size_t) {
 } // namespace
 
 TEST(Memtable, GetAtVersion) {
-    lsm::memtable table;
+    lsm::db::memtable table;
     table.add("key1@1"_key, iobuf::from("value1"));
     table.add("key1@2"_key, iobuf::from("value2"));
     table.add("key1@3"_key, iobuf::from("value3"));

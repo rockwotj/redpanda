@@ -21,6 +21,12 @@
 
 namespace lsm::internal {
 
+// The level in the LSM tree.
+using level = named_type<uint8_t, struct level_tag>;
+
+// The numeric ID of an sst file
+using file_id = named_type<uint64_t, struct file_id_tag>;
+
 // The sequence number for a write into the database.
 using seqno = named_type<uint64_t, struct seqno_tag>;
 
@@ -74,6 +80,7 @@ public:
     const char& operator[](size_t i) const { return _value[i]; }
     const char* data() const { return _value.data(); }
     size_t size() const { return _value.size(); }
+    bool empty() const { return _value.empty(); }
 
     // Returns the user portion of the key.
     std::string_view user_key() const {
@@ -115,6 +122,7 @@ public:
 
     const char* data() const { return _value.data(); }
     size_t size() const { return _value.size(); }
+    bool empty() const { return _value.empty(); }
 
     // The user portion of the key.
     std::string_view user_key() const {
