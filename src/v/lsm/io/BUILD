@@ -22,6 +22,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:ioarray",
         "//src/v/bytes:iobuf",
+        "//src/v/lsm/core:exceptions",
         "@seastar",
     ],
 )
@@ -35,6 +36,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:ioarray",
         "//src/v/bytes:iobuf",
+        "//src/v/lsm/core:exceptions",
         "@seastar",
     ],
 )

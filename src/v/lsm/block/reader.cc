@@ -256,11 +256,6 @@ std::unique_ptr<internal::iterator> reader::create_iterator() {
           "corruption: bad block contents, size: {}", _data->size());
     }
     uint32_t n_restarts = num_restarts(*_data);
-    fmt::print(
-      stderr,
-      "n_restarts: {} _restart_offset {}\n",
-      n_restarts,
-      _restart_offset);
     if (n_restarts == 0) {
         return internal::iterator::create_empty();
     } else {

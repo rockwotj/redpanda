@@ -32,3 +32,22 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "table_cache_test",
+    timeout = "short",
+    srcs = [
+        "table_cache_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/db:table_cache",
+        "//src/v/lsm/io:memory_persistence",
+        "//src/v/lsm/sst:builder",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/functional/function_ref.h"
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/iterator.h"
@@ -27,14 +28,15 @@ class table_cache {
 public:
     class impl;
 
-    table_cache(io::persistence*, int32_t max_entries);
+    table_cache(io::persistence*, size_t max_entries);
     table_cache(const table_cache&) = delete;
     table_cache(table_cache&&) = default;
     table_cache& operator=(const table_cache&) = delete;
     table_cache& operator=(table_cache&&) = default;
     ~table_cache();
 
-    // Create an iterator
+    // Create an iterator. All iterators returned from this method must
+    // be destructed before the `close` method is called.
     ss::future<std::unique_ptr<internal::iterator>>
     create_iterator(internal::file_id, uint64_t file_size);
 
@@ -48,6 +50,30 @@ public:
     // Manually evict this file from the cache. There must not be any
     // open iterators or concurrent calls to `get` for this file.
     ss::future<> evict(internal::file_id);
+
+    // Close the cache and any readers that are cached.
+    //
+    // This *must* be called before destructing the cache.
+    //
+    // All iterators from `create_iterator` *must* be destroyed before calling
+    // this method.
+    ss::future<> close();
+
+    /**
+     * Cache statistics.
+     */
+    struct stat {
+        // Total number of open file handles.
+        size_t open_file_handles;
+        // Current size of the small queue.
+        size_t small_queue_size;
+        // Current size of the main queue.
+        size_t main_queue_size;
+
+        fmt::iterator format_to(fmt::iterator) const;
+    };
+
+    stat statistics() const;
 
 private:
     std::unique_ptr<impl> _impl;

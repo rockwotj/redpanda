@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/format_to.h"
+#include "lsm/core/internal/files.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/db/version_edit.h"
 #include "lsm/db/weak_intrusive_list.h"

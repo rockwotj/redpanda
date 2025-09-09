@@ -15,6 +15,7 @@
 #include "base/format_to.h"
 #include "base/units.h"
 #include "container/chunked_hash_map.h"
+#include "lsm/core/internal/files.h"
 #include "lsm/core/internal/keys.h"
 
 #include <seastar/core/shared_ptr.hh>

@@ -9,6 +9,8 @@
  * by the Apache License, Version 2.0
  */
 
+#pragma once
+
 #include "base/seastarx.h"
 #include "utils/named_type.h"
 

@@ -11,37 +11,41 @@
 
 #include "lsm/db/table_cache.h"
 
+#include "base/vassert.h"
 #include "container/chunked_hash_map.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/iterator.h"
 #include "lsm/sst/reader.h"
+#include "ssx/work_queue.h"
 #include "utils/mutex.h"
 #include "utils/s3_fifo.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/weak_ptr.hh>
 
+#include <exception>
+#include <utility>
+
 namespace lsm::db {
 
-class table_cache::impl : public ss::weakly_referencable<impl> {
+class table_cache::impl {
+    // To ensure that we don't close/evict readers while there are pending
+    // iterators for them, we let them live longer and enqueue them for cleanup
+    // when destructed.
     class wrapped_iterator : public internal::iterator {
     public:
         wrapped_iterator(
-          ss::weak_ptr<table_cache::impl> cache,
-          internal::file_id file_id,
-          std::unique_ptr<internal::iterator> underlying)
-          : _cache(std::move(cache))
-          , _file_id(file_id)
-          , _underlying(std::move(underlying)) {}
+          table_cache::impl* cache, ss::lw_shared_ptr<sst::reader> reader)
+          : _cache(cache)
+          , _reader(std::move(reader))
+          , _underlying(_reader->create_iterator()) {}
         wrapped_iterator(const wrapped_iterator&) = delete;
         wrapped_iterator(wrapped_iterator&&) = delete;
         wrapped_iterator& operator=(const wrapped_iterator&) = delete;
         wrapped_iterator& operator=(wrapped_iterator&&) = delete;
         ~wrapped_iterator() override {
-            if (_cache) {
-                _cache->queue_cleanup_if_evicted(_file_id);
-            }
+            _cache->maybe_enqueue_cleanup(std::exchange(_reader, {}));
         }
         bool valid() const override { return _underlying->valid(); }
         ss::future<> seek_to_first() override {
@@ -59,22 +63,26 @@ class table_cache::impl : public ss::weakly_referencable<impl> {
         iobuf value() override { return _underlying->value(); }
 
     private:
-        ss::weak_ptr<table_cache::impl> _cache;
-        internal::file_id _file_id;
+        table_cache::impl* _cache;
+        ss::lw_shared_ptr<sst::reader> _reader;
         std::unique_ptr<internal::iterator> _underlying;
     };
 
 public:
-    impl(io::persistence* p, int32_t max_entries)
-      : _persistence(p) {
-        std::ignore = max_entries;
-    }
+    impl(io::persistence* p, size_t max_entries)
+      : _mu("lsm::db::table_cache")
+      , _persistence(p)
+      , _cache(compute_cache_config(max_entries), eviction(this))
+      , _cleanup_queue([](const std::exception_ptr& ex) {
+          // TODO: log an error instead
+          std::ignore = ex;
+          vassert(false, "unexpected exception on table cache cleanup queue");
+      }) {}
 
     ss::future<std::unique_ptr<internal::iterator>>
     create_iterator(internal::file_id id, uint64_t file_size) {
         auto table = co_await find_reader(id, file_size);
-        co_return std::make_unique<wrapped_iterator>(
-          weak_from_this(), id, table->create_iterator());
+        co_return std::make_unique<wrapped_iterator>(this, table);
     }
 
     ss::future<> get(
@@ -84,23 +92,67 @@ public:
       absl::FunctionRef<ss::future<>(internal::key_view, iobuf)> fn) {
         auto table = co_await find_reader(id, file_size);
         co_await table->internal_get(key, fn);
+        // It's possible (although unlikely), that while `internal_get` was
+        // going on the table was evicted from the cache, if that's the case
+        // we need to enqueue the cleanup, as the ghost fifo gc would have not
+        // done it.
+        maybe_enqueue_cleanup(std::move(table));
     }
 
     ss::future<> evict(internal::file_id id) {
-        co_await gc_ghost_fifo();
+        gc_ghost_fifo();
+        auto units = co_await _mu.get_units();
         auto it = _map.find(id);
         if (it == _map.end()) {
             co_return;
         }
         _cache.remove(*it->second);
         _ghost_fifo.erase(_ghost_fifo.iterator_to(*it->second));
-        co_await it->second->value->close();
+        auto reader = std::exchange(it->second->value, {});
         _map.erase(it);
+        units.return_all();
+        // Ensure that we remove it before the scheduling point to close the
+        // reader.
+        co_await reader->close();
     }
 
-    void queue_cleanup_if_evicted(internal::file_id id) {
-        // TODO: What to do??
-        std::ignore = id;
+    ss::future<> close() {
+        auto units = co_await _mu.get_units();
+        for (auto& [_, entry] : _map) {
+            _cache.remove(*entry);
+            auto reader = std::exchange(entry->value, {});
+            co_await reader->close();
+        }
+        _ghost_fifo.clear();
+        _map.clear();
+        ss::promise<void> p;
+        _cleanup_queue.submit([&p] {
+            p.set_value();
+            return ss::now();
+        });
+        co_await p.get_future();
+        co_await _cleanup_queue.shutdown();
+    }
+
+    // Take an r-value so that we don't accidently make a copy and preserving
+    // the ref count.
+    void maybe_enqueue_cleanup(ss::lw_shared_ptr<sst::reader>&& reader) {
+        auto r = std::move(reader);
+        if (r.use_count() == 1) {
+            _cleanup_queue.submit([this, r = std::move(r)] {
+                return r->close().finally(
+                  [this] { --_handles_pending_cleanup; });
+            });
+        }
+    }
+
+    table_cache::stat stats() const {
+        auto cache_stats = _cache.stat();
+        return {
+          .open_file_handles = _map.size() + _handles_pending_cleanup,
+          .small_queue_size = cache_stats.small_queue_size,
+          .main_queue_size = cache_stats.main_queue_size,
+        };
     }
 
 private:
@@ -123,7 +175,6 @@ private:
     struct eviction {
         table_cache::impl* impl;
         bool operator()(cached_value& e) noexcept {
-            e.value = nullptr;
             impl->_ghost_fifo.push_back(e);
             return true;
         }
@@ -135,24 +186,50 @@ private:
       eviction,
       utils::s3_fifo::default_cache_cost>;
 
+    static cache_t::config compute_cache_config(size_t max_entries) {
+        // In s3_fifo they recommend the small queue to be ~10% of the main
+        // queue. The ghost queue and main queue are the same size. So we split
+        // up our queue into 3 chunks:
+        // 45% -> main queue
+        // 45% -> ghost queue
+        // 10% -> small queue
+        auto main_cache_size = static_cast<size_t>(
+          static_cast<double>(max_entries) * 0.45);
+        return cache_t::config{
+          .cache_size = main_cache_size,
+          .small_size = max_entries - (2 * main_cache_size),
+        };
+    }
+
     ss::future<ss::lw_shared_ptr<sst::reader>>
     find_reader(internal::file_id id, uint64_t file_size) {
-        co_await gc_ghost_fifo();
+        gc_ghost_fifo();
         auto it = _map.find(id);
         if (it == _map.end()) {
+            // TODO(lsm): this mutex might be a bottleneck if we're opening lots
+            // of files and want to do that in parallel? It might be better to
+            // allow finer grained locking somehow, or we allow for races and
+            // just clean it up after (as long as we stay under the total file
+            // handle limit)?
             auto units = co_await _mu.get_units();
-            auto reader = co_await open_reader(id, file_size);
-            auto [it, succ] = _map.try_emplace(
-              id, std::make_unique<cached_value>(id, std::move(reader)));
-            if (!succ) {
+            // Make sure since we had a scheduling point that something else
+            // didn't come along and insert what we were looking for into the
+            // map, if it did, we can continue as usual, as the units will be
+            // released after the `if` statement.
+            it = _map.find(id);
+            if (it == _map.end()) {
+                auto reader = co_await open_reader(id, file_size);
+                auto [it, succ] = _map.try_emplace(
+                  id, std::make_unique<cached_value>(id, std::move(reader)));
+                vassert(succ, "lock is held, who mutated _map?");
+                _cache.insert(*it->second);
                 co_return it->second->value;
             }
-            _cache.insert(*it->second);
-            co_return it->second->value;
         }
         auto& entry = *it->second;
         if (entry.hook.evicted()) {
-            entry.value = co_await open_reader(id, file_size);
+            // If this was evicted, but on the ghost queue, then we can reinsert
+            // it into the cache and keep the existing entry alive.
             _ghost_fifo.erase(_ghost_fifo.iterator_to(entry));
             _cache.insert(entry);
         }
@@ -171,19 +248,17 @@ private:
         co_return ss::make_lw_shared(std::move(reader));
     }
 
-    ss::future<> gc_ghost_fifo() {
+    void gc_ghost_fifo() {
         for (auto it = _ghost_fifo.begin(); it != _ghost_fifo.end();) {
             auto& entry = *it;
             if (_cache.ghost_queue_contains(entry)) {
                 // The ghost queue is in fifo-order so any entry that comes
                 // after an entry that hasn't been evicted will also not be
                 // evicted.
-                co_return;
+                return;
             }
-            // TODO: figure this out!
-            if (entry.value && entry.value.use_count() == 1) {
-                co_await entry.value->close();
-            }
+            ++_handles_pending_cleanup;
+            maybe_enqueue_cleanup(std::exchange(entry.value, {}));
             it = _ghost_fifo.erase(it);
             _map.erase(entry.id);
         }
@@ -193,10 +268,18 @@ private:
     io::persistence* _persistence;
     chunked_hash_map<internal::file_id, entry_t> _map;
     cache_t _cache;
+    // Entries that have been "soft evicted" from the cache. We keep them around
+    // just in case and GC them after some period of time.
     ghost_fifo_t _ghost_fifo;
+    // Once an item is evicted, we need to also check that outstanding iterators
+    // are closed. If they are not, then we wait until they are, then we insert
+    // this onto this queue (since we are in a destructor, we can't await the
+    // close there).
+    ssx::work_queue _cleanup_queue;
+    size_t _handles_pending_cleanup = 0;
 };
 
-table_cache::table_cache(io::persistence* persistence, int32_t max_entries)
+table_cache::table_cache(io::persistence* persistence, size_t max_entries)
   : _impl(std::make_unique<impl>(persistence, max_entries)) {}
 
 table_cache::~table_cache() = default;
@@ -216,6 +299,22 @@ ss::future<> table_cache::get(
 
 ss::future<> table_cache::evict(internal::file_id id) {
     return _impl->evict(id);
+}
+
+ss::future<> table_cache::close() { return _impl->close(); }
+
+table_cache::stat table_cache::statistics() const { return _impl->stats(); }
+
+fmt::iterator table_cache::stat::format_to(fmt::iterator it) const {
+    auto total_queue_size = main_queue_size + small_queue_size;
+    auto ghost_queue_size = open_file_handles - total_queue_size;
+    return fmt::format_to(
+      it,
+      "{{open_handles:{},main_queue:{},small_queue:{},ghost_queue:{}}}",
+      open_file_handles,
+      main_queue_size,
+      small_queue_size,
+      ghost_queue_size);
 }
 
 } // namespace lsm::db

@@ -29,9 +29,17 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/lsm/core:exceptions",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/io:persistence",
         "//src/v/lsm/sst:reader",
-        "//src/v/utils:chunked_kv_cache",
+        "//src/v/ssx:work_queue",
+        "//src/v/utils:mutex",
+        "//src/v/utils:s3_fifo",
+        "@abseil-cpp//absl/functional:function_ref",
         "@seastar",
     ],
 )

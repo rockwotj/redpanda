@@ -9,8 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
+#include "lsm/core/internal/files.h"
+
+#include <seastar/core/format.hh>
+
 namespace lsm::internal {
 
-ss::sstring sst_file_name(file_id) {}
+ss::sstring sst_file_name(file_id id) { return ss::format("{}.sst", id()); }
 
 } // namespace lsm::internal

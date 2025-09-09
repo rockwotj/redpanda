@@ -23,9 +23,18 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "keys",
     srcs = ["keys.cc"],
-    hdrs = [
-        "keys.h",
+    hdrs = ["keys.h"],
+    deps = [
+        "//src/v/base",
+        "//src/v/utils:named_type",
+        "@seastar",
     ],
+)
+
+redpanda_cc_library(
+    name = "files",
+    srcs = ["files.cc"],
+    hdrs = ["files.h"],
     deps = [
         "//src/v/base",
         "//src/v/utils:named_type",
