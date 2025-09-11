@@ -9,16 +9,16 @@
  * by the Apache License, Version 2.0
  */
 
-#include "lsm/core/internal/files.h"
-
-#include <seastar/core/format.hh>
+#include "lsm/core/internal/options.h"
 
 namespace lsm::internal {
 
-ss::sstring sst_file_name(file_id id) { return ss::format("{}.sst", id()); }
+fmt::iterator options::level_config::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{number:{}}}", number);
+}
 
-ss::sstring manifest_file_name(manifest_id id) {
-    return ss::format("{}.manifest", id());
+fmt::iterator options::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{levels:{}}}", levels);
 }
 
 } // namespace lsm::internal

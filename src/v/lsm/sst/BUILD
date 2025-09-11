@@ -52,8 +52,6 @@ redpanda_cc_library(
     name = "reader",
     srcs = [
         "reader.cc",
-        "two_level_iterator.cc",
-        "two_level_iterator.h",
     ],
     hdrs = [
         "reader.h",
@@ -68,6 +66,7 @@ redpanda_cc_library(
         "//src/v/lsm/block:reader",
         "//src/v/lsm/core:compression",
         "//src/v/lsm/core:exceptions",
+        "//src/v/lsm/core/internal:two_level_iterator",
     ],
     deps = [
         "//src/v/base",

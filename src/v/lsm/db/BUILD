@@ -45,7 +45,7 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "version_set",
+    name = "version_edit",
     srcs = [
         "version_edit.cc",
     ],
@@ -57,11 +57,56 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:keys",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "file_utils",
+    srcs = [
+        "file_utils.cc",
+    ],
+    hdrs = [
+        "file_utils.h",
+    ],
+    deps = [
+        ":version_edit",
+        "//src/v/base",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:keys",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "version_set",
+    srcs = [
+        "version_set.cc",
+    ],
+    hdrs = [
+        "version_set.h",
+    ],
+    implementation_deps = [
+        "//src/v/utils:to_string",
+    ],
+    deps = [
+        ":file_utils",
+        ":table_cache",
+        ":version_edit",
+        ":weak_intrusive_list",
+        "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
+        "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
         "//src/v/lsm/io:persistence",
+        "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@seastar",
     ],

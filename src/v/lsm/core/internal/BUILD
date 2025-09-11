@@ -11,9 +11,23 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/lsm/core:exceptions",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         ":keys",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "two_level_iterator",
+    srcs = ["two_level_iterator.cc"],
+    hdrs = ["two_level_iterator.h"],
+    implementation_deps = [
+        "//src/v/lsm/core:exceptions",
+    ],
+    deps = [
+        ":iterator",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "@seastar",
@@ -38,6 +52,17 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "options",
+    srcs = ["options.cc"],
+    hdrs = ["options.h"],
+    deps = [
+        ":files",
+        "//src/v/base",
         "@seastar",
     ],
 )

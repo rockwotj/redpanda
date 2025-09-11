@@ -9,20 +9,20 @@
  * by the Apache License, Version 2.0
  */
 
-#include "two_level_iterator.h"
+#include "lsm/core/internal/two_level_iterator.h"
 
 #include <seastar/core/coroutine.hh>
 
-namespace lsm::sst {
+namespace lsm::internal {
 
 namespace {
 
-class impl : public internal::iterator {
+class impl : public iterator {
 public:
     impl(
-      std::unique_ptr<internal::iterator> index_iter, block_function block_fn)
+      std::unique_ptr<iterator> index_iter, data_iterator_function data_iter_fn)
       : _index_iter(std::move(index_iter))
-      , _block_fn(std::move(block_fn)) {}
+      , _data_iter_fn(std::move(data_iter_fn)) {}
 
     ~impl() override = default;
 
@@ -46,7 +46,7 @@ public:
         co_await skip_empty_data_blocks_backward();
     }
 
-    ss::future<> seek(internal::key_view target) override {
+    ss::future<> seek(key_view target) override {
         co_await _index_iter->seek(target);
         co_await init_data_block();
         if (_data_iter) {
@@ -67,7 +67,7 @@ public:
         co_await skip_empty_data_blocks_backward();
     }
 
-    internal::key_view key() override {
+    key_view key() override {
         assert(valid());
         return _data_iter->key();
     }
@@ -84,7 +84,7 @@ private:
             co_return;
         }
         auto handle = _index_iter->value();
-        _data_iter = co_await _block_fn(std::move(handle));
+        _data_iter = co_await _data_iter_fn(std::move(handle));
     }
     ss::future<> skip_empty_data_blocks_forward() {
         while (!_data_iter || !_data_iter->valid()) {
@@ -113,17 +113,20 @@ private:
         }
     }
 
-    std::unique_ptr<internal::iterator> _index_iter;
-    block_function _block_fn;
-    // May be nullptr
-    std::unique_ptr<internal::iterator> _data_iter;
+    std::unique_ptr<iterator> _index_iter;
+    data_iterator_function _data_iter_fn;
+    // May be nullptr, since it's not at an API boundary we do not use
+    // ss::optimized_optional, as that makes the code slightly harder
+    // to read.
+    std::unique_ptr<iterator> _data_iter;
 };
 
 } // namespace
 
-std::unique_ptr<internal::iterator> create_two_level_iterator(
-  std::unique_ptr<internal::iterator> index_iter, block_function block_fn) {
-    return std::make_unique<impl>(std::move(index_iter), std::move(block_fn));
+std::unique_ptr<iterator> create_two_level_iterator(
+  std::unique_ptr<iterator> index_iter, data_iterator_function data_iter_fn) {
+    return std::make_unique<impl>(
+      std::move(index_iter), std::move(data_iter_fn));
 }
 
-} // namespace lsm::sst
+} // namespace lsm::internal

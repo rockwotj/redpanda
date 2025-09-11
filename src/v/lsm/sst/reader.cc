@@ -18,9 +18,9 @@
 #include "lsm/block/reader.h"
 #include "lsm/core/compression.h"
 #include "lsm/core/exceptions.h"
+#include "lsm/core/internal/two_level_iterator.h"
 #include "lsm/io/persistence.h"
 #include "lsm/sst/footer.h"
-#include "two_level_iterator.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -90,7 +90,7 @@ public:
       , _filter(std::move(filter)) {}
 
     std::unique_ptr<internal::iterator> create_iterator() {
-        return create_two_level_iterator(
+        return internal::create_two_level_iterator(
           _index_block.create_iterator(), [this](iobuf index_value) {
               return block_reader(std::move(index_value));
           });

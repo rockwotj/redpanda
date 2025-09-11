@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "absl/container/flat_hash_map.h"
+#include "absl/container/fixed_array.h"
 #include "base/format_to.h"
 #include "base/units.h"
 #include "container/chunked_hash_map.h"
@@ -44,7 +44,7 @@ struct file_meta_data {
 class version_edit {
 public:
     // Set the next file number for files after this edit.
-    void set_next_file_number(internal::file_id file_id) {
+    void set_next_file_id(internal::file_id file_id) {
         _has_next_file_number = true;
         _next_file_number = file_id;
     }
@@ -72,12 +72,13 @@ public:
 
     // Add a file to the new version
     void add_file(added_file params) {
-        _mutations_by_level[params.level].added_files.push_back({
-          .id = params.file_id,
-          .file_size = params.file_size,
-          .smallest = std::move(params.smallest),
-          .largest = std::move(params.largest),
-        });
+        _mutations_by_level[params.level].added_files.push_back(
+          ss::make_lw_shared<file_meta_data>({
+            .id = params.file_id,
+            .file_size = params.file_size,
+            .smallest = std::move(params.smallest),
+            .largest = std::move(params.largest),
+          }));
     }
 
     // Remove a file from this version.
@@ -88,14 +89,15 @@ public:
     fmt::iterator format_to(fmt::iterator it) const;
 
 private:
+    friend class version_set;
     struct mutation {
         chunked_hash_set<internal::file_id> removed_files;
-        chunked_vector<file_meta_data> added_files;
+        chunked_vector<ss::lw_shared_ptr<file_meta_data>> added_files;
         std::optional<internal::key> compact_pointer;
 
         fmt::iterator format_to(fmt::iterator) const;
     };
-    absl::flat_hash_map<internal::level, mutation> _mutations_by_level;
+    absl::FixedArray<mutation> _mutations_by_level;
     internal::file_id _next_file_number;
     internal::seqno _last_seq_num;
     bool _has_next_file_number : 1 = false;
