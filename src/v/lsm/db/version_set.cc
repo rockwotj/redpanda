@@ -12,7 +12,6 @@
 #include "lsm/db/version_set.h"
 
 #include "absl/container/btree_set.h"
-#include "base/units.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/two_level_iterator.h"
 #include "lsm/db/file_utils.h"
@@ -32,6 +31,9 @@ using internal::operator""_level;
 // about the files in the level. For a given entry, key() is the largest key
 // that occurs in teh file, and value()  is an 16-byte value containing the file
 // number and file size, both encoded using 64bit fixed encoding.
+//
+// NOTE: It's up to the user of this class to ensure the files pointer is kept
+// alive.
 class level_file_num_iterator : public internal::iterator {
 public:
     explicit level_file_num_iterator(
@@ -113,22 +115,8 @@ public:
             }
             for (const auto& added_file : mutation.added_files) {
                 auto copy = ss::make_lw_shared(*added_file);
-                // We arrange to automatically compact this file after a certain
-                // number of seeks. Let's assume:
-                // (1) One seek costs 10ms
-                // (2) Writing or reading 1MiB costs 10ms (100MiB/s)
-                // (3) A compaction of 1MiB does 25MiB of IO:
-                //       1MiB read from this level
-                //       10-12MiB read from next level (boundaries my be
-                //       misaligned)
-                //       10-12MiB written to next level
-                // This imples that 25 seeks cost the same as the compaction of
-                // 1MB of data. I.e., one seek costs approximately the same as
-                // the compaction of 40KiB of data. We are a little conservative
-                // and allow approximately ne seek for every 16KiB of data
-                // before triggering a compaction.
                 copy->allowed_seeks = static_cast<int32_t>(
-                  copy->file_size / 16_KiB);
+                  copy->file_size / _vset->_options.compact_after_seek_bytes);
                 constexpr static int32_t min_allowed_seeks = 100;
                 if (copy->allowed_seeks < min_allowed_seeks) {
                     copy->allowed_seeks = min_allowed_seeks;
@@ -243,31 +231,175 @@ bool version::update_stats(const get_stats& stats) {
     return false;
 }
 
-bool version::record_read_sample(internal::key_view key) {}
+ss::future<bool> version::record_read_sample(internal::key_view key) {
+    get_stats stats;
+    size_t matches = 0;
+    co_await for_each_overlapping(
+      key,
+      [&stats, &matches](
+        internal::level level, ss::lw_shared_ptr<file_meta_data> file) {
+          ++matches;
+          if (matches == 1) {
+              stats.seek_file = std::move(file);
+              stats.seek_file_level = level;
+          }
+          return ss::make_ready_future<ss::stop_iteration>(matches >= 2);
+      });
+    // Must have at least two matches since we want to merge across files. But
+    // what if we have a single file that contains many overwrites and
+    // deletions? Should we have another mechanism for finding such files?
+    if (matches >= 2) {
+        // 1MiB cost is about 1 seek (see comment in
+        // options::compact_after_seek_bytes).
+        co_return update_stats(stats);
+    }
+    co_return false;
+}
 
 chunked_vector<ss::lw_shared_ptr<file_meta_data>>
 version::get_overlapping_inputs(
-  internal::level,
+  internal::level level,
   const internal::key_view* begin,
-  const internal::key_view* end) {}
+  const internal::key_view* end) {
+    chunked_vector<ss::lw_shared_ptr<file_meta_data>> inputs;
+    internal::key_view begin_key;
+    if (begin != nullptr) {
+        begin_key = *begin;
+    }
+    internal::key_view end_key;
+    if (end != nullptr) {
+        end_key = *end;
+    }
+    const auto& files = _files[level];
+    for (size_t i = 0; i < files.size(); ++i) {
+        const auto& file = files[i];
+        if (begin && file->largest < begin_key) { // NOLINT(*branch-clone*)
+            // file is completely before specified range; skip it
+        } else if (end && file->smallest > end_key) {
+            // file is completely after specified range; skip it
+        } else {
+            inputs.push_back(file);
+            // Level 0 files may overlap each over. So check if the newly added
+            // file has expanded the range. If so, restart search.
+            if (level == 0_level) {
+                if (begin != nullptr && file->smallest < begin_key) {
+                    begin_key = file->smallest;
+                    inputs.clear();
+                    i = 0;
+                } else if (end != nullptr && file->largest > end_key) {
+                    end_key = file->largest;
+                    inputs.clear();
+                    i = 0;
+                }
+            }
+        }
+    }
+    return inputs;
+}
 
-ss::future<std::optional<iobuf>> version::get(internal::key_view) {}
+namespace {
+
+struct found_value {
+    internal::key key;
+    iobuf value;
+};
+
+struct lookup_state {
+    std::optional<found_value> found;
+    version::get_stats last_file_read;
+    version::get_stats* stats;
+    table_cache* table_cache;
+    internal::key_view target;
+
+    ss::future<ss::stop_iteration>
+    on_file(internal::level level, ss::lw_shared_ptr<file_meta_data> file);
+};
+
+ss::future<ss::stop_iteration> lookup_state::on_file(
+  internal::level level, ss::lw_shared_ptr<file_meta_data> file) {
+    if (!stats->seek_file && last_file_read.seek_file) {
+        *stats = last_file_read;
+    }
+    last_file_read.seek_file = file;
+    last_file_read.seek_file_level = level;
+    co_await table_cache->get(
+      file->id,
+      file->file_size,
+      target,
+      [this](internal::key_view key, iobuf value) {
+          if (key.user_key() != target.user_key()) {
+              return ss::now();
+          }
+          found.emplace(internal::key{key}, std::move(value));
+          return ss::now();
+      });
+    co_return found ? ss::stop_iteration::yes : ss::stop_iteration::no;
+}
+
+} // namespace
+
+ss::future<std::optional<iobuf>>
+version::get(internal::key_view target, get_stats* stats) {
+    stats->seek_file = std::nullopt;
+    lookup_state state{
+      .stats = stats,
+      .table_cache = _vset->_table_cache,
+      .target = target,
+    };
+    co_await for_each_overlapping(
+      target,
+      [&state](internal::level level, ss::lw_shared_ptr<file_meta_data> file) {
+          return state.on_file(level, file);
+      });
+    if (!state.found || state.found->key.is_tombstone()) {
+        co_return std::nullopt;
+    }
+    co_return std::move(state.found->value);
+}
 
 bool version::overlap_in_level(
-  internal::level,
+  internal::level level,
   const internal::key_view* begin,
-  const internal::key_view* end) {}
+  const internal::key_view* end) {
+    return some_file_overlaps_range(level > 0_level, _files[level], begin, end);
+}
 
 internal::level version::pick_level_for_memtable_output(
-  internal::key_view begin, internal::key_view end) {}
+  internal::key_view begin, internal::key_view end) {
+    auto level = 0_level;
+    if (!overlap_in_level(level, &begin, &end)) {
+        // Push to next level if there is no overlap in next level,
+        // and the bytes overlapping in the level after that are limited.
+        // As we try to skip expensive level 0=>1 compactions if possible
+        constexpr static auto max_mem_compact_level = 1_level;
+        while (level <= max_mem_compact_level) {
+            if (overlap_in_level(level + 1_level, &begin, &end)) {
+                break;
+            }
+            if (level() + 2 < _vset->_options.levels.size()) {
+                // Check that file does not overlap too many grandparent
+                // bytes.
+                auto files = get_overlapping_inputs(
+                  level + 2_level, &begin, &end);
+                size_t sum = total_file_size(files);
+                if (sum > max_grandparent_overlap_bytes(_vset->_options)) {
+                    break;
+                }
+            }
+            ++level;
+        }
+    }
+    return level;
+}
 
 std::unique_ptr<internal::iterator>
 version::create_concatenating_iterator(internal::level level) {
-    // TODO(lsm): verify that these are ok to be non-owning pointers.
     auto index_iter = std::make_unique<level_file_num_iterator>(&_files[level]);
+    // Keep a strong reference at least in the lambda.
     return internal::create_two_level_iterator(
-      std::move(index_iter),
-      [this](iobuf value) -> ss::future<std::unique_ptr<internal::iterator>> {
+      std::move(index_iter), [self = shared_from_this()](iobuf value) {
+          // We always know it's a single fragment due to how we allocate and
+          // write it in the `level_file_num_iterator`.
           const auto& fragment = *value.begin();
           auto it = fragment.get();
           internal::file_id id;
@@ -275,8 +407,56 @@ version::create_concatenating_iterator(internal::level level) {
           uint64_t file_size = 0;
           std::advance(it, sizeof(id));
           std::memcpy(&file_size, it, sizeof(file_size));
-          return _vset->_table_cache->create_iterator(id, file_size);
+          return self->_vset->_table_cache->create_iterator(id, file_size);
       });
+}
+
+ss::future<> version::for_each_overlapping(
+  internal::key_view target,
+  absl::FunctionRef<ss::future<ss::stop_iteration>(
+    internal::level, ss::lw_shared_ptr<file_meta_data>)> fn) {
+    // Search level-0 from newest to oldest
+    chunked_vector<ss::lw_shared_ptr<file_meta_data>> tmp;
+    tmp.reserve(_files[0_level].size());
+    for (const auto& file : _files[0_level]) {
+        if (target >= file->smallest && target <= file->largest) {
+            tmp.push_back(file);
+        }
+    }
+    if (!tmp.empty()) {
+        std::ranges::sort(
+          tmp,
+          [](
+            const ss::lw_shared_ptr<file_meta_data>& a,
+            const ss::lw_shared_ptr<file_meta_data>& b) {
+              return a->id > b->id;
+          });
+        for (const auto& file : tmp) {
+            auto stop = co_await fn(0_level, file);
+            if (stop == ss::stop_iteration::yes) {
+                co_return;
+            }
+        }
+    }
+    // Search other levels.
+    for (auto level = 1_level; level() < _files.size(); ++level) {
+        const auto& files = _files[level];
+        if (files.empty()) {
+            continue;
+        }
+        size_t index = find_file(files, target);
+        if (index < files.size()) {
+            const auto& file = files[index];
+            if (target < file->smallest) {
+                // All of file is past any data for the key
+            } else {
+                auto stop = co_await fn(level, file);
+                if (stop == ss::stop_iteration::yes) {
+                    co_return;
+                }
+            }
+        }
+    }
 }
 
 fmt::iterator version::format_to(fmt::iterator it) const {
@@ -325,8 +505,8 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
     }
     finalize(v.get());
     // This is where we diverge a bit from LevelDB. We don't log manifest
-    // deltas, but just snapshot the full manifest. At somepoint we will want
-    // delta writes, but for now we will just write full snapshots.
+    // deltas, but just snapshot the full manifest. At somepoint we will
+    // want delta writes, but for now we will just write full snapshots.
     auto manifest_filename = internal::manifest_file_name(_manifest_id);
     auto file = co_await _persistence->open_sequential_writer(
       manifest_filename);
@@ -334,8 +514,9 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
       write_manifest(v.get(), file.get()));
     co_await file->close();
     if (fut.failed()) {
+        auto ex = fut.get_exception();
         co_await _persistence->remove_file(manifest_filename);
-        std::rethrow_exception(fut.get_exception());
+        std::rethrow_exception(ex);
     }
     set_current(std::move(v));
 }

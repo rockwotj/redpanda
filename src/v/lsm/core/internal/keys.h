@@ -70,6 +70,8 @@ public:
     parts decode() const;
     // Returns this key's value type
     value_type type() const;
+    bool is_tombstone() const { return type() == value_type::tombstone; }
+    bool is_value() const { return type() == value_type::value; }
 
     const char& operator[](size_t i) const { return _value[i]; }
     const char* data() const { return _value.data(); }
@@ -106,6 +108,7 @@ public:
         fmt::iterator format_to(fmt::iterator) const;
         explicit operator key::parts() const;
     };
+    key_view() = default;
     // Convert an owned key into a view.
     // NOLINTNEXTLINE(*explicit-conversions*)
     key_view(key k)
@@ -124,6 +127,8 @@ public:
     }
     // Returns this key's value type
     value_type type() const;
+    bool is_tombstone() const { return type() == value_type::tombstone; }
+    bool is_value() const { return type() == value_type::value; }
     // Decode a key into its parts.
     parts decode() const;
 

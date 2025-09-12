@@ -58,7 +58,7 @@ public:
     // Record a sample of bytes read at the specified internal key.
     // samples are take approximately once every read_bytes_period bytes.
     // Returns true if a new compaction may need to be trigged.
-    bool record_read_sample(internal::key_view);
+    ss::future<bool> record_read_sample(internal::key_view);
 
     // Return all files in level that overlap [begin,end].
     //
@@ -70,7 +70,7 @@ public:
       const internal::key_view* end);
 
     // Lookup the value for key.
-    ss::future<std::optional<iobuf>> get(internal::key_view);
+    ss::future<std::optional<iobuf>> get(internal::key_view target, get_stats*);
 
     // Returns true if some file in the specified level overlaps some part of
     // the specified key range.
@@ -97,6 +97,14 @@ private:
 
     std::unique_ptr<internal::iterator>
       create_concatenating_iterator(internal::level);
+
+    // Call the function for every file that overlaps with the use in order from
+    // newset to oldest. If an invocation of the function returns stop, no more
+    // calls are made.
+    ss::future<> for_each_overlapping(
+      internal::key_view,
+      absl::FunctionRef<ss::future<ss::stop_iteration>(
+        internal::level, ss::lw_shared_ptr<file_meta_data>)>);
 
     version_set* _vset; // the set which this version belongs to
     // All the files in this version of the database.

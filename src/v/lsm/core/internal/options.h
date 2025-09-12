@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/format_to.h"
+#include "base/units.h"
 #include "lsm/core/internal/files.h"
 
 #include <cstddef>
@@ -32,6 +33,27 @@ struct options {
 
     constexpr static size_t default_level_one_compaction_trigger = 4;
     size_t level_one_compaction_trigger = default_level_one_compaction_trigger;
+
+    // Write up to this amount of bytes to a file before switching to a new one.
+    // Increasing this provides better file system efficiency with larger files,
+    // but the downside of increasing this is longer compactions and longer
+    // latency/performance hiccups.
+    size_t max_file_size = 2_GiB;
+
+    // We arrange to automatically compact after a file after a certain
+    // number of seeks. Let's assume:
+    // (1) One seek costs 200us
+    // (2) Writing or reading 1MiB costs 1ms (1GiB/s)
+    // (3) A compaction of 1MiB does 25MiB of IO:
+    //       1MiB read from this level
+    //       10-12MiB read from next level (boundaries my be
+    //       misaligned)
+    //       10-12MiB written to next level
+    // This imples that 125 seeks cost the same as the compaction of
+    // 1MB of data. I.e., one seek costs approximately the same as
+    // the compaction of 8KiB of data.
+    constexpr static size_t default_compact_after_seek_bytes = 8_KiB;
+    size_t compact_after_seek_bytes = default_compact_after_seek_bytes;
 
     fmt::iterator format_to(fmt::iterator) const;
 };

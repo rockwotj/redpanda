@@ -12,6 +12,7 @@
 #pragma once
 
 #include "lsm/core/internal/files.h"
+#include "lsm/core/internal/options.h"
 #include "lsm/db/version_edit.h"
 
 #include <seastar/core/shared_ptr.hh>
@@ -33,6 +34,19 @@ size_t
 total_file_size(const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& files);
 
 size_t max_bytes_for_level(internal::level level);
+
+inline size_t target_file_size(const internal::options& options) {
+    return options.max_file_size;
+}
+
+inline size_t max_grandparent_overlap_bytes(const internal::options& options) {
+    return 10 * target_file_size(options);
+}
+
+inline size_t
+expanded_compaction_byte_size_limit(const internal::options& options) {
+    return 25 * target_file_size(options);
+}
 
 // Return the smallest index i such that files[i]->largest >= key.
 // Return files.size() if there is no such file.
