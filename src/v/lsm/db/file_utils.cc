@@ -41,6 +41,7 @@ size_t find_file(
     while (left < right) {
         size_t mid = (left + right) / 2;
         const auto& f = files[mid];
+        fmt::print(stderr, "mid: {}, cmp: {}\n", mid, f->largest < target);
         if (f->largest < target) {
             // kkey at mid.largest is < target. Therefore all files at or before
             // mid are uninteresting.
@@ -69,8 +70,8 @@ bool before_file(const file_meta_data& file, const internal::key_view* key) {
 bool some_file_overlaps_range(
   bool disjoint_sorted_files,
   const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& files,
-  const internal::key_view* smallest_key,
-  const internal::key_view* largest_key) {
+  internal::key_view* smallest_key,
+  internal::key_view* largest_key) {
     if (!disjoint_sorted_files) {
         // Need to check against all files
         for (const auto& file : files) {

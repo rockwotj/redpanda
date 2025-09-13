@@ -64,7 +64,7 @@ size_t find_file(
 bool some_file_overlaps_range(
   bool disjoint_sorted_files,
   const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& files,
-  const internal::key_view* smallest_key,
-  const internal::key_view* largest_key);
+  internal::key_view* smallest_key,
+  internal::key_view* largest_key);
 
 } // namespace lsm::db
