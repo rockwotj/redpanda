@@ -24,6 +24,8 @@ namespace lsm::internal {
 // The sequence number for a write into the database.
 using seqno = named_type<uint64_t, struct seqno_tag>;
 
+consteval seqno operator""_seqno(unsigned long long val) { return seqno{val}; }
+
 // The type of the key
 enum class value_type : uint8_t {
     // Value is a regular value.
@@ -110,8 +112,7 @@ public:
     };
     key_view() = default;
     // Convert an owned key into a view.
-    // NOLINTNEXTLINE(*explicit-conversions*)
-    key_view(key k)
+    key_view(const key& k) // NOLINT(*explicit-conversions*)
       : _value(k._value.data(), k._value.size()) {}
 
     // Create a view from an already encoded string.

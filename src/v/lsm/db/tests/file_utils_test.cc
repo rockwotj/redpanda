@@ -16,19 +16,24 @@
 
 #include <seastar/core/shared_ptr.hh>
 
+#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
 namespace {
 
 using namespace lsm;
+using lsm::internal::operator""_seqno;
+using ::testing::ElementsAre;
+
+constexpr static auto default_seqno = internal::seqno{100};
 
 class FindFileTest : public testing::Test {
 protected:
     void add(
       const std::string& smallest,
       const std::string& largest,
-      internal::seqno smallest_seq = internal::seqno{100},
-      internal::seqno largest_seq = internal::seqno{100}) {
+      internal::seqno smallest_seq = default_seqno,
+      internal::seqno largest_seq = default_seqno) {
         _files.push_back(
           ss::make_lw_shared<db::file_meta_data>(db::file_meta_data{
             .id = internal::file_id{static_cast<uint64_t>(_files.size())},
@@ -43,7 +48,7 @@ protected:
     size_t find(const std::string& key) {
         auto encoded = internal::key::encode({
           .key = key,
-          .seq_num = internal::seqno{100},
+          .seq_num = default_seqno,
         });
         return db::find_file(_files, encoded);
     }
@@ -62,14 +67,14 @@ private:
         if (smallest != nullptr) {
             s = internal::key::encode({
               .key = smallest,
-              .seq_num = internal::seqno{100},
+              .seq_num = default_seqno,
             });
             s_view = s;
         }
         if (largest != nullptr) {
             l = internal::key::encode({
               .key = largest,
-              .seq_num = internal::seqno{100},
+              .seq_num = default_seqno,
             });
             l_view = l;
         }
@@ -197,6 +202,100 @@ TEST_F(FindFileTest, OverlappingFiles) {
     ASSERT_TRUE(overlaps_level0("450", "700"));
     ASSERT_TRUE(overlaps_level0("600", "700"));
 }
+
+class AddBoundaryInputsTest : public testing::Test {
+public:
+    ss::lw_shared_ptr<db::file_meta_data> create_file(
+      uint64_t id,
+      internal::key::parts smallest,
+      internal::key::parts largest) {
+        auto meta_data = ss::make_lw_shared<db::file_meta_data>();
+        meta_data->id = internal::file_id{id};
+        meta_data->file_size = 100;
+        meta_data->smallest = internal::key::encode(std::move(smallest));
+        meta_data->largest = internal::key::encode(std::move(largest));
+        return meta_data;
+    }
+
+protected:
+    chunked_vector<ss::lw_shared_ptr<db::file_meta_data>> level_files;
+    chunked_vector<ss::lw_shared_ptr<db::file_meta_data>> compaction_files;
+};
+
+TEST_F(AddBoundaryInputsTest, TestEmptyFileSets) {
+    db::add_boundary_inputs(level_files, &compaction_files);
+    ASSERT_TRUE(level_files.empty());
+    ASSERT_TRUE(compaction_files.empty());
+}
+
+TEST_F(AddBoundaryInputsTest, TestEmptyLevelFiles) {
+    auto f1 = create_file(
+      1,
+      {.key = "100", .seq_num = 2_seqno},
+      {.key = "100", .seq_num = 1_seqno});
+    compaction_files.push_back(f1);
+    db::add_boundary_inputs(level_files, &compaction_files);
+    ASSERT_TRUE(level_files.empty());
+    ASSERT_THAT(compaction_files, ElementsAre(f1));
+}
+
+TEST_F(AddBoundaryInputsTest, TestEmptyCompactionFiles) {
+    auto f1 = create_file(
+      1,
+      {.key = "100", .seq_num = 2_seqno},
+      {.key = "100", .seq_num = 1_seqno});
+    level_files.push_back(f1);
+    db::add_boundary_inputs(level_files, &compaction_files);
+    ASSERT_THAT(level_files, ElementsAre(f1));
+    ASSERT_TRUE(compaction_files.empty());
+}
+
+TEST_F(AddBoundaryInputsTest, TestNoBoundaryFiles) {
+    auto f1 = create_file(
+      1,
+      {.key = "100", .seq_num = 2_seqno},
+      {.key = "100", .seq_num = 1_seqno});
+    auto f2 = create_file(
+      2,
+      {.key = "200", .seq_num = 2_seqno},
+      {.key = "200", .seq_num = 1_seqno});
+    auto f3 = create_file(
+      3,
+      {.key = "300", .seq_num = 2_seqno},
+      {.key = "300", .seq_num = 1_seqno});
+    level_files.push_back(f3);
+    level_files.push_back(f2);
+    level_files.push_back(f1);
+    compaction_files.push_back(f2);
+    compaction_files.push_back(f3);
+    db::add_boundary_inputs(level_files, &compaction_files);
+    ASSERT_THAT(compaction_files, ElementsAre(f2, f3));
+}
+
+TEST_F(AddBoundaryInputsTest, TestOneBoundaryFile) {
+    auto f1 = create_file(
+      1,
+      {.key = "100", .seq_num = 3_seqno},
+      {.key = "100", .seq_num = 2_seqno});
+    auto f2 = create_file(
+      2,
+      {.key = "100", .seq_num = 1_seqno},
+      {.key = "200", .seq_num = 3_seqno});
+    auto f3 = create_file(
+      3,
+      {.key = "300", .seq_num = 2_seqno},
+      {.key = "300", .seq_num = 1_seqno});
+    level_files.push_back(f3);
+    level_files.push_back(f2);
+    level_files.push_back(f1);
+    compaction_files.push_back(f1);
+    db::add_boundary_inputs(level_files, &compaction_files);
+    ASSERT_THAT(compaction_files, ElementsAre(f1, f2));
+}
+
+TEST_F(AddBoundaryInputsTest, TestTwoBoundaryFiles) {}
+
+TEST_F(AddBoundaryInputsTest, TestDisjointFilePointers) {}
 
 } // namespace
 

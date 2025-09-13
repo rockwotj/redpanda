@@ -80,6 +80,7 @@ redpanda_cc_library(
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/core/internal:options",
+        "@fmt",
         "@seastar",
     ],
 )
