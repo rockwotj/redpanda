@@ -49,7 +49,8 @@ public:
     // Append to *iters a sequence of iterators that will yield the contents of
     // this version when merged together.
     // REQUIRES: This version has been applied to a version_set.
-    void add_iterators(chunked_vector<internal::iterator>* iters);
+    ss::future<>
+    add_iterators(chunked_vector<std::unique_ptr<internal::iterator>>* iters);
 
     // Adds stats into the current state. Returns true if a new compaction may
     // need to be trigged, false otherwise.

@@ -60,7 +60,8 @@ redpanda_cc_library(
         "//src/v/container:chunked_hash_map",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:keys",
-        "@abseil-cpp//absl/container:flat_hash_map",
+        "//src/v/lsm/core/internal:options",
+        "@abseil-cpp//absl/container:fixed_array",
         "@seastar",
     ],
 )
@@ -78,6 +79,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
         "@seastar",
     ],
 )
@@ -105,9 +107,10 @@ redpanda_cc_library(
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/core/internal:options",
+        "//src/v/lsm/core/internal:two_level_iterator",
         "//src/v/lsm/io:persistence",
         "@abseil-cpp//absl/container:btree",
-        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:fixed_array",
         "@seastar",
     ],
 )

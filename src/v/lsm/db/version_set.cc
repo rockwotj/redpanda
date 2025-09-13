@@ -201,11 +201,13 @@ version::version(ctor, version_set* vset)
   : _vset(vset)
   , _files(_vset->_options.levels.size()) {}
 
-void version::add_iterators(chunked_vector<internal::iterator>* iters) {
+ss::future<> version::add_iterators(
+  chunked_vector<std::unique_ptr<internal::iterator>>* iters) {
     // Merge all level zero files together since they may overlap.
     for (const auto& file : _files[0_level]) {
         iters->push_back(
-          _vset->_table_cache->create_iterator(file->id, file->file_size));
+          co_await _vset->_table_cache->create_iterator(
+            file->id, file->file_size));
     }
     // For levels > 0, we can use a concatenating iterator that sequentially
     // walks through the non-overlapping files in the level, opening them

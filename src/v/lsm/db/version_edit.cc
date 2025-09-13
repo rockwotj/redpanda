@@ -39,7 +39,7 @@ fmt::iterator version_edit::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
       "{{mutations_by_level:{},next_file_number:{},last_seq_num:{}}}",
-      _mutations_by_level,
+      fmt::join(_mutations_by_level, ","),
       _has_next_file_number ? std::make_optional(_next_file_number)
                             : std::nullopt,
       _has_last_seq_num ? std::make_optional(_last_seq_num) : std::nullopt);
