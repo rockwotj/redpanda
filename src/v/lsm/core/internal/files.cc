@@ -21,4 +21,6 @@ ss::sstring manifest_file_name(manifest_id id) {
     return ss::format("{}.manifest", id());
 }
 
+ss::sstring current_file_name() { return "CURRENT"; }
+
 } // namespace lsm::internal

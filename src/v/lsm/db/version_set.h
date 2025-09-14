@@ -79,9 +79,7 @@ public:
     // begin==nullptr, means before all keys.
     // end==nullptr, means after all keys.
     bool overlap_in_level(
-      internal::level,
-      const internal::key_view* begin,
-      const internal::key_view* end);
+      internal::level, internal::key_view* begin, internal::key_view* end);
 
     // Return the level at which we should place a new memtable compaction
     // result that covers the range [begin,end].

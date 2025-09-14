@@ -1,4 +1,6 @@
+load("@rules_proto//proto:defs.bzl", "proto_library")
 load("//bazel:build.bzl", "redpanda_cc_library")
+load("//bazel/pbgen:pbgen.bzl", "redpanda_proto_library")
 
 package(default_visibility = ["//src/v/lsm:__subpackages__"])
 
@@ -94,10 +96,13 @@ redpanda_cc_library(
         "version_set.h",
     ],
     implementation_deps = [
+        ":file_utils",
+        ":manifest_redpanda_proto",
+        "//src/v/lsm/core/internal:two_level_iterator",
         "//src/v/utils:to_string",
+        "@abseil-cpp//absl/container:btree",
     ],
     deps = [
-        ":file_utils",
         ":table_cache",
         ":version_edit",
         ":weak_intrusive_list",
@@ -108,9 +113,7 @@ redpanda_cc_library(
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/core/internal:options",
-        "//src/v/lsm/core/internal:two_level_iterator",
         "//src/v/lsm/io:persistence",
-        "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:fixed_array",
         "@seastar",
     ],
@@ -123,4 +126,15 @@ redpanda_cc_library(
         "//src/v/base",
         "@seastar",
     ],
+)
+
+proto_library(
+    name = "manifest_proto",
+    srcs = ["manifest.proto"],
+    deps = ["//proto/redpanda/pbgen:options_proto"],
+)
+
+redpanda_proto_library(
+    name = "manifest_redpanda_proto",
+    protos = [":manifest_proto"],
 )

@@ -47,6 +47,7 @@ public:
         auto off = std::min(_offset, _state->data.size_bytes());
         auto max_len = _state->data.size_bytes() - off;
         auto len = std::min(max_len, n);
+        _offset += len;
         co_return _state->data.share(off, len);
     }
 
@@ -56,6 +57,9 @@ public:
     }
 
     ss::future<> close() override {
+        if (_closed) {
+            throw io_error_exception("double close of file");
+        }
         _closed = true;
         --_state->open_read_handles;
         co_return;
@@ -79,13 +83,21 @@ public:
     }
 
     ss::future<ioarray> read(size_t offset, size_t n) override {
-        auto off = std::min(offset, _state->data.size_bytes());
-        auto max_len = _state->data.size_bytes() - off;
-        auto len = std::min(max_len, n);
-        co_return ioarray::copy_from(_state->data.share(off, len));
+        if ((offset + n) > _state->data.size_bytes()) {
+            throw io_error_exception(
+              "tried to read out of bounds of the file: "
+              "{{offset:{},length:{},file_size:{}}}",
+              offset,
+              n,
+              _state->data.size_bytes());
+        }
+        co_return ioarray::copy_from(_state->data.share(offset, n));
     }
 
     ss::future<> close() override {
+        if (_closed) {
+            throw io_error_exception("double close of file");
+        }
         _closed = true;
         --_state->open_read_handles;
         co_return;
@@ -121,6 +133,9 @@ public:
         co_return;
     }
     ss::future<> close() override {
+        if (_closed) {
+            throw io_error_exception("double close of file");
+        }
         _closed = true;
         --_state->open_write_handles;
         co_return;
@@ -161,6 +176,13 @@ public:
           ss::sstring(name), ss::make_shared<memory_file_state>());
         co_return std::make_unique<memory_sequential_file_writer>(
           it.first->second);
+    }
+
+    ss::future<> write_file_atomically(
+      std::string_view name, std::string_view contents) override {
+        auto writer = co_await open_sequential_writer(name);
+        co_await writer->append(iobuf::from(contents));
+        co_await writer->close();
     }
 
     ss::future<> remove_file(std::string_view name) override {

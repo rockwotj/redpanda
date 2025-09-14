@@ -41,4 +41,6 @@ ss::sstring sst_file_name(file_id);
 // Compute the name of a manifest file with the given ID.
 ss::sstring manifest_file_name(manifest_id);
 
+ss::sstring current_file_name();
+
 } // namespace lsm::internal

@@ -15,6 +15,7 @@
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/two_level_iterator.h"
 #include "lsm/db/file_utils.h"
+#include "lsm/db/manifest.proto.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -360,9 +361,7 @@ version::get(internal::key_view target, get_stats* stats) {
 }
 
 bool version::overlap_in_level(
-  internal::level level,
-  const internal::key_view* begin,
-  const internal::key_view* end) {
+  internal::level level, internal::key_view* begin, internal::key_view* end) {
     return some_file_overlaps_range(level > 0_level, _files[level], begin, end);
 }
 
@@ -520,6 +519,8 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
         co_await _persistence->remove_file(manifest_filename);
         std::rethrow_exception(ex);
     }
+    co_await _persistence->write_file_atomically(
+      internal::current_file_name(), manifest_filename);
     set_current(std::move(v));
 }
 
@@ -543,9 +544,26 @@ void version_set::finalize(version* v) {
 }
 
 ss::future<>
-version_set::write_manifest(version*, io::sequential_file_writer*) {
-    // TODO: implement me!
-    co_return;
+version_set::write_manifest(version* v, io::sequential_file_writer* w) {
+    proto::version version_proto;
+    for (const auto& [level, files] :
+         std::views::zip(std::views::iota(0), v->_files)) {
+        proto::version_level level_proto;
+        level_proto.set_number(level);
+        for (const auto& file : files) {
+            proto::file_meta_data file_proto;
+            file_proto.set_id(file->id());
+            file_proto.set_file_size(file->file_size);
+            file_proto.set_encoded_smallest_key(ss::sstring(file->smallest));
+            file_proto.set_encoded_largest_key(ss::sstring(file->largest));
+            level_proto.get_files().push_back(std::move(file_proto));
+        }
+        version_proto.get_levels().push_back(std::move(level_proto));
+    }
+    proto::manifest manifest_proto;
+    manifest_proto.set_version(std::move(version_proto));
+    auto serialized = co_await manifest_proto.to_proto();
+    co_await w->append(std::move(serialized));
 }
 
 } // namespace lsm::db

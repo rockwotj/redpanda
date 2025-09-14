@@ -14,9 +14,11 @@
 #include "base/units.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/io/persistence.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <exception>
 #include <system_error>
@@ -84,7 +86,7 @@ public:
         try {
             size_t amt = co_await _file.dma_read(
               adjusted_offset, array.as_iovec());
-            if (amt != array.size()) {
+            if (amt < offset_delta + n) {
                 throw io_error_exception(
                   "short read: failed to read {} bytes from block at offset "
                   "{}, "
@@ -204,8 +206,8 @@ public:
         try {
             auto file = ss::open_file_dma(
               path(name).native(),
-              ss::open_flags::create | ss::open_flags::exclusive
-                | ss::open_flags::rw | ss::open_flags::truncate);
+              ss::open_flags::create | ss::open_flags::rw
+                | ss::open_flags::truncate);
             auto stream = co_await ss::with_file_close_on_failure(
               std::move(file), [](ss::file f) {
                   return ss::make_file_output_stream(std::move(f));
@@ -220,9 +222,26 @@ public:
         }
     }
 
+    ss::future<> write_file_atomically(
+      std::string_view name, std::string_view contents) override {
+        auto staging_name = fmt::format(
+          "{}.{}.staging", name, uuid_t::create());
+        auto writer = co_await open_sequential_writer(staging_name);
+        auto future = co_await ss::coroutine::as_future<>(
+          writer->append(iobuf::from(contents)));
+        co_await writer->close();
+        if (future.failed()) {
+            auto ex = future.get_exception();
+            co_await remove_file(staging_name);
+            std::rethrow_exception(ex);
+        }
+        co_await ss::rename_file(
+          path(staging_name).native(), path(name).native());
+    }
+
     ss::future<> remove_file(std::string_view name) override {
         try {
-            co_await ss::remove_file(name);
+            co_await ss::remove_file(path(name).native());
         } catch (const std::system_error& e) {
             if (e.code() != std::errc::no_such_file_or_directory) {
                 throw io_error_exception(

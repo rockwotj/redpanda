@@ -88,6 +88,7 @@ public:
     bool operator==(const key& other) const = default;
     auto operator<=>(const key&) const = default;
     bool operator<(const key&) const = default;
+    explicit operator ss::sstring() const { return {data(), size()}; }
 
     fmt::iterator format_to(fmt::iterator) const;
 

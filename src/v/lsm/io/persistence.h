@@ -32,6 +32,8 @@ public:
     virtual ~sequential_file_reader() = default;
 
     // Read up to "n" bytes from the file.
+    //
+    // This will only return less than `n` if at the end of the file
     virtual ss::future<iobuf> read(size_t n) = 0;
 
     // Skip "n" bytes form the file.
@@ -57,6 +59,8 @@ public:
     virtual ~random_access_file_reader() = default;
 
     // Read up to "n" bytes from the file starting at "offset".
+    //
+    // It's not valid to read outside the bounds of the file.
     virtual ss::future<ioarray> read(size_t offset, size_t n) = 0;
 
     // Closes the file, must always be called, even if `read` or `skip` return
@@ -131,6 +135,18 @@ public:
     // Deletes any existing file with the same name and creates a new file.
     virtual ss::future<std::unique_ptr<sequential_file_writer>>
     open_sequential_writer(std::string_view name) = 0;
+
+    // Write the string atomically to the persistence layer and specified name.
+    //
+    // This is used by the LSM tree to write CURRENT files, which are used to
+    // point to the latest manifest file in the database. This must be written
+    // atomically as to ensure crash recovery, this means the staging file, and
+    // rename case in local disk, or just a normal PUT in cloud storage which
+    // already provides atomic writes.
+    //
+    // The contents should be small (less than a KiB).
+    virtual ss::future<>
+    write_file_atomically(std::string_view name, std::string_view contents) = 0;
 
     // Remove a file. This is a noop if the file does not exist.
     virtual ss::future<> remove_file(std::string_view) = 0;
