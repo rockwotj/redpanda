@@ -132,9 +132,30 @@ public:
     open_random_access_reader(std::string_view name) = 0;
 
     // Create a writer that writes to a new file with the specified name.
+    //
     // Deletes any existing file with the same name and creates a new file.
     virtual ss::future<std::unique_ptr<sequential_file_writer>>
     open_sequential_writer(std::string_view name) = 0;
+
+    // NOTE: These next two APIs are not currently needed, as we don't write log
+    // files in this layer (instead we use the local raft log), and we
+    // additionally don't write delta manifest updates. We also can't support
+    // this API for cloud storage, so it'd really only be an optimization for
+    // large databases on local disk persistence.
+
+    // // Returns true if the `open_appendable_sequential_writer` API is
+    // // suppported.
+    // //
+    // // This API is used to append to manifest files delta operations, instead
+    // // of writing only snapshots.
+    // virtual bool supports_file_appends() const = 0;
+
+    // // Create a writer that writes to a file with the specified name.
+    // //
+    // // If an existing file is present, the file is appended to. Otherwise, a
+    // // new file is created.
+    // virtual ss::future<std::unique_ptr<sequential_file_writer>>
+    // open_appendable_sequential_writer(std::string_view name) = 0;
 
     // Write the string atomically to the persistence layer and specified name.
     //
