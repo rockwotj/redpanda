@@ -293,9 +293,52 @@ TEST_F(AddBoundaryInputsTest, TestOneBoundaryFile) {
     ASSERT_THAT(compaction_files, ElementsAre(f1, f2));
 }
 
-TEST_F(AddBoundaryInputsTest, TestTwoBoundaryFiles) {}
+TEST_F(AddBoundaryInputsTest, TestTwoBoundaryFiles) {
+    auto f1 = create_file(
+      1,
+      {.key = "100", .seq_num = 6_seqno},
+      {.key = "100", .seq_num = 5_seqno});
+    auto f2 = create_file(
+      2,
+      {.key = "100", .seq_num = 2_seqno},
+      {.key = "300", .seq_num = 1_seqno});
+    auto f3 = create_file(
+      3,
+      {.key = "100", .seq_num = 4_seqno},
+      {.key = "100", .seq_num = 3_seqno});
+    level_files.push_back(f2);
+    level_files.push_back(f3);
+    level_files.push_back(f1);
+    compaction_files.push_back(f1);
+    db::add_boundary_inputs(level_files, &compaction_files);
+    ASSERT_THAT(compaction_files, ElementsAre(f1, f3, f2));
+}
 
-TEST_F(AddBoundaryInputsTest, TestDisjointFilePointers) {}
+TEST_F(AddBoundaryInputsTest, TestDisjointFilePointers) {
+    auto f1 = create_file(
+      1,
+      {.key = "100", .seq_num = 6_seqno},
+      {.key = "100", .seq_num = 5_seqno});
+    auto f2 = create_file(
+      2,
+      {.key = "100", .seq_num = 6_seqno},
+      {.key = "300", .seq_num = 5_seqno});
+    auto f3 = create_file(
+      3,
+      {.key = "100", .seq_num = 2_seqno},
+      {.key = "100", .seq_num = 1_seqno});
+    level_files.push_back(f2);
+    auto f4 = create_file(
+      4,
+      {.key = "100", .seq_num = 4_seqno},
+      {.key = "100", .seq_num = 3_seqno});
+    level_files.push_back(f2);
+    level_files.push_back(f3);
+    level_files.push_back(f4);
+    compaction_files.push_back(f1);
+    db::add_boundary_inputs(level_files, &compaction_files);
+    ASSERT_THAT(compaction_files, ElementsAre(f1, f4, f3));
+}
 
 } // namespace
 
