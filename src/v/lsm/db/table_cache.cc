@@ -29,6 +29,61 @@
 
 namespace lsm::db {
 
+namespace {
+/**
+ * A RAII scoped lock that ensures reader locks are deleted when there are no
+ * waiters.
+ */
+class reader_lock_guard {
+public:
+    reader_lock_guard(const reader_lock_guard&) = delete;
+    reader_lock_guard& operator=(const reader_lock_guard&) = delete;
+    reader_lock_guard(reader_lock_guard&&) noexcept = default;
+    reader_lock_guard& operator=(reader_lock_guard&&) noexcept = default;
+
+    static ss::future<reader_lock_guard> acquire(
+      chunked_hash_map<internal::file_id, std::unique_ptr<mutex>>* mu_map,
+      internal::file_id id) {
+        auto it = mu_map->find(id);
+        mutex* mu = nullptr;
+        if (it == mu_map->end()) {
+            auto inserted = mu_map->emplace(
+              id, std::make_unique<mutex>("reader_lock_guard"));
+            vassert(inserted.second, "expected mutex to be inserted");
+            mu = inserted.first->second.get();
+        } else {
+            mu = it->second.get();
+        }
+        mutex::units units = co_await mu->get_units();
+        co_return reader_lock_guard(id, mu_map, mu, std::move(units));
+    }
+
+    ~reader_lock_guard() {
+        _underlying.return_all();
+        // If nothing is waiting on or holding the mutex, we can remove the lock
+        // from the map.
+        if (_mu->ready()) {
+            _mu_map->erase(_id);
+        }
+    }
+
+private:
+    reader_lock_guard(
+      internal::file_id id,
+      chunked_hash_map<internal::file_id, std::unique_ptr<mutex>>* mu_map,
+      mutex* mu,
+      mutex::units underlying)
+      : _id(id)
+      , _mu_map(mu_map)
+      , _mu(mu)
+      , _underlying(std::move(underlying)) {}
+    internal::file_id _id;
+    chunked_hash_map<internal::file_id, std::unique_ptr<mutex>>* _mu_map;
+    mutex* _mu;
+    mutex::units _underlying;
+};
+} // namespace
+
 class table_cache::impl {
     // To ensure that we don't close/evict readers while there are pending
     // iterators for them, we let them live longer and enqueue them for cleanup
@@ -70,8 +125,7 @@ class table_cache::impl {
 
 public:
     impl(io::persistence* p, size_t max_entries)
-      : _mu("lsm::db::table_cache")
-      , _persistence(p)
+      : _persistence(p)
       , _cache(compute_cache_config(max_entries), eviction(this))
       , _cleanup_queue([](const std::exception_ptr& ex) {
           // TODO: log an error instead
@@ -101,7 +155,7 @@ public:
 
     ss::future<> evict(internal::file_id id) {
         gc_ghost_fifo();
-        auto units = co_await _mu.get_units();
+        auto guard = co_await reader_lock_guard::acquire(&_mu_map, id);
         auto it = _map.find(id);
         if (it == _map.end()) {
             co_return;
@@ -110,14 +164,10 @@ public:
         _ghost_fifo.erase(_ghost_fifo.iterator_to(*it->second));
         auto reader = std::exchange(it->second->value, {});
         _map.erase(it);
-        units.return_all();
-        // Ensure that we remove it before the scheduling point to close the
-        // reader.
         co_await reader->close();
     }
 
     ss::future<> close() {
-        auto units = co_await _mu.get_units();
         for (auto& [_, entry] : _map) {
             _cache.remove(*entry);
             auto reader = std::exchange(entry->value, {});
@@ -206,12 +256,9 @@ private:
         gc_ghost_fifo();
         auto it = _map.find(id);
         if (it == _map.end()) {
-            // TODO(lsm): this mutex might be a bottleneck if we're opening lots
-            // of files and want to do that in parallel? It might be better to
-            // allow finer grained locking somehow, or we allow for races and
-            // just clean it up after (as long as we stay under the total file
-            // handle limit)?
-            auto units = co_await _mu.get_units();
+            // Use fine grained locking to prevent opening unrelated tables from
+            // being a bottleneck.
+            auto guard = co_await reader_lock_guard::acquire(&_mu_map, id);
             // Make sure since we had a scheduling point that something else
             // didn't come along and insert what we were looking for into the
             // map, if it did, we can continue as usual, as the units will be
@@ -264,8 +311,8 @@ private:
         }
     }
 
-    mutex _mu;
     io::persistence* _persistence;
+    chunked_hash_map<internal::file_id, std::unique_ptr<mutex>> _mu_map;
     chunked_hash_map<internal::file_id, entry_t> _map;
     cache_t _cache;
     // Entries that have been "soft evicted" from the cache. We keep them around
