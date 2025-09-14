@@ -91,14 +91,10 @@ private:
 // A helper class to apply a sequence of edits to a version.
 class version_set::builder {
 public:
-    builder(
-      version_set* vset,
-      ss::lw_shared_ptr<version> base,
-      internal::options* opts)
+    builder(version_set* vset, ss::lw_shared_ptr<version> base)
       : _vset(vset)
       , _base(std::move(base))
-      , _opts(opts)
-      , _levels(_opts->levels.size()) {}
+      , _levels(_vset->_options->levels.size()) {}
 
     void apply(const version_edit& edit) {
         for (internal::level level = 0_level;
@@ -117,7 +113,7 @@ public:
             for (const auto& added_file : mutation.added_files) {
                 auto copy = ss::make_lw_shared(*added_file);
                 copy->allowed_seeks = static_cast<int32_t>(
-                  copy->file_size / _vset->_options.compact_after_seek_bytes);
+                  copy->file_size / _vset->_options->compact_after_seek_bytes);
                 constexpr static int32_t min_allowed_seeks = 100;
                 if (copy->allowed_seeks < min_allowed_seeks) {
                     copy->allowed_seeks = min_allowed_seeks;
@@ -130,7 +126,7 @@ public:
 
     void save_to(version* v) {
         by_smallest_key cmp;
-        for (const auto& level : _opts->levels) {
+        for (const auto& level : _vset->_options->levels) {
             // Merge the set of added files with the set of pre-existing file.
             // Drop any deleted files. Store the result in *v.
             const auto& base_files = _base->_files[level.number];
@@ -189,7 +185,6 @@ private:
 
     version_set* _vset;
     ss::lw_shared_ptr<version> _base;
-    internal::options* _opts;
     struct level_state {
         chunked_hash_set<internal::file_id> removed_files;
         absl::btree_set<ss::lw_shared_ptr<file_meta_data>, by_smallest_key>
@@ -200,7 +195,7 @@ private:
 
 version::version(ctor, version_set* vset)
   : _vset(vset)
-  , _files(_vset->_options.levels.size()) {}
+  , _files(_vset->_options->levels.size()) {}
 
 ss::future<> version::add_iterators(
   chunked_vector<std::unique_ptr<internal::iterator>>* iters) {
@@ -213,7 +208,7 @@ ss::future<> version::add_iterators(
     // For levels > 0, we can use a concatenating iterator that sequentially
     // walks through the non-overlapping files in the level, opening them
     // lazily.
-    for (const auto& level : std::span(_vset->_options.levels).subspan(1)) {
+    for (const auto& level : std::span(_vset->_options->levels).subspan(1)) {
         if (_files[level.number].empty()) {
             continue;
         }
@@ -377,13 +372,13 @@ internal::level version::pick_level_for_memtable_output(
             if (overlap_in_level(level + 1_level, &begin, &end)) {
                 break;
             }
-            if (level() + 2 < _vset->_options.levels.size()) {
+            if (level() + 2 < _vset->_options->levels.size()) {
                 // Check that file does not overlap too many grandparent
                 // bytes.
                 auto files = get_overlapping_inputs(
                   level + 2_level, &begin, &end);
                 size_t sum = total_file_size(files);
-                if (sum > max_grandparent_overlap_bytes(_vset->_options)) {
+                if (sum > max_grandparent_overlap_bytes(*_vset->_options)) {
                     break;
                 }
             }
@@ -483,11 +478,11 @@ fmt::iterator version::format_to(fmt::iterator it) const {
 version_set::version_set(
   io::persistence* persistence,
   table_cache* table_cache,
-  internal::options opts)
+  ss::lw_shared_ptr<internal::options> opts)
   : _persistence(persistence)
   , _table_cache(table_cache)
   , _options(std::move(opts))
-  , _compact_pointer(_options.levels.size()) {
+  , _compact_pointer(_options->levels.size()) {
     set_current(ss::make_lw_shared<version>(version::ctor{}, this));
 }
 
@@ -500,14 +495,15 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
     edit.set_last_seq_num(_last_seqno);
     auto v = ss::make_lw_shared<version>(version::ctor{}, this);
     {
-        version_set::builder builder(this, _current, &_options);
+        version_set::builder builder(this, _current);
         builder.apply(edit);
         builder.save_to(v.get());
     }
     finalize(v.get());
     // This is where we diverge a bit from LevelDB. We don't log manifest
     // deltas, but just snapshot the full manifest. At somepoint we will
-    // want delta writes, but for now we will just write full snapshots.
+    // want delta writes (but that's not possible in the cloud), but for
+    // now we will just write full snapshots.
     auto manifest_filename = internal::manifest_file_name(_manifest_id);
     auto file = co_await _persistence->open_sequential_writer(
       manifest_filename);
@@ -529,8 +525,8 @@ void version_set::finalize(version* v) {
     internal::level best_level = 0_level;
     double best_score = static_cast<double>(v->_files[best_level].size())
                         / static_cast<double>(
-                          _options.default_level_one_compaction_trigger);
-    for (const auto& level : std::span(_options.levels).subspan(1)) {
+                          _options->default_level_one_compaction_trigger);
+    for (const auto& level : std::span(_options->levels).subspan(1)) {
         size_t level_bytes = total_file_size(v->_files[level.number]);
         double score = static_cast<double>(level_bytes)
                        / static_cast<double>(max_bytes_for_level(level.number));
