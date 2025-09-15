@@ -34,15 +34,14 @@ template<
     detail::has_absl_hash<Key>,
     detail::avalanching_absl_hash<Key>,
     ankerl::unordered_dense::hash<Key>>,
-  typename EqualTo = std::equal_to<Key>>
+  typename EqualTo = std::equal_to<Key>,
+  s3_fifo::cache_cost<Value> CostFn = s3_fifo::default_cache_cost>
 class chunked_kv_cache {
     struct cached_value;
     struct eviction;
-    using cache_t = s3_fifo::cache<
-      cached_value,
-      &cached_value::hook,
-      eviction,
-      s3_fifo::default_cache_cost>;
+    struct cost;
+    using cache_t
+      = s3_fifo::cache<cached_value, &cached_value::hook, eviction, cost>;
 
 public:
     using config = cache_t::config;
@@ -123,8 +122,13 @@ private:
     void gc_ghost_fifo();
 };
 
-template<typename Key, typename Value, typename Hash, typename EqualTo>
-struct chunked_kv_cache<Key, Value, Hash, EqualTo>::eviction {
+template<
+  typename Key,
+  typename Value,
+  typename Hash,
+  typename EqualTo,
+  s3_fifo::cache_cost<Value> CostFn>
+struct chunked_kv_cache<Key, Value, Hash, EqualTo, CostFn>::eviction {
     chunked_kv_cache& kv_c;
 
     bool operator()(cached_value& e) noexcept {
@@ -134,8 +138,25 @@ struct chunked_kv_cache<Key, Value, Hash, EqualTo>::eviction {
     }
 };
 
-template<typename Key, typename Value, typename Hash, typename EqualTo>
-bool chunked_kv_cache<Key, Value, Hash, EqualTo>::try_insert(
+template<
+  typename Key,
+  typename Value,
+  typename Hash,
+  typename EqualTo,
+  s3_fifo::cache_cost<Value> CostFn>
+struct chunked_kv_cache<Key, Value, Hash, EqualTo, CostFn>::cost {
+    size_t operator()(const cached_value& e) noexcept {
+        return CostFn()(*e.value);
+    }
+};
+
+template<
+  typename Key,
+  typename Value,
+  typename Hash,
+  typename EqualTo,
+  s3_fifo::cache_cost<Value> CostFn>
+bool chunked_kv_cache<Key, Value, Hash, EqualTo, CostFn>::try_insert(
   const Key& key, ss::shared_ptr<Value> val) {
     gc_ghost_fifo();
 
@@ -162,9 +183,14 @@ bool chunked_kv_cache<Key, Value, Hash, EqualTo>::try_insert(
     return false;
 }
 
-template<typename Key, typename Value, typename Hash, typename EqualTo>
+template<
+  typename Key,
+  typename Value,
+  typename Hash,
+  typename EqualTo,
+  s3_fifo::cache_cost<Value> CostFn>
 ss::optimized_optional<ss::shared_ptr<Value>>
-chunked_kv_cache<Key, Value, Hash, EqualTo>::get_value(const Key& key) {
+chunked_kv_cache<Key, Value, Hash, EqualTo, CostFn>::get_value(const Key& key) {
     gc_ghost_fifo();
     _access_count++;
 
@@ -183,8 +209,14 @@ chunked_kv_cache<Key, Value, Hash, EqualTo>::get_value(const Key& key) {
     return entry.value;
 }
 
-template<typename Key, typename Value, typename Hash, typename EqualTo>
-void chunked_kv_cache<Key, Value, Hash, EqualTo>::evict(const Key& key) {
+template<
+  typename Key,
+  typename Value,
+  typename Hash,
+  typename EqualTo,
+  s3_fifo::cache_cost<Value> CostFn>
+void chunked_kv_cache<Key, Value, Hash, EqualTo, CostFn>::evict(
+  const Key& key) {
     gc_ghost_fifo();
     auto it = _map.find(key);
     if (it == _map.end()) {
@@ -195,8 +227,13 @@ void chunked_kv_cache<Key, Value, Hash, EqualTo>::evict(const Key& key) {
     _map.erase(it);
 }
 
-template<typename Key, typename Value, typename Hash, typename EqualTo>
-void chunked_kv_cache<Key, Value, Hash, EqualTo>::gc_ghost_fifo() {
+template<
+  typename Key,
+  typename Value,
+  typename Hash,
+  typename EqualTo,
+  s3_fifo::cache_cost<Value> CostFn>
+void chunked_kv_cache<Key, Value, Hash, EqualTo, CostFn>::gc_ghost_fifo() {
     for (auto it = _ghost_fifo.begin(); it != _ghost_fifo.end();) {
         auto& entry = *it;
         if (_cache.ghost_queue_contains(entry)) {
@@ -209,9 +246,14 @@ void chunked_kv_cache<Key, Value, Hash, EqualTo>::gc_ghost_fifo() {
         _map.erase(entry.key);
     }
 }
-template<typename Key, typename Value, typename Hash, typename EqualTo>
-struct chunked_kv_cache<Key, Value, Hash, EqualTo>::stat
-chunked_kv_cache<Key, Value, Hash, EqualTo>::stat() const noexcept {
+template<
+  typename Key,
+  typename Value,
+  typename Hash,
+  typename EqualTo,
+  s3_fifo::cache_cost<Value> CostFn>
+struct chunked_kv_cache<Key, Value, Hash, EqualTo, CostFn>::stat
+chunked_kv_cache<Key, Value, Hash, EqualTo, CostFn>::stat() const noexcept {
     struct stat s{_cache.stat()};
     s.index_size = _map.size();
     s.hit_count = _hit_count;
