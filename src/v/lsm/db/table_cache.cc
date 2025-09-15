@@ -48,7 +48,7 @@ public:
         mutex* mu = nullptr;
         if (it == mu_map->end()) {
             auto inserted = mu_map->emplace(
-              id, std::make_unique<mutex>("reader_lock_guard"));
+              id, std::make_unique<mutex>("lsm::db::reader_lock_guard"));
             vassert(inserted.second, "expected mutex to be inserted");
             mu = inserted.first->second.get();
         } else {

@@ -77,3 +77,25 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "block_cache",
+    srcs = [
+        "block_cache.cc",
+    ],
+    hdrs = [
+        "block_cache.h",
+    ],
+    implementation_deps = [
+        "//src/v/container:chunked_hash_map",
+        "//src/v/ssx:semaphore",
+        "//src/v/utils:s3_fifo",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/block:handle",
+        "//src/v/lsm/block:reader",
+        "//src/v/lsm/core/internal:files",
+        "@seastar",
+    ],
+)
