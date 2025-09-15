@@ -37,6 +37,7 @@ redpanda_cc_library(
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/io:persistence",
+        "//src/v/lsm/sst:block_cache",
         "//src/v/lsm/sst:reader",
         "//src/v/ssx:work_queue",
         "//src/v/utils:mutex",

@@ -12,6 +12,7 @@ redpanda_cc_gtest(
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/core/internal/tests:iterator_test_harness",
         "//src/v/lsm/io:memory_persistence",
+        "//src/v/lsm/sst:block_cache",
         "//src/v/lsm/sst:builder",
         "//src/v/lsm/sst:reader",
         "//src/v/test_utils:gtest",

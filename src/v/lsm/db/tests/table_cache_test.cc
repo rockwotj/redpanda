@@ -37,7 +37,10 @@ public:
 
     lsm::db::table_cache
     make_table_cache(size_t max_entries = default_max_entries) {
-        return {_persistence.get(), max_entries};
+        return {
+          _persistence.get(),
+          max_entries,
+          ss::make_lw_shared<lsm::sst::block_cache>(1_MiB)};
     }
 
     void TearDown() override { _persistence->close().get(); }

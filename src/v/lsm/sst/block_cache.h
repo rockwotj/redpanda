@@ -9,6 +9,8 @@
  * by the Apache License, Version 2.0
  */
 
+#pragma once
+
 #include "lsm/block/handle.h"
 #include "lsm/block/reader.h"
 #include "lsm/core/internal/files.h"
@@ -28,8 +30,11 @@ public:
     public:
         handle(const handle&) = delete;
         handle& operator=(const handle&) = delete;
-        handle(handle&&) noexcept = default;
-        handle& operator=(handle&&) noexcept = default;
+        handle(handle&& other) noexcept
+          : _cache(std::exchange(other._cache, nullptr))
+          , _id(other._id)
+          , _handle(other._handle) {}
+        handle& operator=(handle&& other) noexcept = delete;
         ~handle() noexcept;
 
         // Insert the reader into the block cache
@@ -42,7 +47,7 @@ public:
         friend class block_cache;
         explicit handle(
           block_cache::impl*, internal::file_id, block::handle) noexcept;
-        block_cache::impl* _cache;
+        block_cache::impl* _cache{};
         internal::file_id _id;
         block::handle _handle;
     };

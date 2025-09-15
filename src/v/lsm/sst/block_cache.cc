@@ -13,7 +13,7 @@
 
 #include "container/chunked_hash_map.h"
 #include "ssx/semaphore.h"
-#include "utils/s3_fifo.h"
+#include "utils/chunked_kv_cache.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -37,7 +37,8 @@ struct cache_key {
 
 class block_cache::impl {
 public:
-    explicit impl(size_t max_bytes);
+    explicit impl(size_t max_bytes)
+      : _cache(compute_cache_config(max_bytes)) {}
     ss::future<> lock(internal::file_id id, block::handle h) {
         auto it = _mu_map.find({id, h});
         ssx::semaphore* mu = nullptr;
@@ -51,14 +52,13 @@ public:
         } else {
             mu = it->second.get();
         }
-        co_await mu->wait();
+        return mu->wait();
     }
     void unlock(internal::file_id id, block::handle h) noexcept {
         auto it = _mu_map.find({id, h});
         vassert(
           it != _mu_map.end(),
           "unlock must be mirrored with a successful lock call");
-
         auto& mu = it->second;
         mu->signal();
         // If there are no waiters and no one else now holding the lock, we can
@@ -68,63 +68,26 @@ public:
         }
     }
     void insert(internal::file_id id, block::handle h, block::reader reader) {
-        cache_key key{id, h};
-        _cache.emplace(
-          key, std::make_unique<cached_value>(key, std::move(reader)));
+        _cache.try_insert({id, h}, ss::make_shared(std::move(reader)));
     }
     std::optional<block::reader> get(internal::file_id id, block::handle h) {
-        auto it = _cache.find({id, h});
-        if (it == _cache.end()) {
-            return std::nullopt;
-        }
-        return it->second->value;
+        auto value = _cache.get_value({id, h});
+        return value ? std::make_optional(**value) : std::nullopt;
     }
 
 private:
-    using ghost_hook_t = boost::intrusive::list_member_hook<
-      boost::intrusive::link_mode<boost::intrusive::safe_link>>;
-    struct cached_value {
-        cache_key key;
-        block::reader value;
-        utils::s3_fifo::cache_hook hook;
-        ghost_hook_t ghost_hook;
-    };
-    using entry_t = std::unique_ptr<cached_value>;
-    using ghost_fifo_t = boost::intrusive::list<
-      cached_value,
-      boost::intrusive::
-        member_hook<cached_value, ghost_hook_t, &cached_value::ghost_hook>>;
-    struct eviction {
-        impl* impl;
-        bool operator()(cached_value& e) noexcept {
-            impl->_ghost_fifo.push_back(e);
-            return true;
-        }
-    };
-    using cache_t = utils::s3_fifo::cache<
-      cached_value,
-      &cached_value::hook,
-      eviction,
-      utils::s3_fifo::default_cache_cost>;
-
+    using cache_t = utils::chunked_kv_cache<cache_key, block::reader>;
     static cache_t::config compute_cache_config(size_t max_entries) {
-        // In s3_fifo they recommend the small queue to be ~10% of the main
-        // queue. The ghost queue and main queue are the same size. So we split
-        // up our queue into 3 chunks:
-        // 45% -> main queue
-        // 45% -> ghost queue
-        // 10% -> small queue
         auto main_cache_size = static_cast<size_t>(
-          static_cast<double>(max_entries) * 0.45);
+          static_cast<double>(max_entries) * 0.90);
         return cache_t::config{
           .cache_size = main_cache_size,
-          .small_size = max_entries - (2 * main_cache_size),
+          .small_size = max_entries - main_cache_size,
         };
     }
 
-    ghost_fifo_t _ghost_fifo;
     chunked_hash_map<cache_key, std::unique_ptr<ssx::semaphore>> _mu_map;
-    chunked_hash_map<cache_key, entry_t> _cache;
+    cache_t _cache;
 };
 
 block_cache::handle::handle(
@@ -132,8 +95,11 @@ block_cache::handle::handle(
   : _cache(cache)
   , _id(id)
   , _handle(handle) {}
-
-block_cache::handle::~handle() noexcept { _cache->unlock(_id, _handle); }
+block_cache::handle::~handle() noexcept {
+    if (_cache) {
+        _cache->unlock(_id, _handle);
+    }
+}
 
 void block_cache::handle::insert(block::reader rdr) {
     _cache->insert(_id, _handle, std::move(rdr));

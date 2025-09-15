@@ -124,9 +124,13 @@ class table_cache::impl {
     };
 
 public:
-    impl(io::persistence* p, size_t max_entries)
+    impl(
+      io::persistence* p,
+      size_t max_entries,
+      ss::lw_shared_ptr<sst::block_cache> block_cache)
       : _persistence(p)
       , _cache(compute_cache_config(max_entries), eviction(this))
+      , _block_cache(std::move(block_cache))
       , _cleanup_queue([](const std::exception_ptr& ex) {
           // TODO: log an error instead
           std::ignore = ex;
@@ -291,7 +295,8 @@ private:
         if (!file) {
             throw invalid_argument_exception("file for ID {} is not found", id);
         }
-        auto reader = co_await sst::reader::open(std::move(*file), file_size);
+        auto reader = co_await sst::reader::open(
+          std::move(*file), id, file_size, _block_cache);
         co_return ss::make_lw_shared(std::move(reader));
     }
 
@@ -318,6 +323,7 @@ private:
     // Entries that have been "soft evicted" from the cache. We keep them around
     // just in case and GC them after some period of time.
     ghost_fifo_t _ghost_fifo;
+    ss::lw_shared_ptr<sst::block_cache> _block_cache;
     // Once an item is evicted, we need to also check that outstanding iterators
     // are closed. If they are not, then we wait until they are, then we insert
     // this onto this queue (since we are in a destructor, we can't await the
@@ -326,8 +332,13 @@ private:
     size_t _handles_pending_cleanup = 0;
 };
 
-table_cache::table_cache(io::persistence* persistence, size_t max_entries)
-  : _impl(std::make_unique<impl>(persistence, max_entries)) {}
+table_cache::table_cache(
+  io::persistence* persistence,
+  size_t max_entries,
+  ss::lw_shared_ptr<sst::block_cache> block_cache)
+  : _impl(
+      std::make_unique<impl>(
+        persistence, max_entries, std::move(block_cache))) {}
 
 table_cache::~table_cache() = default;
 

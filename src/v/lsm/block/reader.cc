@@ -251,7 +251,7 @@ reader::reader(ss::lw_shared_ptr<contents> c)
 }
 
 std::unique_ptr<internal::iterator> reader::create_iterator() {
-    if (_data->size() < sizeof(uint32_t)) {
+    if (_data->size() < sizeof(uint32_t)) [[unlikely]] {
         throw corruption_exception(
           "corruption: bad block contents, size: {}", _data->size());
     }

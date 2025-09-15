@@ -41,7 +41,12 @@ public:
             file_size = builder.file_size();
         }
         auto file = _persistence->open_random_access_reader(filename).get();
-        auto reader = lsm::sst::reader::open(std::move(*file), file_size).get();
+        auto reader = lsm::sst::reader::open(
+                        std::move(*file),
+                        lsm::internal::file_id{_counter},
+                        file_size,
+                        ss::make_lw_shared<lsm::sst::block_cache>(1_MiB))
+                        .get();
         auto it = reader.create_iterator();
         _readers.push_back(std::move(reader));
         return it;
@@ -55,7 +60,7 @@ public:
     }
 
 private:
-    int _counter = 0;
+    lsm::internal::file_id _counter;
     std::vector<lsm::sst::reader> _readers;
     std::unique_ptr<lsm::io::persistence> _persistence
       = lsm::io::make_memory_persistence();

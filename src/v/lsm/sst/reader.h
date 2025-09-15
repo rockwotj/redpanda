@@ -16,6 +16,7 @@
 #include "lsm/core/internal/iterator.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/io/persistence.h"
+#include "lsm/sst/block_cache.h"
 
 #include <seastar/core/future.hh>
 
@@ -34,8 +35,11 @@ public:
 
     // Open the table that is stored in bytes [0..file_size) of "file", and read
     // the metadata entries necessary to allow retrieving data from the table.
-    static ss::future<reader>
-    open(std::unique_ptr<io::random_access_file_reader> file, size_t file_size);
+    static ss::future<reader> open(
+      std::unique_ptr<io::random_access_file_reader> file,
+      internal::file_id,
+      size_t file_size,
+      ss::lw_shared_ptr<block_cache> cache);
 
     // Returns a new iterator over the table contents. The iterator may only be
     // used while the reader is alive, or said another way, the reader must

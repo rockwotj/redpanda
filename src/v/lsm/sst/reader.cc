@@ -82,12 +82,16 @@ ss::future<std::optional<block::filter_reader>> read_filter(
 class reader::impl {
 public:
     impl(
+      internal::file_id id,
       block::reader index_block,
       std::unique_ptr<io::random_access_file_reader> file,
-      std::optional<block::filter_reader> filter)
-      : _file(std::move(file))
+      std::optional<block::filter_reader> filter,
+      ss::lw_shared_ptr<block_cache> cache)
+      : _id(id)
+      , _file(std::move(file))
       , _index_block(std::move(index_block))
-      , _filter(std::move(filter)) {}
+      , _filter(std::move(filter))
+      , _cache(std::move(cache)) {}
 
     std::unique_ptr<internal::iterator> create_iterator() {
         return internal::create_two_level_iterator(
@@ -123,15 +127,23 @@ public:
 private:
     ss::future<std::unique_ptr<internal::iterator>>
     block_reader(iobuf index_value) {
-        auto handle = block::handle::from_iobuf(std::move(index_value));
-        // TODO(lsm): use block cache here
-        auto contents = co_await read_block(_file.get(), handle);
-        co_return block::reader(std::move(contents)).create_iterator();
+        auto block_handle = block::handle::from_iobuf(std::move(index_value));
+        auto cache_handle = co_await _cache->get(_id, block_handle);
+        if (auto reader = cache_handle.get()) {
+            co_return reader->create_iterator();
+        }
+        auto contents = co_await read_block(_file.get(), block_handle);
+        auto rdr = block::reader(std::move(contents));
+        auto it = rdr.create_iterator();
+        cache_handle.insert(std::move(rdr));
+        co_return it;
     }
 
+    internal::file_id _id;
     std::unique_ptr<io::random_access_file_reader> _file;
     block::reader _index_block;
     std::optional<block::filter_reader> _filter;
+    ss::lw_shared_ptr<block_cache> _cache;
 };
 
 reader::reader(std::unique_ptr<impl> impl)
@@ -142,7 +154,10 @@ reader::reader(reader&&) noexcept = default;
 reader& reader::operator=(reader&&) noexcept = default;
 
 ss::future<reader> reader::open(
-  std::unique_ptr<io::random_access_file_reader> file, size_t file_size) {
+  std::unique_ptr<io::random_access_file_reader> file,
+  internal::file_id id,
+  size_t file_size,
+  ss::lw_shared_ptr<block_cache> block_cache) {
     if (file_size < footer::encoded_length) {
         throw corruption_exception(
           "corruption: file is too short to be an sstable");
@@ -161,7 +176,11 @@ ss::future<reader> reader::open(
     auto filter = co_await read_filter(file.get(), metaindex_block);
     co_return reader(
       std::make_unique<impl>(
-        std::move(index_block), std::move(file), std::move(filter)));
+        id,
+        std::move(index_block),
+        std::move(file),
+        std::move(filter),
+        std::move(block_cache)));
 }
 
 std::unique_ptr<internal::iterator> reader::create_iterator() {

@@ -17,6 +17,7 @@
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/iterator.h"
 #include "lsm/io/persistence.h"
+#include "lsm/sst/block_cache.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -28,7 +29,10 @@ class table_cache {
 public:
     class impl;
 
-    table_cache(io::persistence*, size_t max_entries);
+    table_cache(
+      io::persistence*,
+      size_t max_entries,
+      ss::lw_shared_ptr<sst::block_cache>);
     table_cache(const table_cache&) = delete;
     table_cache(table_cache&&) = default;
     table_cache& operator=(const table_cache&) = delete;

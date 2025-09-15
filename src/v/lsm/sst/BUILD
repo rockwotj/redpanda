@@ -69,6 +69,7 @@ redpanda_cc_library(
         "//src/v/lsm/core/internal:two_level_iterator",
     ],
     deps = [
+        ":block_cache",
         "//src/v/base",
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
@@ -89,7 +90,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/container:chunked_hash_map",
         "//src/v/ssx:semaphore",
-        "//src/v/utils:s3_fifo",
+        "//src/v/utils:chunked_kv_cache",
     ],
     deps = [
         "//src/v/base",
