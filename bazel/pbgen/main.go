@@ -639,7 +639,7 @@ func (g *headerGenerator) generateMessage(msg protoreflect.MessageDescriptor, w 
 				types = append(types, subTyp)
 			}
 			w.Printf(
-				"std::variant<std::monostate, %s> %s_{};\n",
+				"std::variant<std::monostate, %s> %s_;\n",
 				strings.Join(types, ", "),
 				oneof.Name(),
 			)
