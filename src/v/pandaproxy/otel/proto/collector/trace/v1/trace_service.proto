@@ -27,9 +27,9 @@ option go_package = "go.opentelemetry.io/proto/otlp/collector/trace/v1";
 // Service that can be used to push spans between one Application instrumented with
 // OpenTelemetry and a collector, or between a collector and a central collector (in this
 // case spans are sent/received to/from multiple Applications).
-service TraceService {
-  rpc Export(ExportTraceServiceRequest) returns (ExportTraceServiceResponse) {}
-}
+// service TraceService {
+//   rpc Export(ExportTraceServiceRequest) returns (ExportTraceServiceResponse) {}
+// }
 
 message ExportTraceServiceRequest {
   // An array of ResourceSpans.

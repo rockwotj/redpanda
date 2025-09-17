@@ -27,9 +27,9 @@ option go_package = "go.opentelemetry.io/proto/otlp/collector/logs/v1";
 // Service that can be used to push logs between one Application instrumented with
 // OpenTelemetry and an collector, or between an collector and a central collector (in this
 // case logs are sent/received to/from multiple Applications).
-service LogsService {
-  rpc Export(ExportLogsServiceRequest) returns (ExportLogsServiceResponse) {}
-}
+// service LogsService {
+//   rpc Export(ExportLogsServiceRequest) returns (ExportLogsServiceResponse) {}
+// }
 
 message ExportLogsServiceRequest {
   // An array of ResourceLogs.

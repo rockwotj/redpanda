@@ -24,13 +24,6 @@ option java_package = "io.opentelemetry.proto.collector.metrics.v1";
 option java_outer_classname = "MetricsServiceProto";
 option go_package = "go.opentelemetry.io/proto/otlp/collector/metrics/v1";
 
-// Service that can be used to push metrics between one Application
-// instrumented with OpenTelemetry and a collector, or between a collector and a
-// central collector.
-service MetricsService {
-  rpc Export(ExportMetricsServiceRequest) returns (ExportMetricsServiceResponse) {}
-}
-
 message ExportMetricsServiceRequest {
   // An array of ResourceMetrics.
   // For data coming from a single resource this array will typically contain one
