@@ -239,10 +239,33 @@ public:
     }
 
     template<fixed_string full_name>
-    iobuf read_bytes(tag t) {
+    iobuf read_iobuf(tag t) {
         if (t.wire_type == wire_type::length) [[likely]] {
             auto length = read_length(&_parser);
             return _parser.share(length);
+        } else [[unlikely]] {
+            throw std::runtime_error(
+              fmt::format(
+                "unexpected wire type {} for field {}",
+                std::to_underlying(t.wire_type),
+                full_name));
+        }
+    }
+
+    template<fixed_string full_name>
+    bytes read_bytes(tag t) {
+        if (t.wire_type == wire_type::length) [[likely]] {
+            auto length = read_length(&_parser);
+            constexpr size_t allocation_limit = 128_KiB;
+            if (std::cmp_greater(length, allocation_limit)) {
+                throw std::runtime_error(
+                  fmt::format(
+                    "bytes length {} exceeds allocation limit {} for field {}",
+                    length,
+                    allocation_limit,
+                    full_name));
+            }
+            return _parser.read_bytes(length);
         } else [[unlikely]] {
             throw std::runtime_error(
               fmt::format(

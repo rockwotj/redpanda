@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 
 namespace serde::json {
@@ -70,6 +71,7 @@ public:
         _next_delimiter = ',';
     }
     void base64_string(const iobuf& b);
+    void hex_string(const bytes& b);
     void number(double d);
     void integer(int32_t i);
     void integer(uint32_t i);

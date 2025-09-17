@@ -31,6 +31,15 @@ extend google.protobuf.FileOptions {
     // option (redpanda.pbgen.cpp_namespace) = "proto::bar";
     // ```
     string cpp_namespace = 51501;
+
+    // A file option that enables some hacks for open telemetry JSON processing,
+    // which has slightly different behavior than offical proto3 rules.
+    //
+    // You can find out more here:
+    // https://opentelemetry.io/docs/specs/otlp/#json-protobuf-encoding
+    //
+    // Do not use this unless you know what you're doing.
+    bool is_open_telemetry_proto = 51502;
 }
 
 extend google.protobuf.FieldOptions {

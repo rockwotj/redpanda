@@ -12,6 +12,7 @@
 #include "serde/json/writer.h"
 
 #include "absl/cleanup/cleanup.h"
+#include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "utils/base64.h"
 
@@ -175,6 +176,13 @@ void writer::integer_string(uint64_t i) {
 void writer::base64_string(const iobuf& b) {
     append_delimiter();
     append_string(iobuf_to_base64(b));
+    _next_delimiter = ',';
+}
+void writer::hex_string(const bytes& b) {
+    append_delimiter();
+    // NOLINTNEXTLINE(*reinterpret-cast*)
+    std::string_view str{reinterpret_cast<const char*>(b.data()), b.size()};
+    append_string(absl::BytesToHexString(str));
     _next_delimiter = ',';
 }
 } // namespace serde::json

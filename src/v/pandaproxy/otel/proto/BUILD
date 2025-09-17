@@ -24,7 +24,10 @@ proto_library(
     srcs = ["resource/v1/resource.proto"],
     import_prefix = "opentelemetry/proto",
     strip_import_prefix = "",
-    deps = [":common_proto"],
+    deps = [
+        ":common_proto",
+        "//proto/redpanda/pbgen:options_proto",
+    ],
 )
 
 redpanda_proto_library(
@@ -50,6 +53,7 @@ TELEMETRY_TYPES = [
             deps = [
                 ":common_proto",
                 ":resource_proto",
+                "//proto/redpanda/pbgen:options_proto",
             ],
         ),
         redpanda_proto_library(
@@ -66,7 +70,10 @@ TELEMETRY_TYPES = [
             srcs = ["collector/{0}/v1/{0}_service.proto".format(telemetry)],
             import_prefix = "opentelemetry/proto",
             strip_import_prefix = "",
-            deps = [":{}_proto".format(telemetry)],
+            deps = [
+                ":{}_proto".format(telemetry),
+                "//proto/redpanda/pbgen:options_proto",
+            ],
         ),
         redpanda_proto_library(
             name = telemetry + "_service_redpanda_proto",

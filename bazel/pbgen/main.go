@@ -176,6 +176,18 @@ func isIOBuf(f protoreflect.FieldDescriptor) bool {
 	return proto.GetExtension(opts, pbgen.E_Iobuf).(bool)
 }
 
+func isOtel(f protoreflect.FileDescriptor) bool {
+	opts := f.Options().(*descriptorpb.FileOptions)
+	if !proto.HasExtension(opts, pbgen.E_IsOpenTelemetryProto) {
+		return false
+	}
+	return proto.GetExtension(opts, pbgen.E_IsOpenTelemetryProto).(bool)
+}
+
+func isOtelSpanOrTraceId(f protoreflect.FieldDescriptor) bool {
+	return isOtel(f.ParentFile()) && (f.Name() == "span_id" || f.Name() == "trace_id")
+}
+
 func customNamespace(f protoreflect.FileDescriptor) (ns string, ok bool) {
 	opts := f.Options().(*descriptorpb.FileOptions)
 	if !proto.HasExtension(opts, pbgen.E_CppNamespace) {
@@ -260,6 +272,9 @@ func (g *baseGenerator) translateBaseType(f protoreflect.FieldDescriptor) (typ s
 	case protoreflect.BoolKind:
 		return "bool"
 	case protoreflect.BytesKind:
+		if isOtelSpanOrTraceId(f) {
+			return "bytes"
+		}
 		return "iobuf"
 	case protoreflect.DoubleKind:
 		return "double"
@@ -354,6 +369,9 @@ func (g *headerGenerator) generateFile(w *codewriter) {
 		w.PreludePrintln()
 		w.PreludePrintln(`#include "base/format_to.h"`)
 		w.PreludePrintln(`#include "bytes/iobuf.h"`)
+		if isOtel(g.file) {
+			w.PreludePrintln(`#include "bytes/bytes.h"`)
+		}
 		w.PreludePrintln(`#include "serde/protobuf/base.h"`)
 		w.PreludePrintln(`#include "strings/static_str.h"`)
 		if g.needsChunkedHashMap {
@@ -862,7 +880,13 @@ func (g *implGenerator) generateMessageTraversalHelper(msg protoreflect.MessageD
 				w.Dedent()
 				w.Println("};")
 			} else if f.Kind() == protoreflect.BytesKind {
-				w.Printf("found.value = get_%s().share();\n", f.Name())
+				if isOtelSpanOrTraceId(f) {
+					w.Println("iobuf found_value;")
+					w.Printf("found_value.append(get_%s().data(), get_%s().size());\n", f.Name(), f.Name())
+					w.Println("found.value = std::move(found_value);")
+				} else {
+					w.Printf("found.value = get_%s().share();\n", f.Name())
+				}
 			} else {
 				w.Printf("found.value = get_%s();\n", f.Name())
 			}
@@ -1316,11 +1340,19 @@ func (g *implGenerator) generateMapFieldWriteJson(f protoreflect.FieldDescriptor
 	case protoreflect.BoolKind:
 		w.Println("w.boolean(value);")
 	case protoreflect.BytesKind:
-		w.Println("w.base64_string(value);")
+		if isOtelSpanOrTraceId(f) {
+			w.Println("w.hex_string(value);")
+		} else {
+			w.Println("w.base64_string(value);")
+		}
 	case protoreflect.DoubleKind, protoreflect.FloatKind:
 		w.Println("w.number(value);")
 	case protoreflect.EnumKind:
-		w.Println("w.string(enum_to_string(value));")
+		if isOtel(f.ParentFile()) {
+			w.Println("w.integer(static_cast<int32_t>(value));")
+		} else {
+			w.Println("w.string(enum_to_string(value));")
+		}
 	case protoreflect.Fixed32Kind,
 		protoreflect.Int32Kind,
 		protoreflect.Sint32Kind,
@@ -1374,11 +1406,19 @@ func (g *implGenerator) generateRepeatedFieldWriteJson(f protoreflect.FieldDescr
 	case protoreflect.BoolKind:
 		w.Println("w.boolean(e);")
 	case protoreflect.BytesKind:
-		w.Println("w.base64_string(e);")
+		if isOtelSpanOrTraceId(f) {
+			w.Println("w.hex_string(value);")
+		} else {
+			w.Println("w.base64_string(e);")
+		}
 	case protoreflect.DoubleKind, protoreflect.FloatKind:
 		w.Println("w.number(e);")
 	case protoreflect.EnumKind:
-		w.Println("w.string(enum_to_string(e));")
+		if isOtel(f.ParentFile()) {
+			w.Println("w.integer(static_cast<int32_t>(e));")
+		} else {
+			w.Println("w.string(enum_to_string(e));")
+		}
 	case protoreflect.Fixed32Kind,
 		protoreflect.Int32Kind,
 		protoreflect.Sint32Kind,
@@ -1450,7 +1490,11 @@ func (g *implGenerator) generateSingularFieldWriteJson(f protoreflect.FieldDescr
 	case protoreflect.BoolKind:
 		w.Printf("w.boolean(get_%s());\n", f.Name())
 	case protoreflect.BytesKind:
-		w.Printf("w.base64_string(get_%s());\n", f.Name())
+		if isOtelSpanOrTraceId(f) {
+			w.Printf("w.hex_string(get_%s());\n", f.Name())
+		} else {
+			w.Printf("w.base64_string(get_%s());\n", f.Name())
+		}
 	case protoreflect.DoubleKind, protoreflect.FloatKind:
 		w.Printf("w.number(get_%s());\n", f.Name())
 	case protoreflect.EnumKind:
@@ -1614,8 +1658,13 @@ func (g *implGenerator) generateSingularFieldWrite(f protoreflect.FieldDescripto
 		}
 		fallthrough
 	case protoreflect.BytesKind:
-		w.Printf("serde::pb::write_length(static_cast<int32_t>(get_%s().size_bytes()), &buf);\n", f.Name())
-		w.Printf("buf.append(get_%s().copy());\n", f.Name())
+		if isOtelSpanOrTraceId(f) {
+			w.Printf("serde::pb::write_length(static_cast<int32_t>(get_%s().size()), &buf);\n", f.Name())
+			w.Printf("buf.append(get_%s().data(), get_%s().size());\n", f.Name(), f.Name())
+		} else {
+			w.Printf("serde::pb::write_length(static_cast<int32_t>(get_%s().size_bytes()), &buf);\n", f.Name())
+			w.Printf("buf.append(get_%s().copy());\n", f.Name())
+		}
 	case protoreflect.GroupKind:
 		fallthrough
 	default:
@@ -1756,8 +1805,13 @@ func (g *implGenerator) generateRepeatedFieldWrite(f protoreflect.FieldDescripto
 		w.Printf("for (const auto& e : get_%s()) {\n", f.Name())
 		w.Indent()
 		w.Printf("serde::pb::tag::write({.wire_type = serde::pb::wire_type::length, .field_number = %d}, &buf);\n", f.Number())
-		w.Println("serde::pb::write_length(static_cast<int32_t>(e.size_bytes()), &buf);")
-		w.Println("buf.append(e.copy());")
+		if isOtelSpanOrTraceId(f) {
+			w.Printf("serde::pb::write_length(static_cast<int32_t>(e.size()), &buf);\n", f.Name())
+			w.Printf("buf.append(e.data(), e.size());\n", f.Name())
+		} else {
+			w.Printf("serde::pb::write_length(static_cast<int32_t>(e.size_bytes()), &buf);\n", f.Name())
+			w.Printf("buf.append(e.copy());\n", f.Name())
+		}
 		w.Dedent()
 		w.Println("}")
 	case protoreflect.GroupKind:
@@ -1859,7 +1913,11 @@ func (g *implGenerator) generateMessageReadJson(msg protoreflect.MessageDescript
 		case protoreflect.BoolKind:
 			scalarMethod = "bool"
 		case protoreflect.BytesKind:
-			scalarMethod = "base64_encoded_bytes"
+			if isOtelSpanOrTraceId(f) {
+				scalarMethod = "hex_encoded_bytes"
+			} else {
+				scalarMethod = "base64_encoded_bytes"
+			}
 		case protoreflect.DoubleKind:
 			scalarMethod = "double"
 		case protoreflect.FloatKind:
@@ -2204,7 +2262,11 @@ func (g *implGenerator) generateRepeatedFieldRead(f protoreflect.FieldDescriptor
 		}
 		fallthrough
 	case protoreflect.BytesKind:
-		w.Printf("self->get_%s().push_back(parser->read_bytes<%q>(tag));\n", f.Name(), f.FullName())
+		if isOtelSpanOrTraceId(f) {
+			w.Printf("self->get_%s().push_back(parser->read_bytes<%q>(tag));\n", f.Name(), f.FullName())
+		} else {
+			w.Printf("self->get_%s().push_back(parser->read_iobuf<%q>(tag));\n", f.Name(), f.FullName())
+		}
 	case protoreflect.MessageKind:
 		switch {
 		case isWellKnownType(f.Message()):
@@ -2257,7 +2319,11 @@ func (g *implGenerator) generateSingularFieldRead(f protoreflect.FieldDescriptor
 		}
 		fallthrough
 	case protoreflect.BytesKind:
-		w.Printf("self->set_%s(parser->read_bytes<%q>(tag));\n", f.Name(), f.FullName())
+		if isOtelSpanOrTraceId(f) {
+			w.Printf("self->set_%s(parser->read_bytes<%q>(tag));\n", f.Name(), f.FullName())
+		} else {
+			w.Printf("self->set_%s(parser->read_iobuf<%q>(tag));\n", f.Name(), f.FullName())
+		}
 	case protoreflect.MessageKind:
 		switch {
 		case isWellKnownType(f.Message()):

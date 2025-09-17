@@ -255,6 +255,7 @@ def redpanda_proto_library(name, protos, deps = [], **kwargs):
         deps = [
             "//src/v/base",
             "//src/v/bytes:iobuf",
+            "//src/v/bytes",
             "//src/v/serde/protobuf:rpc",
             "//src/v/strings:static_str",
             "//src/v/serde/protobuf:base",

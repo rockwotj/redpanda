@@ -54,6 +54,7 @@ redpanda_cc_library(
     deps = [
         ":field_mask",
         ":wire_format",
+        "//src/v/bytes",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
         "//src/v/container:chunked_vector",

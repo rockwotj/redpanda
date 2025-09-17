@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/time/time.h"
+#include "bytes/bytes.h"
 #include "serde/json/parser.h"
 #include "serde/protobuf/field_mask.h"
 
@@ -111,6 +112,7 @@ double read_double(peekable_parser* parser);
 ss::sstring read_string(peekable_parser* parser);
 iobuf read_string_as_bytes(peekable_parser* parser);
 iobuf read_base64_encoded_bytes(peekable_parser* parser);
+bytes read_hex_encoded_bytes(peekable_parser* parser);
 
 // Well known protos have special representation in the JSON format.
 //

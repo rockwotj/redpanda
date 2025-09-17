@@ -10,6 +10,7 @@
 
 #include "serde/protobuf/json.h"
 
+#include "absl/strings/escaping.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
@@ -270,6 +271,20 @@ iobuf read_base64_encoded_bytes(peekable_parser* parser) {
           fmt::format("expected string, got: {}", parser->token()));
     }
     return base64_to_iobuf(parser->value_string());
+}
+
+bytes read_hex_encoded_bytes(peekable_parser* parser) {
+    if (parser->token() != token::value_string) [[unlikely]] {
+        throw std::runtime_error(
+          fmt::format("expected string, got: {}", parser->token()));
+    }
+    auto hex = linearize_iobuf(parser->value_string());
+    std::string out;
+    if (!absl::HexStringToBytes(hex, &out)) {
+        throw std::runtime_error(
+          fmt::format("expected hex string, got: {}", hex));
+    }
+    return bytes::from_string(out);
 }
 
 namespace wellknown {

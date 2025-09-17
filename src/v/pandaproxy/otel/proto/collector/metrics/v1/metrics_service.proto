@@ -17,12 +17,14 @@ syntax = "proto3";
 package opentelemetry.proto.collector.metrics.v1;
 
 import "opentelemetry/proto/metrics/v1/metrics.proto";
+import "proto/redpanda/pbgen/options.proto";
 
 option csharp_namespace = "OpenTelemetry.Proto.Collector.Metrics.V1";
 option java_multiple_files = true;
 option java_package = "io.opentelemetry.proto.collector.metrics.v1";
 option java_outer_classname = "MetricsServiceProto";
 option go_package = "go.opentelemetry.io/proto/otlp/collector/metrics/v1";
+option (redpanda.pbgen.is_open_telemetry_proto) = true;
 
 message ExportMetricsServiceRequest {
   // An array of ResourceMetrics.

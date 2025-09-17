@@ -18,12 +18,14 @@ package opentelemetry.proto.logs.v1;
 
 import "opentelemetry/proto/common/v1/common.proto";
 import "opentelemetry/proto/resource/v1/resource.proto";
+import "proto/redpanda/pbgen/options.proto";
 
 option csharp_namespace = "OpenTelemetry.Proto.Logs.V1";
 option java_multiple_files = true;
 option java_package = "io.opentelemetry.proto.logs.v1";
 option java_outer_classname = "LogsProto";
 option go_package = "go.opentelemetry.io/proto/otlp/logs/v1";
+option (redpanda.pbgen.is_open_telemetry_proto) = true;
 
 // LogsData represents the logs data that can be stored in a persistent storage,
 // OR can be embedded by other protocols that transfer OTLP logs data but do not

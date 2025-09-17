@@ -18,12 +18,14 @@ package opentelemetry.proto.metrics.v1;
 
 import "opentelemetry/proto/common/v1/common.proto";
 import "opentelemetry/proto/resource/v1/resource.proto";
+import "proto/redpanda/pbgen/options.proto";
 
 option csharp_namespace = "OpenTelemetry.Proto.Metrics.V1";
 option java_multiple_files = true;
 option java_package = "io.opentelemetry.proto.metrics.v1";
 option java_outer_classname = "MetricsProto";
 option go_package = "go.opentelemetry.io/proto/otlp/metrics/v1";
+option (redpanda.pbgen.is_open_telemetry_proto) = true;
 
 // MetricsData represents the metrics data that can be stored in a persistent
 // storage, OR can be embedded by other protocols that transfer OTLP metrics
