@@ -668,7 +668,7 @@ func (g *implGenerator) generateFile(w *codewriter) {
 		w.PreludePrintln("// NOLINTBEGIN(*-avoid-magic-numbers)")
 		w.Println("// NOLINTEND(*-avoid-magic-numbers)")
 		w.PreludePrintln()
-		headerPath := strings.ReplaceAll(g.file.Path(), ".proto", ".proto.h")
+		headerPath := strings.ReplaceAll(filepath.Base(g.file.Path()), ".proto", ".proto.h")
 		w.PreludePrintf("#include %q\n", headerPath)
 		w.PreludePrintln()
 		w.PreludePrintln(`#include "bytes/iobuf_parser.h"`)
