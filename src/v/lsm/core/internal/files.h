@@ -32,14 +32,11 @@ consteval level operator""_level(unsigned long long val) {
 // The numeric ID of an sst file
 using file_id = named_type<uint64_t, struct file_id_tag>;
 
-// The numeric ID of a manifest file
-using manifest_id = named_type<uint64_t, struct file_id_tag>;
-
 // Compute the name of an sst file with the given ID.
 ss::sstring sst_file_name(file_id);
 
 // Compute the name of a manifest file with the given ID.
-ss::sstring manifest_file_name(manifest_id);
+ss::sstring manifest_file_name(file_id);
 
 ss::sstring current_file_name();
 

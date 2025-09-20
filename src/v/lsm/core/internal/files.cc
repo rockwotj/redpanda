@@ -15,10 +15,10 @@
 
 namespace lsm::internal {
 
-ss::sstring sst_file_name(file_id id) { return ss::format("{}.sst", id()); }
+ss::sstring sst_file_name(file_id id) { return ss::format("{:020}.sst", id()); }
 
-ss::sstring manifest_file_name(manifest_id id) {
-    return ss::format("{}.manifest", id());
+ss::sstring manifest_file_name(file_id id) {
+    return ss::format("{:020}.manifest", id());
 }
 
 ss::sstring current_file_name() { return "CURRENT"; }

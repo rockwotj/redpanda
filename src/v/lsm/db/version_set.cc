@@ -378,7 +378,7 @@ internal::level version::pick_level_for_memtable_output(
                 auto files = get_overlapping_inputs(
                   level + 2_level, &begin, &end);
                 size_t sum = total_file_size(files);
-                if (sum > max_grandparent_overlap_bytes(*_vset->_options)) {
+                if (sum > _vset->_options->max_grandparent_overlap_bytes()) {
                     break;
                 }
             }

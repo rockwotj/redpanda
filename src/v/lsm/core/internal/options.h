@@ -40,6 +40,16 @@ struct options {
     // latency/performance hiccups.
     size_t max_file_size = 2_GiB;
 
+    size_t target_file_size() const { return max_file_size; }
+    size_t max_grandparent_overlap_bytes() const {
+        static constexpr size_t multiplier = 10;
+        return multiplier * target_file_size();
+    }
+    size_t expanded_compaction_byte_size_limit() const {
+        static constexpr size_t multiplier = 25;
+        return multiplier * target_file_size();
+    }
+
     // We arrange to automatically compact after a file after a certain
     // number of seeks. Let's assume:
     // (1) One seek costs 200us

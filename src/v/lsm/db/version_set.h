@@ -154,7 +154,7 @@ private:
     ss::lw_shared_ptr<internal::options> _options;
     ss::lw_shared_ptr<version> _current;
     internal::file_id _next_file_id = internal::file_id{2};
-    internal::manifest_id _manifest_id;
+    internal::file_id _manifest_id;
     internal::seqno _last_seqno;
     absl::FixedArray<std::optional<internal::key>> _compact_pointer;
 };
