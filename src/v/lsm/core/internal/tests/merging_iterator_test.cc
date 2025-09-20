@@ -98,8 +98,8 @@ make_test_data(std::vector<std::pair<std::string, std::string>> data) {
     return result;
 }
 
-std::vector<std::pair<std::string, std::string>> collect_all_pairs(
-    std::unique_ptr<lsm::internal::iterator>& it) {
+std::vector<std::pair<std::string, std::string>>
+collect_all_pairs(std::unique_ptr<lsm::internal::iterator>& it) {
     std::vector<std::pair<std::string, std::string>> results;
     it->seek_to_first().get();
     while (it->valid()) {
@@ -109,8 +109,8 @@ std::vector<std::pair<std::string, std::string>> collect_all_pairs(
     return results;
 }
 
-std::vector<std::pair<std::string, std::string>> collect_all_pairs_reverse(
-    std::unique_ptr<lsm::internal::iterator>& it) {
+std::vector<std::pair<std::string, std::string>>
+collect_all_pairs_reverse(std::unique_ptr<lsm::internal::iterator>& it) {
     std::vector<std::pair<std::string, std::string>> results;
     it->seek_to_last().get();
     while (it->valid()) {
@@ -137,14 +137,15 @@ TEST(MergingIteratorTest, MergeTwoIterators) {
     auto it = lsm::internal::create_merging_iterator(std::move(children));
 
     auto results = collect_all_pairs(it);
-    EXPECT_THAT(results, ElementsAre(
+    EXPECT_THAT(
+      results,
+      ElementsAre(
         Pair("a", "1"),
         Pair("b", "2"),
         Pair("c", "3"),
         Pair("d", "4"),
         Pair("e", "5"),
-        Pair("f", "6")
-    ));
+        Pair("f", "6")));
 }
 
 TEST(MergingIteratorTest, DuplicateKeys) {
@@ -160,14 +161,15 @@ TEST(MergingIteratorTest, DuplicateKeys) {
     auto results = collect_all_pairs(it);
 
     // Should get both values for duplicate keys
-    EXPECT_THAT(results, ElementsAre(
+    EXPECT_THAT(
+      results,
+      ElementsAre(
         Pair("a", "1"),
         Pair("a", "10"),
         Pair("b", "2"),
         Pair("b", "20"),
         Pair("c", "3"),
-        Pair("d", "40")
-    ));
+        Pair("d", "40")));
 }
 
 TEST(MergingIteratorTest, EmptyChildren) {
@@ -212,10 +214,8 @@ TEST(MergingIteratorTest, BackwardIteration) {
     auto it = lsm::internal::create_merging_iterator(std::move(children));
 
     auto results = collect_all_pairs_reverse(it);
-    EXPECT_THAT(results, ElementsAre(
-        Pair("d", "4"),
-        Pair("c", "3"),
-        Pair("b", "2"),
-        Pair("a", "1")
-    ));
+    EXPECT_THAT(
+      results,
+      ElementsAre(
+        Pair("d", "4"), Pair("c", "3"), Pair("b", "2"), Pair("a", "1")));
 }

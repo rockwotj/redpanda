@@ -39,4 +39,3 @@ TEST(Files, ManifestFileName) {
 }
 
 TEST(Files, CurrentFileName) { EXPECT_EQ("CURRENT", current_file_name()); }
-

@@ -11,8 +11,10 @@
 
 #pragma once
 
+#include "absl/container/btree_map.h"
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
+#include "lsm/core/internal/iterator.h"
 #include "lsm/core/internal/keys.h"
 
 #include <seastar/core/sstring.hh>
@@ -26,16 +28,16 @@ namespace lsm::db {
 // by limiting to a version of the memtable.
 //
 // It is used to buffer writes before they are flushed to disk.
-class memtable {
-    class impl;
-
+class memtable : public ss::enable_lw_shared_from_this<memtable> {
 public:
-    memtable() noexcept;
+    using table = absl::btree_map<internal::key, iobuf, std::less<>>;
+
+    memtable() noexcept = default;
     memtable(const memtable&) = delete;
     memtable& operator=(const memtable&) = delete;
-    memtable(memtable&&) noexcept;
-    memtable& operator=(memtable&&) noexcept;
-    ~memtable();
+    memtable(memtable&&) noexcept = delete;
+    memtable& operator=(memtable&&) noexcept = delete;
+    ~memtable() = default;
 
     // Add a key-value pair to the memtable.
     //
@@ -55,8 +57,13 @@ public:
     // REQUIRES: key.value_type is value
     std::optional<iobuf> get(internal::key_view);
 
+    // Create an iterator for this memtable.
+    //
+    // This iterator is safe to use in face of concurrent updates
+    std::unique_ptr<internal::iterator> create_iterator();
+
 private:
-    std::unique_ptr<impl> _impl;
+    table _table;
 };
 
 } // namespace lsm::db
