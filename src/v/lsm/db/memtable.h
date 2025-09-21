@@ -29,15 +29,17 @@ namespace lsm::db {
 //
 // It is used to buffer writes before they are flushed to disk.
 class memtable : public ss::enable_lw_shared_from_this<memtable> {
+    class iterator;
+
 public:
     using table = absl::btree_map<internal::key, iobuf, std::less<>>;
 
-    memtable() noexcept = default;
+    memtable() noexcept;
     memtable(const memtable&) = delete;
     memtable& operator=(const memtable&) = delete;
-    memtable(memtable&&) noexcept = delete;
-    memtable& operator=(memtable&&) noexcept = delete;
-    ~memtable() = default;
+    memtable(memtable&&) = delete;
+    memtable& operator=(memtable&&) = delete;
+    ~memtable();
 
     // Add a key-value pair to the memtable.
     //
@@ -63,7 +65,18 @@ public:
     std::unique_ptr<internal::iterator> create_iterator();
 
 private:
+    void invalidate_iterators();
+
     table _table;
+    // We keep a dummy iterator alive to be able to reference all live
+    // iterators.
+    //
+    // We invalidate all the live iterators when writes take places. This
+    // approach is chosen over a data structure with stable iterators because
+    // it's expected there are more entries in the memtable than live iterators
+    // however there are cases where it'd be better to use a copy on write data
+    // structure or something with stable iteration in some cases.
+    std::unique_ptr<iterator> _list_holder;
 };
 
 } // namespace lsm::db

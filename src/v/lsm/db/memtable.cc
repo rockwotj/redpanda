@@ -14,16 +14,38 @@
 #include "absl/container/btree_map.h"
 #include "base/vassert.h"
 
+#include <seastar/util/variant_utils.hh>
+
+#include <memory>
+#include <variant>
+
 namespace lsm::db {
 
-// TODO(lsm): This needs to handle iterator invalidation
-class iterator : public internal::iterator {
+class memtable::iterator : public internal::iterator {
 public:
     explicit iterator(memtable::table* table)
       : _table(table)
       , _it(table->end()) {}
+    iterator(const iterator&) = delete;
+    iterator(iterator&&) = delete;
+    iterator& operator=(const iterator&) = delete;
+    iterator& operator=(iterator&&) = delete;
+    ~iterator() override {
+        if (_prev) {
+            _prev->_next = _next;
+        }
+        if (_next) {
+            _next->_prev = _prev;
+        }
+    }
 
-    bool valid() const override { return _it != _table->end(); }
+    bool valid() const override {
+        return ss::visit(
+          _it,
+          [](std::monostate) { return false; },
+          [this](memtable::table::iterator it) { return it != _table->end(); },
+          [](const internal::key&) { return true; });
+    }
 
     ss::future<> seek_to_first() override {
         _it = _table->begin();
@@ -36,35 +58,70 @@ public:
     }
 
     ss::future<> seek(lsm::internal::key_view target) override {
-        _it = _table->lower_bound(lsm::internal::key(target));
+        _it = _table->lower_bound(target);
         return ss::now();
     }
 
     ss::future<> next() override {
-        if (_it != _table->end()) {
-            ++_it;
+        auto& it = restore();
+        if (it != _table->end()) {
+            ++it;
         }
         return ss::now();
     }
 
     ss::future<> prev() override {
-        if (_it == _table->begin()) {
-            _it = _table->end();
-        } else if (_it != _table->end()) {
-            --_it;
+        auto& it = restore();
+        if (it == _table->begin()) {
+            it = _table->end();
+        } else if (it != _table->end()) {
+            --it;
         } else if (!_table->empty()) {
-            _it = std::prev(_table->end());
+            it = std::prev(_table->end());
         }
         return ss::now();
     }
 
-    lsm::internal::key_view key() override { return _it->first; }
+    lsm::internal::key_view key() override { return restore()->first; }
 
-    iobuf value() override { return _it->second.share(); }
+    iobuf value() override { return restore()->second.share(); }
+
+    void invalidate() {
+        ss::visit(
+          _it,
+          [](std::monostate) {},
+          [this](memtable::table::iterator it) {
+              if (it == _table->end()) {
+                  _it = std::monostate{};
+              } else {
+                  _it = it->first;
+              }
+          },
+          [](const internal::key&) {});
+    }
 
 private:
+    friend class memtable;
+
+    memtable::table::iterator& restore() const {
+        using iter = memtable::table::iterator;
+        return *ss::visit(
+          _it,
+          [this](std::monostate) -> iter* {
+              return &_it.emplace<iter>(_table->end());
+          },
+          [](memtable::table::iterator& it) -> iter* { return &it; },
+          [this](const internal::key& key) -> iter* {
+              return &_it.emplace<iter>(_table->find(key));
+          });
+    }
+
+    iterator* _next = nullptr;
+    iterator* _prev = nullptr;
     memtable::table* _table;
-    memtable::table::iterator _it;
+    mutable std::
+      variant<std::monostate, memtable::table::iterator, internal::key>
+        _it;
 };
 
 void memtable::add(internal::key key, iobuf value) {
@@ -72,6 +129,7 @@ void memtable::add(internal::key key, iobuf value) {
       key.type() == internal::value_type::value,
       "when adding to the memtable, keys must be of value type",
       key.decode());
+    invalidate_iterators();
     _table.emplace(std::move(key), std::move(value));
 }
 void memtable::remove(internal::key key) {
@@ -79,6 +137,7 @@ void memtable::remove(internal::key key) {
       key.type() == internal::value_type::tombstone,
       "when remove to the memtable, keys must be of tombstone type",
       key.decode());
+    invalidate_iterators();
     _table.emplace(std::move(key), iobuf{});
 }
 
@@ -99,7 +158,28 @@ std::optional<iobuf> memtable::get(internal::key_view key) {
 }
 
 std::unique_ptr<internal::iterator> memtable::create_iterator() {
-    return std::make_unique<iterator>(&_table);
+    auto it = std::make_unique<iterator>(&_table);
+    // Insert into our circularly linked list.
+    it->_next = _list_holder->_next;
+    it->_prev = _list_holder.get();
+    _list_holder->_next = it.get();
+    return it;
+}
+
+memtable::memtable() noexcept
+  : _list_holder(std::make_unique<iterator>(&_table)) {
+    // initialize our circularly linked list.
+    _list_holder->_next = _list_holder.get();
+    _list_holder->_prev = _list_holder.get();
+}
+
+memtable::~memtable() = default;
+
+void memtable::invalidate_iterators() {
+    auto sentinel = _list_holder.get();
+    for (auto* it = sentinel->_next; it != sentinel; it = it->_next) {
+        it->invalidate();
+    }
 }
 
 } // namespace lsm::db

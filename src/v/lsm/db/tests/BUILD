@@ -10,6 +10,7 @@ redpanda_cc_gtest(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal/tests:iterator_test_harness",
         "//src/v/lsm/db:memtable",
         "//src/v/test_utils:gtest",
         "@abseil-cpp//absl/strings",

@@ -12,6 +12,7 @@
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
 #include "lsm/core/internal/keys.h"
+#include "lsm/core/internal/tests/iterator_test_harness.h"
 #include "lsm/db/memtable.h"
 
 #include <gmock/gmock-matchers.h>
@@ -33,7 +34,26 @@ lsm::internal::key operator""_key(const char* s, size_t) {
       .type = seq_num < 0 ? value_type::tombstone : value_type::value,
     });
 }
+
+class memtable_iterator_factory {
+public:
+    std::unique_ptr<lsm::internal::iterator>
+    make_iterator(std::map<lsm::internal::key, iobuf> map) {
+        for (auto& [k, v] : map) {
+            _memtable.add(k, v.copy());
+        }
+        return _memtable.create_iterator();
+    }
+
+    lsm::db::memtable _memtable;
+};
+
 } // namespace
+
+using MemtableIteratorType = ::testing::Types<memtable_iterator_factory>;
+
+INSTANTIATE_TYPED_TEST_SUITE_P(
+  MemtableIteratorSuite, CoreIteratorTest, MemtableIteratorType);
 
 TEST(Memtable, GetAtVersion) {
     lsm::db::memtable table;
@@ -129,4 +149,30 @@ TEST(Memtable, GetAtVersion) {
               << "key: " << key.decode();
         }
     }
+}
+
+TEST(Memtable, StableIterator) {
+    lsm::db::memtable table;
+    table.add("key1@1"_key, iobuf::from("value1"));
+    table.add("key1@2"_key, iobuf::from("value2"));
+    table.add("key5@1"_key, iobuf::from("value3"));
+    auto it = table.create_iterator();
+    it->seek("key1@2"_key).get();
+    ASSERT_TRUE(it->valid());
+    EXPECT_EQ(it->key(), "key1@2"_key);
+    EXPECT_EQ(it->value(), iobuf::from("value2"));
+    table.add("key1@3"_key, iobuf::from("value4"));
+    table.add("key2@1"_key, iobuf::from("value5"));
+    EXPECT_EQ(it->key(), "key1@2"_key) << it->key().decode();
+    EXPECT_EQ(it->value(), iobuf::from("value2")) << it->value().hexdump(10);
+    it->next().get();
+    ASSERT_TRUE(it->valid());
+    EXPECT_EQ(it->key(), "key1@1"_key) << it->key().decode();
+    EXPECT_EQ(it->value(), iobuf::from("value1")) << it->value().hexdump(10);
+    it->prev().get();
+    ASSERT_TRUE(it->valid());
+    it->prev().get();
+    ASSERT_TRUE(it->valid());
+    EXPECT_EQ(it->key(), "key1@3"_key) << it->key().decode();
+    EXPECT_EQ(it->value(), iobuf::from("value4")) << it->value().hexdump(10);
 }

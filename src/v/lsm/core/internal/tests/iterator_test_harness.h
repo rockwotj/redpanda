@@ -44,13 +44,18 @@ private:
     IteratorFactory _factory;
 };
 
+namespace lsm::internal::testing {
+
 inline lsm::internal::key operator""_key(const char* str, size_t) {
     return lsm::internal::key::encode({.key = str});
 }
 
+} // namespace lsm::internal::testing
+
 TYPED_TEST_SUITE_P(CoreIteratorTest);
 
 TYPED_TEST_P(CoreIteratorTest, Empty) {
+    using namespace lsm::internal::testing;
     auto filter = this->make_iterator({});
     filter->seek_to_first().get();
     ASSERT_FALSE(filter->valid());
@@ -65,6 +70,7 @@ TYPED_TEST_P(CoreIteratorTest, Empty) {
 }
 
 TYPED_TEST_P(CoreIteratorTest, Single) {
+    using namespace lsm::internal::testing;
     auto check_first = [](lsm::internal::iterator* it) {
         it->seek_to_first().get();
         ASSERT_TRUE(it->valid());
@@ -161,6 +167,7 @@ TYPED_TEST_P(CoreIteratorTest, FullScans) {
 }
 
 TYPED_TEST_P(CoreIteratorTest, Seek) {
+    using namespace lsm::internal::testing;
     std::map<std::string, std::string> data;
     for (int i = 0; i < 2000; ++i) {
         data.emplace(fmt::format("k{:04}", i), fmt::format("v{}", i));

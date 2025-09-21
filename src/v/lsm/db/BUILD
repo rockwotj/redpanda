@@ -15,6 +15,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
         "@abseil-cpp//absl/container:btree",
         "@seastar",
