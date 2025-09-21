@@ -99,6 +99,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":file_utils",
         ":manifest_redpanda_proto",
+        "//src/v/lsm/core:exceptions",
         "//src/v/lsm/core/internal:two_level_iterator",
         "//src/v/utils:to_string",
         "@abseil-cpp//absl/container:btree",

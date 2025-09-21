@@ -12,9 +12,11 @@
 #include "lsm/core/internal/keys.h"
 
 #include "base/vassert.h"
+#include "bytes/iobuf.h"
 
 #include <seastar/core/byteorder.hh>
 
+#include <algorithm>
 #include <limits>
 #include <type_traits>
 #include <utility>
@@ -130,5 +132,15 @@ internal::key_view key_view::without_type() const {
     str.remove_suffix(1);
     return internal::key_view{str};
 }
+
+key::key(const iobuf& encoded)
+  : _value(value_t::initialized_later{}, encoded.size_bytes()) {
+    auto it = _value.begin();
+    for (const auto& frag : encoded) {
+        it = std::copy_n(frag.get(), frag.size(), it);
+    }
+}
+
+key::operator iobuf() const { return iobuf::from(_value); }
 
 } // namespace lsm::internal

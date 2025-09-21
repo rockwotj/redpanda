@@ -141,13 +141,24 @@ public:
     // to persistence as well as set to be the current version.
     ss::future<> log_and_apply(version_edit);
 
+    // Recover the last saved version of the database from the persistence
+    // layer.
+    ss::future<> recover();
+
 private:
     friend class version;
 
     void set_current(ss::lw_shared_ptr<version>);
     void finalize(version*);
+
+    struct manifest {
+        ss::lw_shared_ptr<version> version;
+        internal::file_id next_file_id;
+        internal::seqno last_seqno;
+    };
     // Write this version to a manifest file as a snapshot.
-    ss::future<> write_manifest(version*, io::sequential_file_writer*);
+    ss::future<> write_manifest(manifest, io::sequential_file_writer*);
+    ss::future<manifest> read_manifest(io::sequential_file_reader*);
 
     io::persistence* _persistence;
     table_cache* _table_cache;

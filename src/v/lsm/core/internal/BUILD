@@ -53,6 +53,7 @@ redpanda_cc_library(
     hdrs = ["keys.h"],
     deps = [
         "//src/v/base",
+        "//src/v/bytes:iobuf",
         "//src/v/utils:named_type",
         "@seastar",
     ],

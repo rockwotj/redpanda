@@ -19,6 +19,8 @@
 
 #include <string_view>
 
+class iobuf;
+
 namespace lsm::internal {
 
 // The sequence number for a write into the database.
@@ -65,6 +67,7 @@ public:
     };
 
     key() = default;
+    explicit key(const iobuf& encoded);
 
     // Encode a key into an internal key.
     static key encode(parts);
@@ -89,6 +92,7 @@ public:
     auto operator<=>(const key&) const = default;
     bool operator<(const key&) const = default;
     explicit operator ss::sstring() const { return {data(), size()}; }
+    explicit operator iobuf() const;
 
     fmt::iterator format_to(fmt::iterator) const;
 

@@ -12,10 +12,12 @@
 #include "lsm/db/version_set.h"
 
 #include "absl/container/btree_set.h"
+#include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/two_level_iterator.h"
 #include "lsm/db/file_utils.h"
 #include "lsm/db/manifest.proto.h"
+#include "lsm/db/version_edit.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -85,6 +87,31 @@ private:
     uint32_t _index;
     iobuf _value_buf;
 };
+
+ss::future<std::optional<ss::sstring>> read_current_file(io::persistence* p) {
+    auto maybe_file = co_await p->open_sequential_reader(
+      internal::current_file_name());
+    if (!maybe_file) {
+        co_return std::nullopt;
+    }
+    auto file = std::move(*maybe_file);
+    constexpr static size_t buffer_size = 4_KiB;
+    auto fut = co_await ss::coroutine::as_future<iobuf>(
+      file->read(buffer_size));
+    co_await file->close();
+    auto buf = fut.get();
+    if (buf.size_bytes() >= buffer_size) {
+        throw corruption_exception(
+          "expected {} file to be less than {} bytes",
+          internal::current_file_name(),
+          buffer_size);
+    }
+    ss::sstring contents;
+    for (const auto& frag : buf) {
+        contents.append(frag.get(), frag.size());
+    }
+    co_return contents;
+}
 
 } // namespace
 
@@ -507,8 +534,13 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
     auto manifest_filename = internal::manifest_file_name(_manifest_id);
     auto file = co_await _persistence->open_sequential_writer(
       manifest_filename);
+    auto m = manifest{
+      .version = v,
+      .next_file_id = edit._next_file_number,
+      .last_seqno = edit._last_seq_num,
+    };
     auto fut = co_await ss::coroutine::as_future<>(
-      write_manifest(v.get(), file.get()));
+      write_manifest(std::move(m), file.get()));
     co_await file->close();
     if (fut.failed()) {
         auto ex = fut.get_exception();
@@ -518,6 +550,27 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
     co_await _persistence->write_file_atomically(
       internal::current_file_name(), manifest_filename);
     set_current(std::move(v));
+}
+
+ss::future<> version_set::recover() {
+    auto current = co_await read_current_file(_persistence);
+    if (!current) {
+        co_return;
+    }
+    auto maybe_file = co_await _persistence->open_sequential_reader(*current);
+    if (!maybe_file) {
+        throw corruption_exception(
+          "missing current manifest file: {}", *current);
+    }
+    auto fut = co_await ss::coroutine::as_future<manifest>(
+      read_manifest(maybe_file->get()));
+    co_await (*maybe_file)->close();
+    auto m = std::move(fut.get());
+    finalize(m.version.get());
+    set_current(std::move(m.version));
+    _manifest_id = m.next_file_id;
+    _next_file_id = m.next_file_id + internal::file_id{1};
+    _last_seqno = m.last_seqno;
 }
 
 void version_set::finalize(version* v) {
@@ -540,26 +593,66 @@ void version_set::finalize(version* v) {
 }
 
 ss::future<>
-version_set::write_manifest(version* v, io::sequential_file_writer* w) {
+version_set::write_manifest(manifest m, io::sequential_file_writer* w) {
     proto::version version_proto;
     for (const auto& [level, files] :
-         std::views::zip(std::views::iota(0), v->_files)) {
+         std::views::zip(std::views::iota(0), m.version->_files)) {
         proto::version_level level_proto;
         level_proto.set_number(level);
         for (const auto& file : files) {
             proto::file_meta_data file_proto;
             file_proto.set_id(file->id());
             file_proto.set_file_size(file->file_size);
-            file_proto.set_encoded_smallest_key(ss::sstring(file->smallest));
-            file_proto.set_encoded_largest_key(ss::sstring(file->largest));
+            file_proto.set_encoded_smallest_key(iobuf(file->smallest));
+            file_proto.set_encoded_largest_key(iobuf(file->largest));
             level_proto.get_files().push_back(std::move(file_proto));
         }
         version_proto.get_levels().push_back(std::move(level_proto));
     }
     proto::manifest manifest_proto;
     manifest_proto.set_version(std::move(version_proto));
+    manifest_proto.set_next_file_id(m.next_file_id());
+    manifest_proto.set_last_seqno(m.last_seqno());
     auto serialized = co_await manifest_proto.to_proto();
     co_await w->append(std::move(serialized));
+}
+
+ss::future<version_set::manifest>
+version_set::read_manifest(io::sequential_file_reader* r) {
+    iobuf proto;
+    static constexpr size_t buffer_size = 4_KiB;
+    bool done = false;
+    while (!done) {
+        auto buf = co_await r->read(buffer_size);
+        done = buf.size_bytes() < buffer_size;
+        proto.append(std::move(buf));
+    }
+    proto::manifest manifest_proto;
+    try {
+        manifest_proto = co_await proto::manifest::from_proto(std::move(proto));
+    } catch (const std::exception& ex) {
+        throw corruption_exception(
+          "unable to parse manifest file: {}", ex.what());
+    }
+    auto v = ss::make_lw_shared<version>(version::ctor{}, this);
+    for (const auto& level_proto : manifest_proto.get_version().get_levels()) {
+        auto& files = v->_files[internal::level{
+          static_cast<uint8_t>(level_proto.get_number())}];
+        for (const auto& file_proto : level_proto.get_files()) {
+            auto meta = ss::make_lw_shared<file_meta_data>();
+            meta->id = internal::file_id{file_proto.get_id()};
+            meta->file_size = file_proto.get_file_size();
+            meta->smallest = internal::key(
+              file_proto.get_encoded_smallest_key());
+            meta->largest = internal::key(file_proto.get_encoded_largest_key());
+            files.push_back(std::move(meta));
+        }
+    }
+    manifest m;
+    m.version = std::move(v);
+    m.next_file_id = internal::file_id(manifest_proto.get_next_file_id());
+    m.last_seqno = internal::seqno(manifest_proto.get_last_seqno());
+    co_return m;
 }
 
 } // namespace lsm::db

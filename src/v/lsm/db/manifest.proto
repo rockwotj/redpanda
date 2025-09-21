@@ -20,6 +20,10 @@ option (redpanda.pbgen.cpp_namespace) = "lsm::proto";
 message Manifest {
     // The version of the database this manifest points to.
     Version version = 1;
+    // The next file ID to be used.
+    uint64 next_file_id = 2;
+    // The last seqno written.
+    uint64 last_seqno = 4;
 }
 
 // An immutable version of the database
@@ -44,7 +48,7 @@ message FileMetaData {
     // The size of the file in bytes.
     uint64 file_size = 2;
     // The smallest key in the table.
-    string encoded_smallest_key = 3;
+    bytes encoded_smallest_key = 3;
     // The largest key in the table.
-    string encoded_largest_key = 4;
+    bytes encoded_largest_key = 4;
 }
