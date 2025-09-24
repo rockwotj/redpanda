@@ -26,10 +26,19 @@ struct options {
 
         fmt::iterator format_to(fmt::iterator) const;
     };
+    constexpr static auto default_max_level = 6_level;
+    static constexpr std::vector<level_config> make_default_levels() {
+        std::vector<level_config> levels;
+        levels.reserve(default_max_level() + 1);
+        for (auto lvl = 0_level; lvl <= default_max_level; ++lvl) {
+            levels.emplace_back(lvl);
+        }
+        return levels;
+    }
     // The levels and their configuration in the database,
     // this will be sorted by level number and also will be monotonically
     // increasing from level 0 to level N (configurable).
-    std::vector<level_config> levels;
+    std::vector<level_config> levels = make_default_levels();
 
     constexpr static size_t default_level_one_compaction_trigger = 4;
     size_t level_one_compaction_trigger = default_level_one_compaction_trigger;

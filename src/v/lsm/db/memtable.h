@@ -74,8 +74,11 @@ private:
     // We invalidate all the live iterators when writes take places. This
     // approach is chosen over a data structure with stable iterators because
     // it's expected there are more entries in the memtable than live iterators
-    // however there are cases where it'd be better to use a copy on write data
-    // structure or something with stable iteration in some cases.
+    // so overall there will be less time and memory used to track an intrusive
+    // list for every entry in the memtable. However there are cases where it'd
+    // be better to use a copy on write data structure or something with stable
+    // iteration? Benchmarks needed, and for now this approach seemed like a
+    // lower lift.
     std::unique_ptr<iterator> _list_holder;
 };
 

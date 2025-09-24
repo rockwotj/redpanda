@@ -16,8 +16,6 @@
 #include "lsm/sst/builder.h"
 #include "test_utils/async.h"
 
-#include <seastar/core/file.hh>
-
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
