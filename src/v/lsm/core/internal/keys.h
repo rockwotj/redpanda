@@ -166,4 +166,14 @@ private:
     std::string_view _value;
 };
 
+// Create a key from a static string. Used for testing.
+//
+// The grammar is: "<userkey>@<seqno>?"
+// Where:
+//  userkey: is the user key. Cannot contain a @
+//  seqno: the absolute value is the seqno for the key
+//  value_type: if seqno is negative, then it's a tombstone type.
+//              Otherwise it's a value type.
+key operator""_key(const char* s, size_t len);
+
 } // namespace lsm::internal

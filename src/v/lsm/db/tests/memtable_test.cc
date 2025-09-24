@@ -9,8 +9,6 @@
  * by the Apache License, Version 2.0
  */
 
-#include "absl/strings/numbers.h"
-#include "absl/strings/str_split.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/tests/iterator_test_harness.h"
 #include "lsm/db/memtable.h"
@@ -21,19 +19,8 @@
 #include <string_view>
 
 namespace {
-lsm::internal::key operator""_key(const char* s, size_t) {
-    auto [k, seq_str] = std::pair<std::string_view, std::string_view>(
-      absl::StrSplit(s, "@"));
-    int64_t seq_num = 0;
-    using namespace lsm::internal;
-    vassert(
-      absl::SimpleAtoi(seq_str, &seq_num), "invalid seq num: '{}'", seq_str);
-    return key::encode({
-      .key = ss::sstring(k),
-      .seq_num = seqno(std::abs(seq_num)),
-      .type = seq_num < 0 ? value_type::tombstone : value_type::value,
-    });
-}
+
+using lsm::internal::operator""_key;
 
 class memtable_iterator_factory {
 public:

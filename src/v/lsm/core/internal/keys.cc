@@ -11,6 +11,8 @@
 
 #include "lsm/core/internal/keys.h"
 
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_split.h"
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
 
@@ -142,5 +144,20 @@ key::key(const iobuf& encoded)
 }
 
 key::operator iobuf() const { return iobuf::from(_value); }
+
+key operator""_key(const char* s, size_t len) {
+    auto [k, seq_str] = std::pair<std::string_view, std::string_view>(
+      absl::StrSplit(std::string_view{s, len}, "@"));
+    int64_t seq_num = 0;
+    using namespace lsm::internal;
+    if (!absl::SimpleAtoi(seq_str, &seq_num)) {
+        seq_num = 0; // Default seqno
+    }
+    return key::encode({
+      .key = ss::sstring(k),
+      .seq_num = seqno(std::abs(seq_num)),
+      .type = seq_num < 0 ? value_type::tombstone : value_type::value,
+    });
+}
 
 } // namespace lsm::internal

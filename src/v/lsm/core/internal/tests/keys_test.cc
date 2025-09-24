@@ -63,3 +63,11 @@ TEST(Keys, SortCorrectly) {
       std::vector(keys),
       testing::WhenSorted(testing::ElementsAreArray(std::vector(keys))));
 }
+
+TEST(Keys, Operator) {
+    using lsm::internal::operator""_key;
+    EXPECT_EQ("foo@4"_key.decode(), key::parts::value("foo", 4_seqno));
+    EXPECT_EQ("foo"_key.decode(), key::parts::value("foo", 0_seqno));
+    EXPECT_EQ("bar@"_key.decode(), key::parts::value("bar", 0_seqno));
+    EXPECT_EQ("foo@-9"_key.decode(), key::parts::tombstone("foo", 9_seqno));
+}

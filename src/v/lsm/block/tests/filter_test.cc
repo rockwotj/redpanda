@@ -37,9 +37,8 @@ lsm::block::filter_reader make_filter(const keys_by_block& keys) {
     return lsm::block::filter_reader(std::move(c));
 }
 
-lsm::internal::key operator""_key(const char* str, size_t) {
-    return lsm::internal::key::encode({.key = str});
-}
+using lsm::internal::operator""_key;
+
 } // namespace
 
 TEST(Filter, Empty) {

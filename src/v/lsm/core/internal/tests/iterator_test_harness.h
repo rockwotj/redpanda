@@ -45,11 +45,7 @@ private:
 };
 
 namespace lsm::internal::testing {
-
-inline lsm::internal::key operator""_key(const char* str, size_t) {
-    return lsm::internal::key::encode({.key = str});
-}
-
+using lsm::internal::operator""_key;
 } // namespace lsm::internal::testing
 
 TYPED_TEST_SUITE_P(CoreIteratorTest);

@@ -11,6 +11,7 @@
 
 #include "lsm/core/internal/options.h"
 #include "lsm/db/table_cache.h"
+#include "lsm/db/version_edit.h"
 #include "lsm/db/version_set.h"
 #include "lsm/io/memory_persistence.h"
 #include "lsm/sst/block_cache.h"
@@ -48,6 +49,8 @@ private:
 };
 
 using lsm::internal::operator""_level;
+using lsm::internal::operator""_file_id;
+using lsm::internal::operator""_key;
 
 } // namespace
 
@@ -56,4 +59,19 @@ TEST_F(VersionSetTest, Empty) {
     for (auto level = 0_level; level <= options().default_max_level; ++level) {
         EXPECT_EQ(vset.current()->num_files(level), 0);
     }
+}
+
+TEST_F(VersionSetTest, ApplyEdit) {
+    auto& vset = version_set();
+    lsm::db::version_edit edit(options());
+    edit.add_file({
+      .level = 0_level,
+      .file_id = 1_file_id,
+      .file_size = 100,
+      .smallest = "a"_key,
+      .largest = "z"_key,
+    });
+    vset.log_and_apply(std::move(edit)).get();
+    EXPECT_EQ(vset.current()->num_files(0_level), 1);
+    EXPECT_EQ(vset.current()->num_files(1_level), 0);
 }

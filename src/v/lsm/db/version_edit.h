@@ -17,6 +17,7 @@
 #include "container/chunked_hash_map.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/keys.h"
+#include "lsm/core/internal/options.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -43,6 +44,9 @@ struct file_meta_data {
 // version to another version.
 class version_edit {
 public:
+    explicit version_edit(const internal::options& options)
+      : _mutations_by_level(options.levels.size()) {}
+
     // Set the next file number for files after this edit.
     void set_next_file_id(internal::file_id file_id) {
         _has_next_file_number = true;

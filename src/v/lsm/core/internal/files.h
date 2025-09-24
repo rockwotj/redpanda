@@ -32,6 +32,10 @@ consteval level operator""_level(unsigned long long val) {
 // The numeric ID of an sst file
 using file_id = named_type<uint64_t, struct file_id_tag>;
 
+consteval file_id operator""_file_id(unsigned long long val) {
+    return file_id{static_cast<uint64_t>(val)};
+}
+
 // Compute the name of an sst file with the given ID.
 ss::sstring sst_file_name(file_id);
 
