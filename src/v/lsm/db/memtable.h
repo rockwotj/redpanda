@@ -65,6 +65,8 @@ public:
     std::unique_ptr<internal::iterator> create_iterator();
 
 private:
+    friend class iterator;
+
     void invalidate_iterators();
 
     table _table;

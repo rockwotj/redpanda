@@ -147,6 +147,8 @@ public:
     // layer.
     ss::future<> recover();
 
+    internal::seqno last_seqno() const { return _last_seqno; }
+
 private:
     friend class version;
 

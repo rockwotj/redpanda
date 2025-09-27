@@ -76,7 +76,17 @@ public:
     }
 
 private:
-    using cache_t = utils::chunked_kv_cache<cache_key, block::reader>;
+    struct block_cost_fn {
+        size_t operator()(const block::reader& reader) noexcept {
+            return reader.size_bytes();
+        }
+    };
+    using cache_t = utils::chunked_kv_cache<
+      cache_key,
+      block::reader,
+      detail::avalanching_absl_hash<cache_key>,
+      std::equal_to<>,
+      block_cost_fn>;
     static cache_t::config compute_cache_config(size_t max_entries) {
         auto main_cache_size = static_cast<size_t>(
           static_cast<double>(max_entries) * 0.90);

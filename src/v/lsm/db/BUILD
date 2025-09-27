@@ -5,6 +5,33 @@ load("//bazel/pbgen:pbgen.bzl", "redpanda_proto_library")
 package(default_visibility = ["//src/v/lsm:__subpackages__"])
 
 redpanda_cc_library(
+    name = "impl",
+    srcs = [
+        "impl.cc",
+    ],
+    hdrs = [
+        "impl.h",
+    ],
+    implementation_deps = [
+        ":version_edit",
+        "//src/v/lsm/core/internal:merging_iterator",
+    ],
+    deps = [
+        ":memtable",
+        ":table_cache",
+        ":version_set",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "//src/v/lsm/io:persistence",
+        "//src/v/lsm/sst:block_cache",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "memtable",
     srcs = [
         "memtable.cc",

@@ -59,6 +59,12 @@ struct options {
         return multiplier * target_file_size();
     }
 
+    constexpr static uint32_t default_max_open_files = 1000;
+    uint32_t max_open_files = default_max_open_files;
+
+    constexpr static size_t default_block_cache_size = 10_MiB;
+    size_t block_cache_size = default_block_cache_size;
+
     // We arrange to automatically compact after a file after a certain
     // number of seeks. Let's assume:
     // (1) One seek costs 200us

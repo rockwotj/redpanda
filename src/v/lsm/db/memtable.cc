@@ -23,9 +23,14 @@ namespace lsm::db {
 
 class memtable::iterator : public internal::iterator {
 public:
-    explicit iterator(memtable::table* table)
-      : _table(table)
-      , _it(table->end()) {}
+    // The dummy iterator is only a place holder for the linked list in the
+    // memtable.
+    struct dummy {};
+    explicit iterator(dummy) {}
+
+    explicit iterator(ss::lw_shared_ptr<memtable> memtable)
+      : _mem(std::move(memtable))
+      , _it(_mem->_table.end()) {}
     iterator(const iterator&) = delete;
     iterator(iterator&&) = delete;
     iterator& operator=(const iterator&) = delete;
@@ -43,28 +48,31 @@ public:
         return ss::visit(
           _it,
           [](std::monostate) { return false; },
-          [this](memtable::table::iterator it) { return it != _table->end(); },
+          [this](memtable::table::iterator it) {
+              return it != _mem->_table.end();
+          },
           [](const internal::key&) { return true; });
     }
 
     ss::future<> seek_to_first() override {
-        _it = _table->begin();
+        _it = _mem->_table.begin();
         return ss::now();
     }
 
     ss::future<> seek_to_last() override {
-        _it = _table->empty() ? _table->end() : std::prev(_table->end());
+        _it = _mem->_table.empty() ? _mem->_table.end()
+                                   : std::prev(_mem->_table.end());
         return ss::now();
     }
 
     ss::future<> seek(lsm::internal::key_view target) override {
-        _it = _table->lower_bound(target);
+        _it = _mem->_table.lower_bound(target);
         return ss::now();
     }
 
     ss::future<> next() override {
         auto& it = restore();
-        if (it != _table->end()) {
+        if (it != _mem->_table.end()) {
             ++it;
         }
         return ss::now();
@@ -72,12 +80,12 @@ public:
 
     ss::future<> prev() override {
         auto& it = restore();
-        if (it == _table->begin()) {
-            it = _table->end();
-        } else if (it != _table->end()) {
+        if (it == _mem->_table.begin()) {
+            it = _mem->_table.end();
+        } else if (it != _mem->_table.end()) {
             --it;
-        } else if (!_table->empty()) {
-            it = std::prev(_table->end());
+        } else if (!_mem->_table.empty()) {
+            it = std::prev(_mem->_table.end());
         }
         return ss::now();
     }
@@ -91,7 +99,7 @@ public:
           _it,
           [](std::monostate) {},
           [this](memtable::table::iterator it) {
-              if (it == _table->end()) {
+              if (it == _mem->_table.end()) {
                   _it = std::monostate{};
               } else {
                   _it = it->first;
@@ -108,17 +116,17 @@ private:
         return *ss::visit(
           _it,
           [this](std::monostate) -> iter* {
-              return &_it.emplace<iter>(_table->end());
+              return &_it.emplace<iter>(_mem->_table.end());
           },
           [](memtable::table::iterator& it) -> iter* { return &it; },
           [this](const internal::key& key) -> iter* {
-              return &_it.emplace<iter>(_table->find(key));
+              return &_it.emplace<iter>(_mem->_table.find(key));
           });
     }
 
     iterator* _next = nullptr;
     iterator* _prev = nullptr;
-    memtable::table* _table;
+    ss::lw_shared_ptr<memtable> _mem;
     mutable std::
       variant<std::monostate, memtable::table::iterator, internal::key>
         _it;
@@ -158,7 +166,7 @@ std::optional<iobuf> memtable::get(internal::key_view key) {
 }
 
 std::unique_ptr<internal::iterator> memtable::create_iterator() {
-    auto it = std::make_unique<iterator>(&_table);
+    auto it = std::make_unique<iterator>(shared_from_this());
     // Insert into our circularly linked list.
     it->_next = _list_holder->_next;
     it->_prev = _list_holder.get();
@@ -167,7 +175,7 @@ std::unique_ptr<internal::iterator> memtable::create_iterator() {
 }
 
 memtable::memtable() noexcept
-  : _list_holder(std::make_unique<iterator>(&_table)) {
+  : _list_holder(std::make_unique<iterator>(iterator::dummy{})) {
     // initialize our circularly linked list.
     _list_holder->_next = _list_holder.get();
     _list_holder->_prev = _list_holder.get();
