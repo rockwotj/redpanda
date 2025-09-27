@@ -363,7 +363,7 @@ ss::future<ss::stop_iteration> lookup_state::on_file(
 
 } // namespace
 
-ss::future<std::optional<iobuf>>
+ss::future<lookup_result>
 version::get(internal::key_view target, get_stats* stats) {
     stats->seek_file = std::nullopt;
     lookup_state state{
@@ -376,10 +376,12 @@ version::get(internal::key_view target, get_stats* stats) {
       [&state](internal::level level, ss::lw_shared_ptr<file_meta_data> file) {
           return state.on_file(level, file);
       });
-    if (!state.found || state.found->key.is_tombstone()) {
-        co_return std::nullopt;
+    if (!state.found) {
+        co_return lookup_result::missing();
+    } else if (state.found->key.is_tombstone()) {
+        co_return lookup_result::tombstone();
     }
-    co_return std::move(state.found->value);
+    co_return lookup_result::value(std::move(state.found->value));
 }
 
 bool version::overlap_in_level(

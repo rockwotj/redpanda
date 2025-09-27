@@ -16,6 +16,7 @@
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/options.h"
+#include "lsm/core/lookup_result.h"
 #include "lsm/db/table_cache.h"
 #include "lsm/db/version_edit.h"
 #include "lsm/db/weak_intrusive_list.h"
@@ -71,7 +72,7 @@ public:
       const internal::key_view* end);
 
     // Lookup the value for key.
-    ss::future<std::optional<iobuf>> get(internal::key_view target, get_stats*);
+    ss::future<lookup_result> get(internal::key_view target, get_stats*);
 
     // Returns true if some file in the specified level overlaps some part of
     // the specified key range.

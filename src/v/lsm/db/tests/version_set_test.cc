@@ -9,17 +9,34 @@
  * by the Apache License, Version 2.0
  */
 
+#include "lsm/core/internal/files.h"
 #include "lsm/core/internal/options.h"
 #include "lsm/db/table_cache.h"
 #include "lsm/db/version_edit.h"
 #include "lsm/db/version_set.h"
 #include "lsm/io/memory_persistence.h"
 #include "lsm/sst/block_cache.h"
+#include "lsm/sst/builder.h"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
 namespace {
+
+struct sst_spec {
+    lsm::internal::file_id id;
+    lsm::internal::level level;
+    std::vector<lsm::internal::key> keys;
+};
+
+MATCHER_P2(IsLookupValue, key, level, "is a value") {
+    auto expected = iobuf::from(
+      fmt::format("value for {} on level {}", key, level));
+    (*result_listener) << "equal to " << expected.hexdump(100);
+    return arg == lsm::lookup_result::value(std::move(expected));
+}
+MATCHER(IsMissing, "is missing") { return arg.is_missing(); }
+MATCHER(IsTombstone, "is a tombstone") { return arg.is_tombstone(); }
 
 class VersionSetTest : public testing::Test {
 public:
@@ -37,6 +54,33 @@ public:
         _version_set = ss::make_lw_shared<lsm::db::version_set>(
           _persistence.get(), &_table_cache, _options);
         _version_set->recover().get();
+    }
+
+    void add_sst(sst_spec spec) {
+        auto filename = lsm::internal::sst_file_name(spec.id);
+        auto writer = _persistence->open_sequential_writer(filename).get();
+        lsm::sst::builder builder(std::move(writer), {});
+        std::ranges::sort(spec.keys);
+        for (const auto& key : spec.keys) {
+            builder
+              .add(
+                key,
+                iobuf::from(
+                  fmt::format("value for {} on level {}", key, spec.level)))
+              .get();
+        }
+        builder.finish().get();
+        size_t file_size = builder.file_size();
+        builder.close().get();
+        lsm::db::version_edit edit(*_options);
+        edit.add_file({
+          .level = spec.level,
+          .file_id = spec.id,
+          .file_size = file_size,
+          .smallest = spec.keys.front(),
+          .largest = spec.keys.back(),
+        });
+        _version_set->log_and_apply(std::move(edit)).get();
     }
 
 private:
@@ -223,4 +267,31 @@ TEST_F(VersionSetTest, OverlapInLevel1) {
     EXPECT_FALSE(current->overlap_in_level(1_level, "y"_key, "z"_key));
     EXPECT_FALSE(current->overlap_in_level(1_level, "h"_key, "h"_key));
     EXPECT_FALSE(current->overlap_in_level(2_level, "a"_key, "z"_key));
+}
+
+TEST_F(VersionSetTest, Get) {
+    add_sst({
+      .id = 1_file_id,
+      .level = 2_level,
+      .keys = {
+        "a"_key,
+        "b"_key,
+        "c"_key,
+        "d"_key,
+      },
+    });
+    add_sst({
+      .id = 2_file_id,
+      .level = 1_level,
+      .keys = {
+        "a"_key,
+        "b"_key,
+        "c"_key,
+        "d"_key,
+      },
+    });
+    auto& vset = version_set();
+    lsm::db::version::get_stats stats;
+    auto result = vset.current()->get("a"_key, &stats).get();
+    EXPECT_THAT(result, IsLookupValue("a"_key, 1_level));
 }
