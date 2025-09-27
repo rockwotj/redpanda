@@ -27,12 +27,13 @@ public:
     std::unique_ptr<lsm::internal::iterator>
     make_iterator(std::map<lsm::internal::key, iobuf> map) {
         for (auto& [k, v] : map) {
-            _memtable.add(k, v.copy());
+            _memtable->add(k, v.copy());
         }
-        return _memtable.create_iterator();
+        return _memtable->create_iterator();
     }
 
-    lsm::db::memtable _memtable;
+    ss::lw_shared_ptr<lsm::db::memtable> _memtable
+      = ss::make_lw_shared<lsm::db::memtable>();
 };
 
 } // namespace
@@ -43,15 +44,16 @@ INSTANTIATE_TYPED_TEST_SUITE_P(
   MemtableIteratorSuite, CoreIteratorTest, MemtableIteratorType);
 
 TEST(Memtable, GetAtVersion) {
-    lsm::db::memtable table;
-    table.add("key1@1"_key, iobuf::from("value1"));
-    table.add("key1@2"_key, iobuf::from("value2"));
-    table.add("key1@3"_key, iobuf::from("value3"));
-    table.add("key0@4"_key, iobuf::from("value4"));
-    table.add("key2@5"_key, iobuf::from("value5"));
-    table.add("key1@6"_key, iobuf::from("value6"));
-    table.add("key3@6"_key, iobuf::from("boo!"));
-    table.remove("key3@-7"_key);
+    ss::lw_shared_ptr<lsm::db::memtable> table
+      = ss::make_lw_shared<lsm::db::memtable>();
+    table->add("key1@1"_key, iobuf::from("value1"));
+    table->add("key1@2"_key, iobuf::from("value2"));
+    table->add("key1@3"_key, iobuf::from("value3"));
+    table->add("key0@4"_key, iobuf::from("value4"));
+    table->add("key2@5"_key, iobuf::from("value5"));
+    table->add("key1@6"_key, iobuf::from("value6"));
+    table->add("key3@6"_key, iobuf::from("boo!"));
+    table->remove("key3@-7"_key);
 
     struct testcase {
         uint64_t version;
@@ -129,27 +131,28 @@ TEST(Memtable, GetAtVersion) {
           .seq_num = lsm::internal::seqno(tc.version),
         });
         if (tc.value.empty()) {
-            EXPECT_EQ(table.get(key), std::nullopt) << "key: " << key.decode();
+            EXPECT_EQ(table->get(key), std::nullopt) << "key: " << key.decode();
         } else {
             auto v = iobuf::from(tc.value);
-            EXPECT_THAT(table.get(key), testing::Optional(std::ref(v)))
+            EXPECT_THAT(table->get(key), testing::Optional(std::ref(v)))
               << "key: " << key.decode();
         }
     }
 }
 
 TEST(Memtable, StableIterator) {
-    lsm::db::memtable table;
-    table.add("key1@1"_key, iobuf::from("value1"));
-    table.add("key1@2"_key, iobuf::from("value2"));
-    table.add("key5@1"_key, iobuf::from("value3"));
-    auto it = table.create_iterator();
+    ss::lw_shared_ptr<lsm::db::memtable> table
+      = ss::make_lw_shared<lsm::db::memtable>();
+    table->add("key1@1"_key, iobuf::from("value1"));
+    table->add("key1@2"_key, iobuf::from("value2"));
+    table->add("key5@1"_key, iobuf::from("value3"));
+    auto it = table->create_iterator();
     it->seek("key1@2"_key).get();
     ASSERT_TRUE(it->valid());
     EXPECT_EQ(it->key(), "key1@2"_key);
     EXPECT_EQ(it->value(), iobuf::from("value2"));
-    table.add("key1@3"_key, iobuf::from("value4"));
-    table.add("key2@1"_key, iobuf::from("value5"));
+    table->add("key1@3"_key, iobuf::from("value4"));
+    table->add("key2@1"_key, iobuf::from("value5"));
     EXPECT_EQ(it->key(), "key1@2"_key) << it->key().decode();
     EXPECT_EQ(it->value(), iobuf::from("value2")) << it->value().hexdump(10);
     it->next().get();
