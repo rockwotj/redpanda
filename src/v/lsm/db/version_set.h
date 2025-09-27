@@ -76,10 +76,12 @@ public:
     // Returns true if some file in the specified level overlaps some part of
     // the specified key range.
     //
-    // begin==nullptr, means before all keys.
-    // end==nullptr, means after all keys.
+    // begin==nullopt, means before all keys.
+    // end==nullopt, means after all keys.
     bool overlap_in_level(
-      internal::level, internal::key_view* begin, internal::key_view* end);
+      internal::level,
+      std::optional<internal::key_view> begin,
+      std::optional<internal::key_view> end);
 
     // Return the level at which we should place a new memtable compaction
     // result that covers the range [begin,end].

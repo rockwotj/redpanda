@@ -41,7 +41,6 @@ size_t find_file(
     while (left < right) {
         size_t mid = (left + right) / 2;
         const auto& f = files[mid];
-        fmt::print(stderr, "mid: {}, cmp: {}\n", mid, f->largest < target);
         if (f->largest < target) {
             // kkey at mid.largest is < target. Therefore all files at or before
             // mid are uninteresting.
@@ -57,12 +56,14 @@ size_t find_file(
 
 namespace {
 
-bool after_file(const file_meta_data& file, const internal::key_view* key) {
-    return key != nullptr && *key > file.largest;
+bool after_file(
+  const file_meta_data& file, const std::optional<internal::key_view>& key) {
+    return key && *key > file.largest;
 }
 
-bool before_file(const file_meta_data& file, const internal::key_view* key) {
-    return key != nullptr && *key < file.smallest;
+bool before_file(
+  const file_meta_data& file, const std::optional<internal::key_view>& key) {
+    return key && *key < file.smallest;
 }
 
 } // namespace
@@ -70,8 +71,8 @@ bool before_file(const file_meta_data& file, const internal::key_view* key) {
 bool some_file_overlaps_range(
   bool disjoint_sorted_files,
   const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& files,
-  internal::key_view* smallest_key,
-  internal::key_view* largest_key) {
+  std::optional<internal::key_view> smallest_key,
+  std::optional<internal::key_view> largest_key) {
     if (!disjoint_sorted_files) {
         // Need to check against all files
         for (const auto& file : files) {
@@ -86,7 +87,7 @@ bool some_file_overlaps_range(
         return false;
     }
     size_t index = 0;
-    if (smallest_key != nullptr) {
+    if (smallest_key) {
         index = find_file(files, *smallest_key);
     }
     if (index >= files.size()) {

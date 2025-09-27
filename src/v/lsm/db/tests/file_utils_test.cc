@@ -63,26 +63,23 @@ protected:
 private:
     bool overlaps(bool disjoint, const char* smallest, const char* largest) {
         internal::key s, l;
-        internal::key_view s_view, l_view;
         if (smallest != nullptr) {
             s = internal::key::encode({
               .key = smallest,
               .seq_num = default_seqno,
             });
-            s_view = s;
         }
         if (largest != nullptr) {
             l = internal::key::encode({
               .key = largest,
               .seq_num = default_seqno,
             });
-            l_view = l;
         }
         return db::some_file_overlaps_range(
           disjoint,
           _files,
-          smallest ? &s_view : nullptr,
-          largest ? &l_view : nullptr);
+          smallest ? std::make_optional(s) : std::nullopt,
+          largest ? std::make_optional(l) : std::nullopt);
     }
     chunked_vector<ss::lw_shared_ptr<db::file_meta_data>> _files;
 };

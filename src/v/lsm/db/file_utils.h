@@ -44,15 +44,15 @@ size_t find_file(
 
 // Returns true iff some file in `files` overlaps the user key range
 // [*smallest,*largest].
-// smallest==nullptr represents a key smaller than all keys in the DB.
-// largest==nullptr represents a key larger than all keys in the DB.
+// smallest==nullopt represents a key smaller than all keys in the DB.
+// largest==nullopt represents a key larger than all keys in the DB.
 // REQUIRES: If disjoint_sorted_files, files[] contains disjoint ranges in
 // sorted order.
 bool some_file_overlaps_range(
   bool disjoint_sorted_files,
   const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& files,
-  internal::key_view* smallest_key,
-  internal::key_view* largest_key);
+  std::optional<internal::key_view> smallest_key,
+  std::optional<internal::key_view> largest_key);
 
 // Extracts the largest file b1 from `compaction_files` and then searches for a
 // b2 in `level_files` for which user_key(u1) = user_key(l2). If it finds such a

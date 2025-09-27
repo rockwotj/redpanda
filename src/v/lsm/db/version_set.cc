@@ -383,20 +383,22 @@ version::get(internal::key_view target, get_stats* stats) {
 }
 
 bool version::overlap_in_level(
-  internal::level level, internal::key_view* begin, internal::key_view* end) {
+  internal::level level,
+  std::optional<internal::key_view> begin,
+  std::optional<internal::key_view> end) {
     return some_file_overlaps_range(level > 0_level, _files[level], begin, end);
 }
 
 internal::level version::pick_level_for_memtable_output(
   internal::key_view begin, internal::key_view end) {
     auto level = 0_level;
-    if (!overlap_in_level(level, &begin, &end)) {
+    if (!overlap_in_level(level, begin, end)) {
         // Push to next level if there is no overlap in next level,
         // and the bytes overlapping in the level after that are limited.
         // As we try to skip expensive level 0=>1 compactions if possible
         constexpr static auto max_mem_compact_level = 1_level;
         while (level <= max_mem_compact_level) {
-            if (overlap_in_level(level + 1_level, &begin, &end)) {
+            if (overlap_in_level(level + 1_level, begin, end)) {
                 break;
             }
             if (level() + 2 < _vset->_options->levels.size()) {
