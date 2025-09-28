@@ -274,10 +274,10 @@ TEST_F(VersionSetTest, Get) {
       .id = 1_file_id,
       .level = 2_level,
       .keys = {
-        "a"_key,
         "b"_key,
         "c"_key,
         "d"_key,
+        "e"_key,
       },
     });
     add_sst({
@@ -290,8 +290,24 @@ TEST_F(VersionSetTest, Get) {
         "d"_key,
       },
     });
+    add_sst({
+      .id = 3_file_id,
+      .level = 1_level,
+      .keys = {
+        "w"_key,
+        "x"_key,
+        "y"_key,
+        "z"_key,
+      },
+    });
     auto& vset = version_set();
     lsm::db::version::get_stats stats;
     auto result = vset.current()->get("a"_key, &stats).get();
     EXPECT_THAT(result, IsLookupValue("a"_key, 1_level));
+    result = vset.current()->get("e"_key, &stats).get();
+    EXPECT_THAT(result, IsLookupValue("e"_key, 2_level));
+    result = vset.current()->get("b"_key, &stats).get();
+    EXPECT_THAT(result, IsLookupValue("b"_key, 1_level));
+    result = vset.current()->get("j"_key, &stats).get();
+    EXPECT_THAT(result, IsMissing());
 }
