@@ -81,6 +81,13 @@ public:
     const char& operator[](size_t i) const { return _value[i]; }
     const char* data() const { return _value.data(); }
     size_t size() const { return _value.size(); }
+    size_t memory_usage() const {
+        auto usage = sizeof(*this);
+        if (_value.size() > sso_size) {
+            usage += _value.size();
+        }
+        return usage;
+    }
     bool empty() const { return _value.empty(); }
 
     // Returns the user portion of the key.

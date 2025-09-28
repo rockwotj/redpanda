@@ -11,14 +11,23 @@
 
 #include "lsm/db/impl.h"
 
+#include "base/vassert.h"
+#include "lsm/core/exceptions.h"
+#include "lsm/core/internal/files.h"
 #include "lsm/core/internal/merging_iterator.h"
 #include "lsm/sst/block_cache.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/sleep.hh>
+#include <seastar/util/defer.hh>
 
+#include <exception>
 #include <memory>
+#include <utility>
 
 namespace lsm::db {
+
+using internal::operator""_level;
 
 impl::impl(
   ctor,
@@ -45,19 +54,90 @@ ss::future<std::unique_ptr<impl>> impl::open(
     co_return db;
 }
 
-ss::future<> impl::put(internal::key_view key, iobuf value) {
-    _mem->add(internal::key(key), std::move(value));
-    co_return;
+ss::future<> impl::put(internal::key key, iobuf value) {
+    internal::write_batch batch;
+    batch.put(std::move(key), std::move(value));
+    co_await apply(std::move(batch));
 }
 
-ss::future<> impl::remove(internal::key_view key) {
-    _mem->remove(internal::key(key));
-    co_return;
+ss::future<> impl::remove(internal::key key) {
+    internal::write_batch batch;
+    batch.remove(std::move(key));
+    co_await apply(std::move(batch));
 }
 
-ss::future<std::optional<iobuf>> impl::get(internal::key_view key) {
+ss::future<> impl::apply(internal::write_batch batch) {
+    co_await make_room_for_write();
+    _mem->apply(std::move(batch));
+}
+
+ss::future<> impl::make_room_for_write() {
+    bool allow_delay = true;
+    while (true) {
+        if (_background_error) {
+            std::rethrow_exception(_background_error);
+        }
+        if (
+          allow_delay
+          && _versions->current()->num_files(0_level)
+               > _opts->level_zero_slowdown_writes_trigger) {
+            // We're in throttling mode
+            try {
+                co_await ss::sleep_abortable(std::chrono::seconds(1), _as);
+            } catch (...) {
+                throw abort_requested_exception(
+                  "shutdown requested during write throttling");
+            }
+            // Only throttle once.
+            allow_delay = false;
+            continue;
+        }
+        if (_mem->approximate_memory_usage() <= _opts->write_buffer_size) {
+            // We're under our write buffer limit, let's proceed
+            co_return;
+        }
+        if (_imm) {
+            // We are over the write buffer limit and we have a pending memtable
+            // flush, wait for it to finish.
+            co_await _background_work_finished_signal.wait();
+            continue;
+        }
+        if (
+          _versions->current()->num_files(0_level)
+          > _opts->level_zero_stop_writes_trigger) {
+            // We've hit out L0 file limit, wait for compaction to finish.
+            co_await _background_work_finished_signal.wait();
+            continue;
+        }
+        // We're over our limit, let's make a new memtable
+        _imm = std::exchange(_mem, ss::make_lw_shared<memtable>());
+        maybe_schedule_compaction();
+    }
+}
+
+ss::future<lookup_result> impl::get(internal::key_view key) {
+    // Lookup in the mutable memtable
+    {
+        auto result = _mem->get(key);
+        if (!result.is_missing()) {
+            co_return result;
+        }
+    }
+    // Lookup in the frozen memtable
+    if (_imm) {
+        auto result = (*_imm)->get(key);
+        if (!result.is_missing()) {
+            co_return result;
+        }
+    }
+    // Lookup in the files
+    auto current = _versions->current();
     version::get_stats stats{};
-    co_return co_await _versions->current()->get(key, &stats);
+    auto result = co_await current->get(key, &stats);
+    if (current->update_stats(stats)) {
+        maybe_schedule_compaction();
+    }
+    co_return result;
 }
 
 ss::future<std::unique_ptr<internal::iterator>> impl::create_iterator() {
@@ -73,10 +153,85 @@ ss::future<std::unique_ptr<internal::iterator>> impl::create_iterator() {
 ss::future<> impl::close() {
     co_await _table_cache->close();
     co_await _persistence->close();
+    _as.abort_requested();
+    if (_background_work) {
+        co_await *std::exchange(_background_work, std::nullopt);
+    }
 }
 
 ss::future<> impl::recover() {
     co_await _versions->recover();
+    co_return;
+}
+
+void impl::maybe_schedule_compaction() {
+    if (_background_work) {
+        return;
+    }
+    if (_background_error) {
+        return;
+    }
+    if (!_imm && !_versions->needs_compaction()) {
+        return;
+    }
+    if (_as.abort_requested()) {
+        return;
+    }
+    _background_work = run_background_compaction()
+                         .handle_exception_type(
+                           [this](const base_exception& ex) {
+                               _background_error = std::make_exception_ptr(
+                                 background_exception(ex));
+                           })
+                         // Yo dude don't throw other kinds of errors in here.
+                         .or_terminate();
+}
+
+ss::future<> impl::run_background_compaction() {
+    if (_as.abort_requested()) {
+        co_return;
+    }
+    if (_background_error) {
+        // Failure, there currently is no recovery other than re-opening.
+        co_return;
+    }
+    // When compaction finishes, always check if we need to run compaction
+    auto _ = ss::defer([this] {
+        maybe_schedule_compaction();
+        _background_work_finished_signal.broadcast();
+    });
+    if (!_imm) {
+        co_await compact_memtable();
+        co_return;
+    }
+    auto compaction = _versions->pick_compaction();
+    if (!compaction) {
+        co_return;
+    }
+    if (compaction->is_trivial_move()) {
+        auto input_level_files = compaction->num_input_files(
+          compaction::which::input_level);
+        vassert(
+          input_level_files == 0,
+          "trivial compactions should only be for a single input file: {}",
+          input_level_files);
+        auto file = compaction->input(compaction::which::input_level, 0);
+        compaction->edit()->remove_file(compaction->level(), file->id);
+        compaction->edit()->add_file({
+          .level = compaction->level() + 1_level,
+          .file_id = file->id,
+          .file_size = file->file_size,
+          .smallest = file->smallest,
+          .largest = file->largest,
+        });
+        co_await _versions->log_and_apply(std::move(*compaction->edit()));
+        co_return;
+    }
+    // TODO: non trivial moves
+}
+
+ss::future<> impl::compact_memtable() {
+    // TODO
     co_return;
 }
 

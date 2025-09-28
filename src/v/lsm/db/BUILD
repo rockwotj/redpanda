@@ -22,6 +22,7 @@ redpanda_cc_library(
         ":version_set",
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:batch",
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/core/internal:options",
@@ -42,6 +43,8 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/lsm/core:lookup_result",
+        "//src/v/lsm/core/internal:batch",
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
         "@abseil-cpp//absl/container:btree",

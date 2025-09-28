@@ -25,6 +25,7 @@
 namespace lsm::db {
 
 class version_set;
+class compaction;
 
 // A single immutable version of the database.
 class version : public weak_intrusive_list<version> {
@@ -149,6 +150,21 @@ public:
     ss::future<> recover();
 
     internal::seqno last_seqno() const { return _last_seqno; }
+    void set_last_seqno(internal::seqno new_seqno) {
+        vassert(
+          new_seqno > _last_seqno,
+          "seqno must not regress: {} > {}",
+          new_seqno,
+          _last_seqno);
+        _last_seqno = new_seqno;
+    }
+
+    // Returns true iff some level needs compaction.
+    bool needs_compaction() const;
+
+    // Pick level and inputs for a new compaction run.
+    // Returns std::nullopt if there is no compaction.
+    std::optional<compaction> pick_compaction();
 
 private:
     friend class version;

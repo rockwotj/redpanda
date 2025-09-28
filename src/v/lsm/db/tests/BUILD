@@ -9,6 +9,8 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/lsm/core:lookup_result",
+        "//src/v/lsm/core/internal:batch",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/core/internal/tests:iterator_test_harness",
         "//src/v/lsm/db:memtable",

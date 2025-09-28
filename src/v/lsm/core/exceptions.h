@@ -10,7 +10,9 @@
  */
 
 #include <fmt/format.h>
+#include <fmt/std.h>
 
+#include <exception>
 #include <stdexcept>
 
 namespace lsm {
@@ -57,6 +59,33 @@ public:
 
 private:
     std::error_code _error_code;
+};
+
+// An exception for when the database is being shutdown or an abort was
+// requested.
+class abort_requested_exception : public base_exception {
+public:
+    template<typename... T>
+    explicit abort_requested_exception(
+      fmt::format_string<T...> msg, T&&... args)
+      : base_exception(fmt::format(msg, std::forward<T>(args)...)) {}
+};
+
+// An exception for when the database is being shutdown or an abort was
+// requested.
+class background_exception : public base_exception {
+public:
+    template<typename... T>
+    explicit background_exception(const base_exception& ex)
+      : base_exception(
+          fmt::format("error during background work: {}", ex.what()))
+      , _nested(std::make_exception_ptr(ex)) {}
+
+    // The underlying exception that caused the background error
+    std::exception_ptr nested() { return _nested; }
+
+private:
+    std::exception_ptr _nested;
 };
 
 } // namespace lsm

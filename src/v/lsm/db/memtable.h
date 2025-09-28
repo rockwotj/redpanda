@@ -14,8 +14,10 @@
 #include "absl/container/btree_map.h"
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
+#include "lsm/core/internal/batch.h"
 #include "lsm/core/internal/iterator.h"
 #include "lsm/core/internal/keys.h"
+#include "lsm/core/lookup_result.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -44,12 +46,7 @@ public:
     // Add a key-value pair to the memtable.
     //
     // REQUIRES: key.value_type is value
-    void add(internal::key key, iobuf value);
-
-    // Remove a key-value pair to the memtable.
-    //
-    // REQUIRES: key.value_type is tombstone
-    void remove(internal::key key);
+    void apply(internal::write_batch);
 
     // Get the value for a given key.
     //
@@ -57,12 +54,15 @@ public:
     // the given offset.
     //
     // REQUIRES: key.value_type is value
-    std::optional<iobuf> get(internal::key_view);
+    lookup_result get(internal::key_view);
 
     // Create an iterator for this memtable.
     //
     // This iterator is safe to use in face of concurrent updates
     std::unique_ptr<internal::iterator> create_iterator();
+
+    // The approximate amount of memory used for this memtable.
+    size_t approximate_memory_usage();
 
 private:
     friend class iterator;
@@ -70,6 +70,7 @@ private:
     void invalidate_iterators();
 
     table _table;
+    size_t _memory_usage = 0;
     // We keep a dummy iterator alive to be able to reference all live
     // iterators.
     //

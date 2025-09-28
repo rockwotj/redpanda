@@ -228,9 +228,9 @@ ss::future<> version::add_iterators(
   chunked_vector<std::unique_ptr<internal::iterator>>* iters) {
     // Merge all level zero files together since they may overlap.
     for (const auto& file : _files[0_level]) {
-        iters->push_back(
-          co_await _vset->_table_cache->create_iterator(
-            file->id, file->file_size));
+        auto iter = co_await _vset->_table_cache->create_iterator(
+          file->id, file->file_size);
+        iters->push_back(std::move(iter));
     }
     // For levels > 0, we can use a concatenating iterator that sequentially
     // walks through the non-overlapping files in the level, opening them
@@ -657,6 +657,10 @@ version_set::read_manifest(io::sequential_file_reader* r) {
     m.next_file_id = internal::file_id(manifest_proto.get_next_file_id());
     m.last_seqno = internal::seqno(manifest_proto.get_last_seqno());
     co_return m;
+}
+
+bool version_set::needs_compaction() const {
+    return _current->_compaction_score >= 1 || _current->_file_to_compact;
 }
 
 } // namespace lsm::db

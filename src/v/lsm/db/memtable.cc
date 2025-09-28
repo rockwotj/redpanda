@@ -13,6 +13,7 @@
 
 #include "absl/container/btree_map.h"
 #include "base/vassert.h"
+#include "lsm/core/lookup_result.h"
 
 #include <seastar/util/variant_utils.hh>
 
@@ -132,24 +133,13 @@ private:
         _it;
 };
 
-void memtable::add(internal::key key, iobuf value) {
-    dassert(
-      key.type() == internal::value_type::value,
-      "when adding to the memtable, keys must be of value type",
-      key.decode());
+void memtable::apply(internal::write_batch batch) {
     invalidate_iterators();
-    _table.emplace(std::move(key), std::move(value));
-}
-void memtable::remove(internal::key key) {
-    dassert(
-      key.type() == internal::value_type::tombstone,
-      "when remove to the memtable, keys must be of tombstone type",
-      key.decode());
-    invalidate_iterators();
-    _table.emplace(std::move(key), iobuf{});
+    _memory_usage += batch.memory_usage();
+    _table.merge(std::move(batch.entries()));
 }
 
-std::optional<iobuf> memtable::get(internal::key_view key) {
+lookup_result memtable::get(internal::key_view key) {
     dassert(
       key.type() == internal::value_type::value,
       "when getting from the memtable, keys must be of value type",
@@ -157,12 +147,12 @@ std::optional<iobuf> memtable::get(internal::key_view key) {
     auto it = _table.lower_bound(key.without_type());
     if (it != _table.end() && it->first.user_key() == key.user_key()) {
         if (it->first.type() == internal::value_type::tombstone) {
-            return std::nullopt;
+            return lookup_result::tombstone();
         }
         iobuf& v = it->second;
-        return v.share();
+        return lookup_result::value(v.share());
     }
-    return std::nullopt;
+    return lookup_result::missing();
 }
 
 std::unique_ptr<internal::iterator> memtable::create_iterator() {

@@ -40,6 +40,20 @@ struct options {
     // increasing from level 0 to level N (configurable).
     std::vector<level_config> levels = make_default_levels();
 
+    // At what point do we start throttling writes?
+    constexpr static size_t default_level_zero_slowdown_writes_trigger = 8;
+    size_t level_zero_slowdown_writes_trigger
+      = default_level_zero_slowdown_writes_trigger;
+    // At what point do we halt writes?
+    constexpr static size_t default_level_zero_stop_writes_trigger = 12;
+    size_t level_zero_stop_writes_trigger
+      = default_level_zero_stop_writes_trigger;
+
+    // How big to let memtable accumulate before flushing.
+    constexpr static size_t default_write_buffer_size = 16_MiB;
+    size_t write_buffer_size = default_write_buffer_size;
+
+    // When do we trigger compaction into L1
     constexpr static size_t default_level_one_compaction_trigger = 4;
     size_t level_one_compaction_trigger = default_level_one_compaction_trigger;
 

@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
+#include "lsm/core/internal/batch.h"
 #include "lsm/core/internal/iterator.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/options.h"
@@ -21,6 +22,7 @@
 #include "lsm/db/version_set.h"
 #include "lsm/io/persistence.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 
 #include <memory>
@@ -48,13 +50,16 @@ public:
       ss::lw_shared_ptr<internal::options>, std::unique_ptr<io::persistence>);
 
     // Put a key+value into the database
-    ss::future<> put(internal::key_view, iobuf value);
+    ss::future<> put(internal::key, iobuf value);
 
     // Remove a key from the database
-    ss::future<> remove(internal::key_view);
+    ss::future<> remove(internal::key);
+
+    // Apply a batch of writes to the database atomically.
+    ss::future<> apply(internal::write_batch);
 
     // Get a key from the database
-    ss::future<std::optional<iobuf>> get(internal::key_view);
+    ss::future<lookup_result> get(internal::key_view);
 
     // Create an iterator over the database.
     ss::future<std::unique_ptr<internal::iterator>> create_iterator();
@@ -68,6 +73,14 @@ public:
 private:
     ss::future<> recover();
 
+    ss::future<> make_room_for_write();
+
+    void maybe_schedule_compaction();
+
+    ss::future<> run_background_compaction();
+
+    ss::future<> compact_memtable();
+
     std::unique_ptr<io::persistence> _persistence;
     ss::lw_shared_ptr<internal::options> _opts;
     // The active in-memory memtable.
@@ -76,6 +89,10 @@ private:
     ss::optimized_optional<ss::lw_shared_ptr<memtable>> _imm;
     std::unique_ptr<table_cache> _table_cache;
     std::unique_ptr<version_set> _versions;
+    ss::condition_variable _background_work_finished_signal;
+    std::exception_ptr _background_error;
+    ss::abort_source _as;
+    std::optional<ss::future<>> _background_work;
 };
 
 } // namespace lsm::db
