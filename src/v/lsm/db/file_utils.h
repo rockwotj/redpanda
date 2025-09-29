@@ -72,4 +72,11 @@ void add_boundary_inputs(
   const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& files,
   chunked_vector<ss::lw_shared_ptr<file_meta_data>>* compaction_files);
 
+// Return the minimal range that covers all entries in the inputs.
+std::pair<internal::key, internal::key>
+get_range(const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& inputs);
+std::pair<internal::key, internal::key> get_range(
+  const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& inputs1,
+  const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& inputs2);
+
 } // namespace lsm::db

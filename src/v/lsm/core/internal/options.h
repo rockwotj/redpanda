@@ -39,6 +39,7 @@ struct options {
     // this will be sorted by level number and also will be monotonically
     // increasing from level 0 to level N (configurable).
     std::vector<level_config> levels = make_default_levels();
+    internal::level max_level() const { return levels.back().number; }
 
     // At what point do we start throttling writes?
     constexpr static size_t default_level_zero_slowdown_writes_trigger = 8;

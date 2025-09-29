@@ -11,6 +11,10 @@
 
 #include "lsm/db/file_utils.h"
 
+#include <boost/range/join.hpp>
+
+#include <functional>
+
 namespace lsm::db {
 
 using internal::operator""_level;
@@ -149,6 +153,39 @@ void add_boundary_inputs(
             continue_searching = false;
         }
     }
+}
+
+namespace {
+
+template<typename Range>
+std::pair<internal::key, internal::key> get_key_range(const Range& r) {
+    auto it = r.begin();
+    auto end = r.end();
+    dassert(it != end, "cannot get range for empty set of files");
+    internal::key smallest = (*it)->smallest, largest = (*it)->largest;
+    for (++it; it != end; ++it) {
+        const auto& file = *it;
+        if (file->smallest < smallest) {
+            smallest = file->smallest;
+        }
+        if (file->largest < largest) {
+            smallest = file->largest;
+        }
+    }
+    return std::make_pair(std::move(smallest), std::move(largest));
+}
+
+} // namespace
+
+std::pair<internal::key, internal::key>
+get_range(const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& inputs) {
+    return get_key_range(inputs);
+}
+
+std::pair<internal::key, internal::key> get_range(
+  const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& inputs1,
+  const chunked_vector<ss::lw_shared_ptr<file_meta_data>>& inputs2) {
+    return get_key_range(boost::join(inputs1, inputs2));
 }
 
 } // namespace lsm::db

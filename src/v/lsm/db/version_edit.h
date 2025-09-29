@@ -13,7 +13,6 @@
 
 #include "absl/container/fixed_array.h"
 #include "base/format_to.h"
-#include "base/units.h"
 #include "container/chunked_hash_map.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/keys.h"
@@ -25,6 +24,9 @@
 
 namespace lsm::db {
 
+// The default number of seeks before compaction is triggered.
+constexpr static int32_t default_allowed_seeks = 1024 * 1024 * 1024;
+
 // All the metadata for a single SST file.
 struct file_meta_data {
     // The file's numeric ID.
@@ -33,8 +35,10 @@ struct file_meta_data {
     uint64_t file_size = 0;
     internal::key smallest; // smallest key in the table
     internal::key largest;  // largest key in the table
-    // Allowed seeks before compaciton
-    int32_t allowed_seeks = 1_GiB;
+    internal::seqno oldest_seqno;
+    internal::seqno newest_seqno;
+    // Allowed seeks before compaction
+    int32_t allowed_seeks = default_allowed_seeks;
 
     bool operator==(const file_meta_data&) const = default;
     fmt::iterator format_to(fmt::iterator it) const;
@@ -47,23 +51,15 @@ public:
     explicit version_edit(const internal::options& options)
       : _mutations_by_level(options.levels.size()) {}
 
-    // Set the next file number for files after this edit.
-    void set_next_file_id(internal::file_id file_id) {
-        _has_next_file_number = true;
-        _next_file_number = file_id;
-    }
-
-    // Set the last seqno of data in this version edit.
-    void set_last_seq_num(internal::seqno last_seq_num) {
-        _has_last_seq_num = true;
-        _last_seq_num = last_seq_num;
-    }
-
     // Set the compaction pointer, which is where the next compaction should
     // begin.
     void set_compact_pointer(internal::level level, internal::key key) {
         _mutations_by_level[level].compact_pointer = std::move(key);
     }
+
+    // Set the latest seqno for the data written, this only needs to be set when
+    // new data is added to the database which is only memtable flushes.
+    void set_last_seqno(internal::seqno seqno) { _last_seqno = seqno; }
 
     // The parameters to `add_file`
     struct added_file {
@@ -72,6 +68,8 @@ public:
         uint64_t file_size;
         internal::key smallest;
         internal::key largest;
+        internal::seqno oldest_seqno;
+        internal::seqno newest_seqno;
     };
 
     // Add a file to the new version
@@ -82,6 +80,8 @@ public:
             .file_size = params.file_size,
             .smallest = std::move(params.smallest),
             .largest = std::move(params.largest),
+            .oldest_seqno = params.oldest_seqno,
+            .newest_seqno = params.newest_seqno,
           }));
     }
 
@@ -102,10 +102,8 @@ private:
         fmt::iterator format_to(fmt::iterator) const;
     };
     absl::FixedArray<mutation> _mutations_by_level;
-    internal::file_id _next_file_number;
-    internal::seqno _last_seq_num;
-    bool _has_next_file_number : 1 = false;
-    bool _has_last_seq_num : 1 = false;
+    // This is safe because it is applied idempotently.
+    internal::seqno _last_seqno = internal::seqno::min();
 };
 
 } // namespace lsm::db

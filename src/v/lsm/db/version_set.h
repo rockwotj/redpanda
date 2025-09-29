@@ -69,8 +69,8 @@ public:
     // end==nullptr, means after all keys.
     chunked_vector<ss::lw_shared_ptr<file_meta_data>> get_overlapping_inputs(
       internal::level,
-      const internal::key_view* begin,
-      const internal::key_view* end);
+      std::optional<internal::key_view> begin,
+      std::optional<internal::key_view> end);
 
     // Lookup the value for key.
     ss::future<lookup_result> get(internal::key_view target, get_stats*);
@@ -141,6 +141,13 @@ public:
     // Return the current version of this set.
     ss::lw_shared_ptr<version> current() { return _current; }
 
+    // Allocate a new file ID
+    internal::file_id new_file_id() { return _next_file_id++; }
+
+    // Reuse a file ID (for example because a write failed or operation was
+    // cancelled).
+    void reuse_file_id(internal::file_id id);
+
     // Apply the edit to form a new version of the database that is both saved
     // to persistence as well as set to be the current version.
     ss::future<> log_and_apply(version_edit);
@@ -149,15 +156,8 @@ public:
     // layer.
     ss::future<> recover();
 
+    // The latest seqno applied to the LSM tree.
     internal::seqno last_seqno() const { return _last_seqno; }
-    void set_last_seqno(internal::seqno new_seqno) {
-        vassert(
-          new_seqno > _last_seqno,
-          "seqno must not regress: {} > {}",
-          new_seqno,
-          _last_seqno);
-        _last_seqno = new_seqno;
-    }
 
     // Returns true iff some level needs compaction.
     bool needs_compaction() const;
@@ -168,6 +168,7 @@ public:
 
 private:
     friend class version;
+    friend class compaction;
 
     void set_current(ss::lw_shared_ptr<version>);
     void finalize(version*);
@@ -186,7 +187,6 @@ private:
     ss::lw_shared_ptr<internal::options> _options;
     ss::lw_shared_ptr<version> _current;
     internal::file_id _next_file_id = internal::file_id{2};
-    internal::file_id _manifest_id;
     internal::seqno _last_seqno;
     absl::FixedArray<std::optional<internal::key>> _compact_pointer;
 };
@@ -207,11 +207,11 @@ public:
     };
 
     // "which" must be either input_level or output_level
-    size_t num_input_files(which w) const { return _inputs.at(w)->size(); }
+    size_t num_input_files(which w) const { return _inputs.at(w).size(); }
 
     // Return the ith input file at "level()+which" ("which" must be 0 or 1).
     ss::lw_shared_ptr<file_meta_data> input(which w, size_t i) const {
-        return _inputs.at(w)->at(i);
+        return _inputs.at(w).at(i);
     }
 
     // Maximum size of files to build during this compaction.
@@ -238,23 +238,26 @@ private:
     friend class version_set;
 
     compaction(
-      ss::lw_shared_ptr<internal::options> options, internal::level level);
+      ss::lw_shared_ptr<internal::options> options, internal::level level)
+      : _level(level)
+      , _edit(*options)
+      , _level_ptrs(options->levels.size()) {}
 
     internal::level _level;
     uint64_t _max_output_file_size = 0;
     ss::lw_shared_ptr<version> _input_version;
     version_edit _edit;
     // Each compaction reads inputs from "level_" and "level_+1"
-    std::array<chunked_vector<ss::lw_shared_ptr<file_meta_data>>*, 2>
+    std::array<chunked_vector<ss::lw_shared_ptr<file_meta_data>>, 2>
       _inputs; // The two sets of inputs
 
     // State used to check for number of overlapping grandparent files
     // (parent == level_ + 1, grandparent == level_ + 2)
-    chunked_vector<file_meta_data*> _grandparents;
-    size_t _grandparent_index = 0; // Index in grandparent_starts_
-    bool _seen_key;                // Some output key has been seen
-    int64_t _overlapped_bytes;     // Bytes of overlap between current output
-                                   // and grandparent files
+    chunked_vector<ss::lw_shared_ptr<file_meta_data>> _grandparents;
+    size_t _grandparent_index = 0;  // Index in grandparent_starts_
+    bool _seen_key = false;         // Some output key has been seen
+    uint64_t _overlapped_bytes = 0; // Bytes of overlap between current output
+                                    // and grandparent files
 
     // State for implementing IsBaseLevelForKey
 

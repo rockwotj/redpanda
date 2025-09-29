@@ -79,7 +79,7 @@ private:
 
     ss::future<> run_background_compaction();
 
-    ss::future<> compact_memtable();
+    ss::future<> flush_memtable();
 
     std::unique_ptr<io::persistence> _persistence;
     ss::lw_shared_ptr<internal::options> _opts;

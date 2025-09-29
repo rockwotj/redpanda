@@ -12,6 +12,7 @@
 #include "lsm/db/version_set.h"
 
 #include "absl/container/btree_set.h"
+#include "container/chunked_vector.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/two_level_iterator.h"
@@ -29,6 +30,7 @@ namespace lsm::db {
 namespace {
 
 using internal::operator""_level;
+using internal::operator""_file_id;
 
 // An internal iterator. For a given version/level pair, yields information
 // about the files in the level. For a given entry, key() is the largest key
@@ -284,35 +286,27 @@ ss::future<bool> version::record_read_sample(internal::key_view key) {
 chunked_vector<ss::lw_shared_ptr<file_meta_data>>
 version::get_overlapping_inputs(
   internal::level level,
-  const internal::key_view* begin,
-  const internal::key_view* end) {
+  std::optional<internal::key_view> begin,
+  std::optional<internal::key_view> end) {
     chunked_vector<ss::lw_shared_ptr<file_meta_data>> inputs;
-    internal::key_view begin_key;
-    if (begin != nullptr) {
-        begin_key = *begin;
-    }
-    internal::key_view end_key;
-    if (end != nullptr) {
-        end_key = *end;
-    }
     const auto& files = _files[level];
     for (size_t i = 0; i < files.size(); ++i) {
         const auto& file = files[i];
-        if (begin && file->largest < begin_key) { // NOLINT(*branch-clone*)
+        if (begin && file->largest < *begin) { // NOLINT(*branch-clone*)
             // file is completely before specified range; skip it
-        } else if (end && file->smallest > end_key) {
+        } else if (end && file->smallest > *end) {
             // file is completely after specified range; skip it
         } else {
             inputs.push_back(file);
             // Level 0 files may overlap each over. So check if the newly added
             // file has expanded the range. If so, restart search.
             if (level == 0_level) {
-                if (begin != nullptr && file->smallest < begin_key) {
-                    begin_key = file->smallest;
+                if (begin && file->smallest < *begin) {
+                    begin = file->smallest;
                     inputs.clear();
                     i = 0;
-                } else if (end != nullptr && file->largest > end_key) {
-                    end_key = file->largest;
+                } else if (end && file->largest > *end) {
+                    end = file->largest;
                     inputs.clear();
                     i = 0;
                 }
@@ -407,7 +401,7 @@ internal::level version::pick_level_for_memtable_output(
                 // Check that file does not overlap too many grandparent
                 // bytes.
                 auto files = get_overlapping_inputs(
-                  level + 2_level, &begin, &end);
+                  level + 2_level, begin, end);
                 size_t sum = total_file_size(files);
                 if (sum > _vset->_options->max_grandparent_overlap_bytes()) {
                     break;
@@ -517,13 +511,17 @@ version_set::version_set(
     set_current(ss::make_lw_shared<version>(version::ctor{}, this));
 }
 
+void version_set::reuse_file_id(internal::file_id id) {
+    if (id + 1_file_id == _next_file_id) {
+        _next_file_id = id;
+    }
+}
+
 void version_set::set_current(ss::lw_shared_ptr<version> new_version) {
     weak_intrusive_list<version>::push_front(&_current, std::move(new_version));
 }
 
 ss::future<> version_set::log_and_apply(version_edit edit) {
-    edit.set_next_file_id(_next_file_id);
-    edit.set_last_seq_num(_last_seqno);
     auto v = ss::make_lw_shared<version>(version::ctor{}, this);
     {
         version_set::builder builder(this, _current);
@@ -535,13 +533,15 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
     // deltas, but just snapshot the full manifest. At somepoint we will
     // want delta writes (but that's not possible in the cloud), but for
     // now we will just write full snapshots.
-    auto manifest_filename = internal::manifest_file_name(_manifest_id);
+    auto manifest_id = new_file_id();
+    auto manifest_filename = internal::manifest_file_name(manifest_id);
     auto file = co_await _persistence->open_sequential_writer(
       manifest_filename);
+    auto updated_seqno = std::max(_last_seqno, edit._last_seqno);
     auto m = manifest{
       .version = v,
-      .next_file_id = edit._next_file_number,
-      .last_seqno = edit._last_seq_num,
+      .next_file_id = _next_file_id,
+      .last_seqno = updated_seqno,
     };
     auto fut = co_await ss::coroutine::as_future<>(
       write_manifest(std::move(m), file.get()));
@@ -549,11 +549,15 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
     if (fut.failed()) {
         auto ex = fut.get_exception();
         co_await _persistence->remove_file(manifest_filename);
+        reuse_file_id(manifest_id);
         std::rethrow_exception(ex);
     }
     co_await _persistence->write_file_atomically(
       internal::current_file_name(), manifest_filename);
+    // Now that the new version is persisted successfully, install the new
+    // version
     set_current(std::move(v));
+    _last_seqno = updated_seqno;
 }
 
 ss::future<> version_set::recover() {
@@ -572,8 +576,7 @@ ss::future<> version_set::recover() {
     auto m = std::move(fut.get());
     finalize(m.version.get());
     set_current(std::move(m.version));
-    _manifest_id = m.next_file_id;
-    _next_file_id = m.next_file_id + internal::file_id{1};
+    _next_file_id = m.next_file_id;
     _last_seqno = m.last_seqno;
 }
 
@@ -583,12 +586,13 @@ void version_set::finalize(version* v) {
     double best_score = static_cast<double>(v->_files[best_level].size())
                         / static_cast<double>(
                           _options->default_level_one_compaction_trigger);
-    for (const auto& level : std::span(_options->levels).subspan(1)) {
-        size_t level_bytes = total_file_size(v->_files[level.number]);
+    // Intentionally exclude the bottom level.
+    for (auto level = 1_level; level < _options->max_level(); ++level) {
+        size_t level_bytes = total_file_size(v->_files[level]);
         double score = static_cast<double>(level_bytes)
-                       / static_cast<double>(max_bytes_for_level(level.number));
+                       / static_cast<double>(max_bytes_for_level(level));
         if (score > best_score) {
-            best_level = level.number;
+            best_level = level;
             best_score = score;
         }
     }
@@ -661,6 +665,155 @@ version_set::read_manifest(io::sequential_file_reader* r) {
 
 bool version_set::needs_compaction() const {
     return _current->_compaction_score >= 1 || _current->_file_to_compact;
+}
+
+std::optional<compaction> version_set::pick_compaction() {
+    internal::level level;
+    std::optional<compaction> c;
+    using which = compaction::which;
+    // We prefer compactions triggered by too much data in a level over
+    // compactions triggered by seeks.
+    bool size_compaction = _current->_compaction_score >= 1;
+    bool seek_compaction = _current->_file_to_compact != std::nullopt;
+    if (size_compaction) {
+        level = _current->_compaction_level;
+        c.emplace(compaction(_options, level));
+        // Pick the first file that comes after _compact_pointer[level]
+        for (const auto& f : _current->_files[level]) {
+            if (
+              _compact_pointer[level]->empty()
+              || f->largest > _compact_pointer[level]) {
+                c->_inputs[which::input_level].push_back(f);
+                break;
+            }
+        }
+        if (c->_inputs[which::input_level].empty()) {
+            // Wrap-around to the beginning of the key space
+            c->_inputs[which::input_level].push_back(
+              _current->_files[level].front());
+        }
+    } else if (seek_compaction) {
+        level = _current->_file_to_compact_level;
+        c.emplace(compaction(_options, level));
+    } else {
+        return std::nullopt;
+    }
+    c->_input_version = _current;
+
+    // files in level 0 may overlap each other, so pick up all overlapping ones.
+    if (level == 0_level) {
+        auto [smallest, largest] = get_range(c->_inputs[which::input_level]);
+        c->_inputs[which::input_level] = _current->get_overlapping_inputs(
+          0_level, smallest, largest);
+    }
+    add_boundary_inputs(
+      _current->_files[level], &c->_inputs[which::input_level]);
+    auto [smallest, largest] = get_range(c->_inputs[which::input_level]);
+    c->_inputs[which::output_level] = _current->get_overlapping_inputs(
+      level + 1_level, smallest, largest);
+    add_boundary_inputs(
+      _current->_files[level + 1_level], &c->_inputs[which::output_level]);
+    // Get entire range covered by compaction
+    auto [all_smallest, all_largest] = get_range(
+      c->_inputs[which::input_level], c->_inputs[which::output_level]);
+    // See if we can grow the number of inputs in "level" without changing the
+    // number of "level+1" files we pick up.
+    if (!c->_inputs[which::output_level].empty()) {
+        auto expanded0 = _current->get_overlapping_inputs(
+          level, all_smallest, all_largest);
+        add_boundary_inputs(_current->_files[level], &expanded0);
+        auto inputs1_size = total_file_size(c->_inputs[which::output_level]);
+        auto expanded0_size = total_file_size(expanded0);
+        if (
+          expanded0.size() > c->_inputs[which::input_level].size()
+          && inputs1_size + expanded0_size
+               < _options->expanded_compaction_byte_size_limit()) {
+            auto [new_smallest, new_largest] = get_range(expanded0);
+            auto expanded1 = _current->get_overlapping_inputs(
+              level + 1_level, new_smallest, new_largest);
+            add_boundary_inputs(_current->_files[level + 1_level], &expanded1);
+            if (expanded1.size() == c->_inputs[which::output_level].size()) {
+                smallest = new_smallest;
+                largest = new_largest;
+                c->_inputs[which::input_level] = std::move(expanded0);
+                c->_inputs[which::output_level] = std::move(expanded1);
+                auto new_range = get_range(
+                  c->_inputs[which::input_level],
+                  c->_inputs[which::output_level]);
+                all_smallest = new_range.first;
+                all_largest = new_range.second;
+            }
+        }
+    }
+    // Compute the set of grandparent files that overlap this compaction.
+    if (level() + 2 < _options->levels.size()) {
+        c->_grandparents = _current->get_overlapping_inputs(
+          level + 2_level, all_smallest, all_largest);
+    }
+    _compact_pointer[level] = largest;
+    c->_edit.set_compact_pointer(level, largest);
+    return c;
+}
+
+bool compaction::is_trivial_move() const {
+    auto* vset = _input_version->_vset;
+    // Avoid a move if there is lots of overlapping grandparent data.
+    // Otherwise, the move could create a parent file that will require a very
+    // expensive merge later on.
+    return (
+      num_input_files(which::input_level) == 1
+      && num_input_files(which::output_level) == 0
+      && total_file_size(_grandparents)
+           <= vset->_options->max_grandparent_overlap_bytes());
+}
+
+void compaction::add_input_deletions(version_edit* edit) {
+    for (uint8_t i = 0; static_cast<size_t>(i) < _inputs.size(); ++i) {
+        for (const auto& file : _inputs[i]) { // NOLINT(*bounds-constant-array*)
+            edit->remove_file(_level + internal::level{i}, file->id);
+        }
+    }
+}
+
+bool compaction::is_base_level_for_key(internal::key_view key) {
+    const auto& opts = *_input_version->_vset->_options;
+    for (auto lvl = _level() + 2u; lvl < opts.levels.size(); ++lvl) {
+        const auto& files = _input_version->_files[lvl];
+        while (_level_ptrs[lvl] < files.size()) {
+            const auto& f = files[_level_ptrs[lvl]];
+            if (key.user_key() <= f->largest.user_key()) {
+                // We've advanced far enough
+                if (key.user_key() >= f->smallest.user_key()) {
+                    // Key falls in this file's range, so definitely not base
+                    // level.
+                    return false;
+                }
+                break;
+            }
+            ++_level_ptrs[lvl];
+        }
+    }
+    return true;
+}
+
+bool compaction::should_stop_before(internal::key_view key) {
+    auto* vset = _input_version->_vset;
+    // Scan to find earliest grandparent file that contains key
+    while (_grandparent_index < _grandparents.size()
+           && key > _grandparents[_grandparent_index]->largest) {
+        if (_seen_key) {
+            _overlapped_bytes += _grandparents[_grandparent_index]->file_size;
+        }
+        ++_grandparent_index;
+    }
+    _seen_key = true;
+    if (_overlapped_bytes > vset->_options->max_grandparent_overlap_bytes()) {
+        // Too much overlap for current output; start new output
+        _overlapped_bytes = 0;
+        return true;
+    } else {
+        return false;
+    }
 }
 
 } // namespace lsm::db

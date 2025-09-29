@@ -15,6 +15,7 @@
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/merging_iterator.h"
+#include "lsm/db/table_builder.h"
 #include "lsm/sst/block_cache.h"
 
 #include <seastar/core/coroutine.hh>
@@ -94,6 +95,7 @@ ss::future<> impl::make_room_for_write() {
         }
         if (_mem->approximate_memory_usage() <= _opts->write_buffer_size) {
             // We're under our write buffer limit, let's proceed
+            // Note there is a scheduling point here, so this is a soft limit.
             co_return;
         }
         if (_imm) {
@@ -201,8 +203,7 @@ ss::future<> impl::run_background_compaction() {
         _background_work_finished_signal.broadcast();
     });
     if (!_imm) {
-        co_await compact_memtable();
-        co_return;
+        co_return co_await flush_memtable();
     }
     auto compaction = _versions->pick_compaction();
     if (!compaction) {
@@ -212,7 +213,7 @@ ss::future<> impl::run_background_compaction() {
         auto input_level_files = compaction->num_input_files(
           compaction::which::input_level);
         vassert(
-          input_level_files == 0,
+          input_level_files == 1,
           "trivial compactions should only be for a single input file: {}",
           input_level_files);
         auto file = compaction->input(compaction::which::input_level, 0);
@@ -223,6 +224,8 @@ ss::future<> impl::run_background_compaction() {
           .file_size = file->file_size,
           .smallest = file->smallest,
           .largest = file->largest,
+          .oldest_seqno = file->oldest_seqno,
+          .newest_seqno = file->newest_seqno,
         });
         co_await _versions->log_and_apply(std::move(*compaction->edit()));
         co_return;
@@ -230,9 +233,37 @@ ss::future<> impl::run_background_compaction() {
     // TODO: non trivial moves
 }
 
-ss::future<> impl::compact_memtable() {
-    // TODO
-    co_return;
+ss::future<> impl::flush_memtable() {
+    vassert(_imm, "immutable memtable required in order to flush a memtable");
+    auto v = _versions->current();
+    auto id = _versions->new_file_id();
+    auto result = co_await build_table(
+      _persistence.get(), id, (*_imm)->create_iterator(), {}, &_as);
+    if (!result) {
+        _versions->reuse_file_id(id);
+        co_return;
+    }
+    auto level = v->pick_level_for_memtable_output(
+      result->smallest, result->largest);
+    version_edit edit(*_opts);
+    edit.set_last_seqno(result->newest_seqno);
+    edit.add_file({
+      .level = level,
+      .file_id = id,
+      .file_size = result->file_size,
+      .smallest = std::move(result->smallest),
+      .largest = std::move(result->largest),
+      .oldest_seqno = result->oldest_seqno,
+      .newest_seqno = result->newest_seqno,
+    });
+    co_await _versions->log_and_apply(std::move(edit));
+    // Now that the new version has been applied, it's safe to remove the
+    // immutable memtable, as readers will pick up the new file instead.
+    //
+    // Note that due to the above scheduling point, it's possible for a reader
+    // to pick up both the memtable and the new version with the file. This is
+    // OK because all iterators deduplicate already.
+    _imm = std::nullopt;
 }
 
 } // namespace lsm::db

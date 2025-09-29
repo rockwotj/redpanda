@@ -5,6 +5,25 @@ load("//bazel/pbgen:pbgen.bzl", "redpanda_proto_library")
 package(default_visibility = ["//src/v/lsm:__subpackages__"])
 
 redpanda_cc_library(
+    name = "table_builder",
+    srcs = [
+        "table_builder.cc",
+    ],
+    hdrs = [
+        "table_builder.h",
+    ],
+    implementation_deps = [],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/io:persistence",
+        "//src/v/lsm/sst:builder",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "impl",
     srcs = [
         "impl.cc",
@@ -13,6 +32,7 @@ redpanda_cc_library(
         "impl.h",
     ],
     implementation_deps = [
+        ":table_builder",
         ":version_edit",
         "//src/v/lsm/core/internal:merging_iterator",
     ],
@@ -22,7 +42,9 @@ redpanda_cc_library(
         ":version_set",
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/lsm/core:exceptions",
         "//src/v/lsm/core/internal:batch",
+        "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/core/internal:options",
@@ -113,6 +135,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:keys",
+        "@boost//:range",
         "@fmt",
         "@seastar",
     ],
