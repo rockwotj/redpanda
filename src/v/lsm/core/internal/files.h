@@ -42,6 +42,29 @@ ss::sstring sst_file_name(file_id);
 // Compute the name of a manifest file with the given ID.
 ss::sstring manifest_file_name(file_id);
 
+// The name of the CURRENT file (pointer to existing manifest).
 ss::sstring current_file_name();
+
+// The type of file that it is.
+enum class file_type : uint8_t {
+    current,
+    manifest,
+    sst,
+    // Persistence layers are allowed to have arbitrary `*.lsm-staging` files.
+    //
+    // In reality, this is only for the local disk persistence that is used when
+    // creating new CURRENT files.
+    //
+    // This will always have file ID 0.
+    tmp,
+};
+
+struct parsed_filename {
+    file_id id;
+    file_type type;
+};
+
+// Parse a filename, returning nullopt if the filename pattern is unknown.
+std::optional<parsed_filename> parse_filename(std::string_view filename);
 
 } // namespace lsm::internal

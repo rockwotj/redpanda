@@ -81,6 +81,8 @@ private:
 
     ss::future<> flush_memtable();
 
+    ss::future<> remove_obsolete_files();
+
     std::unique_ptr<io::persistence> _persistence;
     ss::lw_shared_ptr<internal::options> _opts;
     // The active in-memory memtable.

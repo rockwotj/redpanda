@@ -230,7 +230,7 @@ ss::future<> impl::run_background_compaction() {
         co_await _versions->log_and_apply(std::move(*compaction->edit()));
         co_return;
     }
-    // TODO: non trivial moves
+    co_await remove_obsolete_files();
 }
 
 ss::future<> impl::flush_memtable() {
@@ -264,6 +264,11 @@ ss::future<> impl::flush_memtable() {
     // to pick up both the memtable and the new version with the file. This is
     // OK because all iterators deduplicate already.
     _imm = std::nullopt;
+}
+
+ss::future<> impl::remove_obsolete_files() {
+    // TODO
+    co_return;
 }
 
 } // namespace lsm::db

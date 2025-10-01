@@ -166,6 +166,10 @@ public:
     // Returns std::nullopt if there is no compaction.
     std::optional<compaction> pick_compaction();
 
+    // Create an iterator that reads over the compaction inputs.
+    ss::future<std::unique_ptr<internal::iterator>>
+    make_input_iterator(compaction*);
+
 private:
     friend class version;
     friend class compaction;
@@ -187,6 +191,7 @@ private:
     ss::lw_shared_ptr<internal::options> _options;
     ss::lw_shared_ptr<version> _current;
     internal::file_id _next_file_id = internal::file_id{2};
+    internal::file_id _current_manifest_id;
     internal::seqno _last_seqno;
     absl::FixedArray<std::optional<internal::key>> _compact_pointer;
 };

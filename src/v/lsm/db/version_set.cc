@@ -15,6 +15,7 @@
 #include "container/chunked_vector.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
+#include "lsm/core/internal/merging_iterator.h"
 #include "lsm/core/internal/two_level_iterator.h"
 #include "lsm/db/file_utils.h"
 #include "lsm/db/manifest.proto.h"
@@ -558,6 +559,7 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
     // version
     set_current(std::move(v));
     _last_seqno = updated_seqno;
+    _current_manifest_id = manifest_id;
 }
 
 ss::future<> version_set::recover() {
@@ -565,6 +567,12 @@ ss::future<> version_set::recover() {
     if (!current) {
         co_return;
     }
+    auto maybe_parsed = internal::parse_filename(*current);
+    if (!maybe_parsed) {
+        throw corruption_exception(
+          "unrecognized manifest file name: {}", *current);
+    }
+    auto manifest_file_id = maybe_parsed->id;
     auto maybe_file = co_await _persistence->open_sequential_reader(*current);
     if (!maybe_file) {
         throw corruption_exception(
@@ -578,6 +586,7 @@ ss::future<> version_set::recover() {
     set_current(std::move(m.version));
     _next_file_id = m.next_file_id;
     _last_seqno = m.last_seqno;
+    _current_manifest_id = manifest_file_id;
 }
 
 void version_set::finalize(version* v) {
@@ -753,6 +762,53 @@ std::optional<compaction> version_set::pick_compaction() {
     _compact_pointer[level] = largest;
     c->_edit.set_compact_pointer(level, largest);
     return c;
+}
+
+ss::future<std::unique_ptr<internal::iterator>>
+version_set::make_input_iterator(compaction* c) {
+    // Level 0 files have to be merged together. For other levels, we will make
+    // a concatenating iterator per level.
+    size_t space = c->level() == 0_level
+                     ? c->num_input_files(compaction::which::input_level) + 1
+                     : 2;
+    chunked_vector<std::unique_ptr<internal::iterator>> list;
+    list.reserve(space);
+    for (auto& inputs : c->_inputs) {
+        if (inputs.empty()) {
+            continue;
+        }
+        if (inputs == c->_inputs.front() && c->level() == 0_level) {
+            for (auto& file : inputs) {
+                list.push_back(
+                  co_await _table_cache->create_iterator(
+                    file->id, file->file_size));
+            }
+        } else {
+            auto index_iter = std::make_unique<level_file_num_iterator>(
+              &inputs);
+            list.push_back(
+              internal::create_two_level_iterator(
+                std::move(index_iter), [self = c->_input_version](iobuf value) {
+                    // We always know it's a single fragment due to how we
+                    // allocate and write it in the `level_file_num_iterator`.
+                    const auto& fragment = *value.begin();
+                    auto it = fragment.get();
+                    internal::file_id id;
+                    std::memcpy(&id, it, sizeof(id));
+                    uint64_t file_size = 0;
+                    std::advance(it, sizeof(id));
+                    std::memcpy(&file_size, it, sizeof(file_size));
+                    return self->_vset->_table_cache->create_iterator(
+                      id, file_size);
+                }));
+        }
+    }
+    vassert(
+      list.size() <= space,
+      "expected space to be inclusive of all files: {} <= {}",
+      list.size(),
+      space);
+    co_return internal::create_merging_iterator(std::move(list));
 }
 
 bool compaction::is_trivial_move() const {

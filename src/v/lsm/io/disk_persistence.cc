@@ -225,7 +225,7 @@ public:
     ss::future<> write_file_atomically(
       std::string_view name, std::string_view contents) override {
         auto staging_name = fmt::format(
-          "{}.{}.staging", name, uuid_t::create());
+          "{}.{}.lsm-staging", name, uuid_t::create());
         auto writer = co_await open_sequential_writer(staging_name);
         auto future = co_await ss::coroutine::as_future<>(
           writer->append(iobuf::from(contents)));
