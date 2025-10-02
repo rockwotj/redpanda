@@ -17,6 +17,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/io:persistence",
         "//src/v/lsm/sst:builder",
         "@seastar",
@@ -35,6 +36,7 @@ redpanda_cc_library(
         ":table_builder",
         ":version_edit",
         "//src/v/lsm/core/internal:merging_iterator",
+        "//src/v/lsm/sst:builder",
     ],
     deps = [
         ":memtable",

@@ -157,7 +157,7 @@ public:
     ss::future<> recover();
 
     // The latest seqno applied to the LSM tree.
-    internal::seqno last_seqno() const { return _last_seqno; }
+    internal::sequence_number last_seqno() const { return _last_seqno; }
 
     // Returns true iff some level needs compaction.
     bool needs_compaction() const;
@@ -180,7 +180,7 @@ private:
     struct manifest {
         ss::lw_shared_ptr<version> version;
         internal::file_id next_file_id;
-        internal::seqno last_seqno;
+        internal::sequence_number last_seqno;
     };
     // Write this version to a manifest file as a snapshot.
     ss::future<> write_manifest(manifest, io::sequential_file_writer*);
@@ -192,7 +192,7 @@ private:
     ss::lw_shared_ptr<version> _current;
     internal::file_id _next_file_id = internal::file_id{2};
     internal::file_id _current_manifest_id;
-    internal::seqno _last_seqno;
+    internal::sequence_number _last_seqno;
     absl::FixedArray<std::optional<internal::key>> _compact_pointer;
 };
 
@@ -264,7 +264,7 @@ private:
     uint64_t _overlapped_bytes = 0; // Bytes of overlap between current output
                                     // and grandparent files
 
-    // State for implementing IsBaseLevelForKey
+    // State for implementing is_base_level_for_key
 
     // level_ptrs_ holds indices into input_version_->levels_: our state
     // is that we are positioned at one of the file ranges for each

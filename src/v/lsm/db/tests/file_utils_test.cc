@@ -25,30 +25,30 @@ using namespace lsm;
 using lsm::internal::operator""_seqno;
 using ::testing::ElementsAre;
 
-constexpr static auto default_seqno = internal::seqno{100};
+constexpr static auto default_seqno = internal::sequence_number{100};
 
 class FindFileTest : public testing::Test {
 protected:
     void add(
       const std::string& smallest,
       const std::string& largest,
-      internal::seqno smallest_seq = default_seqno,
-      internal::seqno largest_seq = default_seqno) {
+      internal::sequence_number smallest_seq = default_seqno,
+      internal::sequence_number largest_seq = default_seqno) {
         _files.push_back(
           ss::make_lw_shared<db::file_meta_data>(db::file_meta_data{
             .id = internal::file_id{static_cast<uint64_t>(_files.size())},
             .file_size = 100,
             .smallest = internal::key::encode(
-              {.key = smallest, .seq_num = smallest_seq}),
+              {.key = smallest, .seqno = smallest_seq}),
             .largest = internal::key::encode(
-              {.key = largest, .seq_num = largest_seq}),
+              {.key = largest, .seqno = largest_seq}),
           }));
     }
 
     size_t find(const std::string& key) {
         auto encoded = internal::key::encode({
           .key = key,
-          .seq_num = default_seqno,
+          .seqno = default_seqno,
         });
         return db::find_file(_files, encoded);
     }
@@ -66,13 +66,13 @@ private:
         if (smallest != nullptr) {
             s = internal::key::encode({
               .key = smallest,
-              .seq_num = default_seqno,
+              .seqno = default_seqno,
             });
         }
         if (largest != nullptr) {
             l = internal::key::encode({
               .key = largest,
-              .seq_num = default_seqno,
+              .seqno = default_seqno,
             });
         }
         return db::some_file_overlaps_range(
@@ -227,9 +227,7 @@ TEST_F(AddBoundaryInputsTest, TestEmptyFileSets) {
 
 TEST_F(AddBoundaryInputsTest, TestEmptyLevelFiles) {
     auto f1 = create_file(
-      1,
-      {.key = "100", .seq_num = 2_seqno},
-      {.key = "100", .seq_num = 1_seqno});
+      1, {.key = "100", .seqno = 2_seqno}, {.key = "100", .seqno = 1_seqno});
     compaction_files.push_back(f1);
     db::add_boundary_inputs(level_files, &compaction_files);
     ASSERT_TRUE(level_files.empty());
@@ -238,9 +236,7 @@ TEST_F(AddBoundaryInputsTest, TestEmptyLevelFiles) {
 
 TEST_F(AddBoundaryInputsTest, TestEmptyCompactionFiles) {
     auto f1 = create_file(
-      1,
-      {.key = "100", .seq_num = 2_seqno},
-      {.key = "100", .seq_num = 1_seqno});
+      1, {.key = "100", .seqno = 2_seqno}, {.key = "100", .seqno = 1_seqno});
     level_files.push_back(f1);
     db::add_boundary_inputs(level_files, &compaction_files);
     ASSERT_THAT(level_files, ElementsAre(f1));
@@ -249,17 +245,11 @@ TEST_F(AddBoundaryInputsTest, TestEmptyCompactionFiles) {
 
 TEST_F(AddBoundaryInputsTest, TestNoBoundaryFiles) {
     auto f1 = create_file(
-      1,
-      {.key = "100", .seq_num = 2_seqno},
-      {.key = "100", .seq_num = 1_seqno});
+      1, {.key = "100", .seqno = 2_seqno}, {.key = "100", .seqno = 1_seqno});
     auto f2 = create_file(
-      2,
-      {.key = "200", .seq_num = 2_seqno},
-      {.key = "200", .seq_num = 1_seqno});
+      2, {.key = "200", .seqno = 2_seqno}, {.key = "200", .seqno = 1_seqno});
     auto f3 = create_file(
-      3,
-      {.key = "300", .seq_num = 2_seqno},
-      {.key = "300", .seq_num = 1_seqno});
+      3, {.key = "300", .seqno = 2_seqno}, {.key = "300", .seqno = 1_seqno});
     level_files.push_back(f3);
     level_files.push_back(f2);
     level_files.push_back(f1);
@@ -271,17 +261,11 @@ TEST_F(AddBoundaryInputsTest, TestNoBoundaryFiles) {
 
 TEST_F(AddBoundaryInputsTest, TestOneBoundaryFile) {
     auto f1 = create_file(
-      1,
-      {.key = "100", .seq_num = 3_seqno},
-      {.key = "100", .seq_num = 2_seqno});
+      1, {.key = "100", .seqno = 3_seqno}, {.key = "100", .seqno = 2_seqno});
     auto f2 = create_file(
-      2,
-      {.key = "100", .seq_num = 1_seqno},
-      {.key = "200", .seq_num = 3_seqno});
+      2, {.key = "100", .seqno = 1_seqno}, {.key = "200", .seqno = 3_seqno});
     auto f3 = create_file(
-      3,
-      {.key = "300", .seq_num = 2_seqno},
-      {.key = "300", .seq_num = 1_seqno});
+      3, {.key = "300", .seqno = 2_seqno}, {.key = "300", .seqno = 1_seqno});
     level_files.push_back(f3);
     level_files.push_back(f2);
     level_files.push_back(f1);
@@ -292,17 +276,11 @@ TEST_F(AddBoundaryInputsTest, TestOneBoundaryFile) {
 
 TEST_F(AddBoundaryInputsTest, TestTwoBoundaryFiles) {
     auto f1 = create_file(
-      1,
-      {.key = "100", .seq_num = 6_seqno},
-      {.key = "100", .seq_num = 5_seqno});
+      1, {.key = "100", .seqno = 6_seqno}, {.key = "100", .seqno = 5_seqno});
     auto f2 = create_file(
-      2,
-      {.key = "100", .seq_num = 2_seqno},
-      {.key = "300", .seq_num = 1_seqno});
+      2, {.key = "100", .seqno = 2_seqno}, {.key = "300", .seqno = 1_seqno});
     auto f3 = create_file(
-      3,
-      {.key = "100", .seq_num = 4_seqno},
-      {.key = "100", .seq_num = 3_seqno});
+      3, {.key = "100", .seqno = 4_seqno}, {.key = "100", .seqno = 3_seqno});
     level_files.push_back(f2);
     level_files.push_back(f3);
     level_files.push_back(f1);
@@ -313,22 +291,14 @@ TEST_F(AddBoundaryInputsTest, TestTwoBoundaryFiles) {
 
 TEST_F(AddBoundaryInputsTest, TestDisjointFilePointers) {
     auto f1 = create_file(
-      1,
-      {.key = "100", .seq_num = 6_seqno},
-      {.key = "100", .seq_num = 5_seqno});
+      1, {.key = "100", .seqno = 6_seqno}, {.key = "100", .seqno = 5_seqno});
     auto f2 = create_file(
-      2,
-      {.key = "100", .seq_num = 6_seqno},
-      {.key = "300", .seq_num = 5_seqno});
+      2, {.key = "100", .seqno = 6_seqno}, {.key = "300", .seqno = 5_seqno});
     auto f3 = create_file(
-      3,
-      {.key = "100", .seq_num = 2_seqno},
-      {.key = "100", .seq_num = 1_seqno});
+      3, {.key = "100", .seqno = 2_seqno}, {.key = "100", .seqno = 1_seqno});
     level_files.push_back(f2);
     auto f4 = create_file(
-      4,
-      {.key = "100", .seq_num = 4_seqno},
-      {.key = "100", .seq_num = 3_seqno});
+      4, {.key = "100", .seqno = 4_seqno}, {.key = "100", .seqno = 3_seqno});
     level_files.push_back(f2);
     level_files.push_back(f3);
     level_files.push_back(f4);

@@ -35,8 +35,8 @@ struct file_meta_data {
     uint64_t file_size = 0;
     internal::key smallest; // smallest key in the table
     internal::key largest;  // largest key in the table
-    internal::seqno oldest_seqno;
-    internal::seqno newest_seqno;
+    internal::sequence_number oldest_seqno;
+    internal::sequence_number newest_seqno;
     // Allowed seeks before compaction
     int32_t allowed_seeks = default_allowed_seeks;
 
@@ -59,7 +59,9 @@ public:
 
     // Set the latest seqno for the data written, this only needs to be set when
     // new data is added to the database which is only memtable flushes.
-    void set_last_seqno(internal::seqno seqno) { _last_seqno = seqno; }
+    void set_last_seqno(internal::sequence_number seqno) {
+        _last_seqno = seqno;
+    }
 
     // The parameters to `add_file`
     struct added_file {
@@ -68,8 +70,8 @@ public:
         uint64_t file_size;
         internal::key smallest;
         internal::key largest;
-        internal::seqno oldest_seqno;
-        internal::seqno newest_seqno;
+        internal::sequence_number oldest_seqno;
+        internal::sequence_number newest_seqno;
     };
 
     // Add a file to the new version
@@ -103,7 +105,7 @@ private:
     };
     absl::FixedArray<mutation> _mutations_by_level;
     // This is safe because it is applied idempotently.
-    internal::seqno _last_seqno = internal::seqno::min();
+    internal::sequence_number _last_seqno = internal::sequence_number::min();
 };
 
 } // namespace lsm::db

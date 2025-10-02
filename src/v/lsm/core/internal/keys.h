@@ -24,9 +24,11 @@ class iobuf;
 namespace lsm::internal {
 
 // The sequence number for a write into the database.
-using seqno = named_type<uint64_t, struct seqno_tag>;
+using sequence_number = named_type<uint64_t, struct seqno_tag>;
 
-consteval seqno operator""_seqno(unsigned long long val) { return seqno{val}; }
+consteval sequence_number operator""_seqno(unsigned long long val) {
+    return sequence_number{val};
+}
 
 // The type of the key
 enum class value_type : uint8_t {
@@ -55,13 +57,13 @@ class key {
 public:
     struct parts {
         ss::sstring key;
-        seqno seq_num = seqno(0);
+        sequence_number seqno = sequence_number(0);
         value_type type = value_type::value;
 
         // Create a value internal key
-        static parts value(std::string_view key, seqno);
+        static parts value(std::string_view key, sequence_number);
         // Create a tombstone internal key
-        static parts tombstone(std::string_view key, seqno);
+        static parts tombstone(std::string_view key, sequence_number);
         bool operator==(const parts& other) const = default;
         fmt::iterator format_to(fmt::iterator) const;
     };
@@ -77,6 +79,7 @@ public:
     value_type type() const;
     bool is_tombstone() const { return type() == value_type::tombstone; }
     bool is_value() const { return type() == value_type::value; }
+    sequence_number seqno() const;
 
     const char& operator[](size_t i) const { return _value[i]; }
     const char* data() const { return _value.data(); }
@@ -115,7 +118,7 @@ class key_view {
 public:
     struct parts {
         std::string_view key;
-        seqno seq_num = seqno(0);
+        sequence_number seqno = sequence_number(0);
         value_type type = value_type::value;
 
         bool operator==(const parts& other) const = default;
@@ -142,6 +145,7 @@ public:
     value_type type() const;
     bool is_tombstone() const { return type() == value_type::tombstone; }
     bool is_value() const { return type() == value_type::value; }
+    sequence_number seqno() const { return decode().seqno; }
     // Decode a key into its parts.
     parts decode() const;
 

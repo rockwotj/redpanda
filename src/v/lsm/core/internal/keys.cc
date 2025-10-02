@@ -41,7 +41,7 @@ key key::encode(parts p) {
     // that should give us plenty of values before overflow.
     // Encode in BE form so the values sort lexicographically, then invert the
     // bits so they sort in descending order.
-    uint64_t encoded = (p.seq_num() << CHAR_WIDTH)
+    uint64_t encoded = (p.seqno() << CHAR_WIDTH)
                        | static_cast<uint64_t>(p.type);
     encoded = ss::cpu_to_be(~encoded);
     std::memcpy(&v[p.key.size() + 1], &encoded, sizeof(encoded));
@@ -59,7 +59,7 @@ fmt::iterator key::parts::format_to(fmt::iterator it) const {
       it,
       "internal_key_parts={{key={},seqno={},type={}}}",
       key,
-      seq_num,
+      seqno,
       std::to_underlying(type));
 }
 
@@ -68,7 +68,7 @@ fmt::iterator key_view::parts::format_to(fmt::iterator it) const {
       it,
       "internal_key_parts={{key={},seqno={},type={}}}",
       key,
-      seq_num,
+      seqno,
       std::to_underlying(type));
 }
 
@@ -90,15 +90,14 @@ fmt::iterator key_view::format_to(fmt::iterator it) const {
       it, "internal_key_view={{user={},suffix=o{:08o}}}", user_key(), encoded);
 }
 
-key::parts key::parts::value(std::string_view key, seqno seq_num) {
+key::parts key::parts::value(std::string_view key, sequence_number seq_num) {
     return {
-      .key = ss::sstring(key), .seq_num = seq_num, .type = value_type::value};
+      .key = ss::sstring(key), .seqno = seq_num, .type = value_type::value};
 }
-key::parts key::parts::tombstone(std::string_view key, seqno seq_num) {
+key::parts
+key::parts::tombstone(std::string_view key, sequence_number seq_num) {
     return {
-      .key = ss::sstring(key),
-      .seq_num = seq_num,
-      .type = value_type::tombstone};
+      .key = ss::sstring(key), .seqno = seq_num, .type = value_type::tombstone};
 }
 
 key_view::parts key_view::decode() const {
@@ -115,7 +114,7 @@ key_view::parts key_view::decode() const {
     p.type = static_cast<value_type>(
       encoded & std::numeric_limits<std::underlying_type_t<value_type>>::max());
     // Shift to get back the seqno, which is the rest of the bits.
-    p.seq_num = seqno(encoded >> CHAR_WIDTH);
+    p.seqno = sequence_number(encoded >> CHAR_WIDTH);
     return p;
 }
 
@@ -126,7 +125,7 @@ value_type key_view::type() const {
 }
 
 key_view::parts::operator key::parts() const {
-    return {.key = ss::sstring(key), .seq_num = seq_num, .type = type};
+    return {.key = ss::sstring(key), .seqno = seqno, .type = type};
 }
 
 internal::key_view key_view::without_type() const {
@@ -155,9 +154,11 @@ key operator""_key(const char* s, size_t len) {
     }
     return key::encode({
       .key = ss::sstring(k),
-      .seq_num = seqno(std::abs(seq_num)),
+      .seqno = sequence_number(std::abs(seq_num)),
       .type = seq_num < 0 ? value_type::tombstone : value_type::value,
     });
 }
+
+sequence_number key::seqno() const { return key_view{*this}.decode().seqno; }
 
 } // namespace lsm::internal

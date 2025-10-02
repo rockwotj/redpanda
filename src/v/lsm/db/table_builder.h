@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/iterator.h"
+#include "lsm/core/internal/keys.h"
 #include "lsm/io/persistence.h"
 #include "lsm/sst/builder.h"
 
@@ -29,8 +30,8 @@ struct build_table_result {
     uint64_t file_size;
     internal::key smallest;
     internal::key largest;
-    internal::seqno oldest_seqno;
-    internal::seqno newest_seqno;
+    internal::sequence_number oldest_seqno;
+    internal::sequence_number newest_seqno;
 };
 
 // Create an SST file with the given ID from the provided iterator.

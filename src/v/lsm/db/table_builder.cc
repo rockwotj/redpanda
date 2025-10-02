@@ -31,7 +31,7 @@ ss::future<std::optional<build_table_result>> write_sst_file(
         co_return std::nullopt;
     }
     auto key_view = iter->key();
-    auto seqno = key_view.decode().seq_num;
+    auto seqno = key_view.seqno();
     auto key = internal::key(key_view);
     build_table_result result{
       .file_size = 0,
@@ -41,7 +41,7 @@ ss::future<std::optional<build_table_result>> write_sst_file(
     };
     while (iter->valid() && !as->abort_requested()) {
         auto key_view = iter->key();
-        seqno = key_view.decode().seq_num;
+        seqno = key_view.seqno();
         result.oldest_seqno = std::min(result.oldest_seqno, seqno);
         result.newest_seqno = std::max(result.newest_seqno, seqno);
         // It's a bummer we have to copy the key everytime, we actually do this

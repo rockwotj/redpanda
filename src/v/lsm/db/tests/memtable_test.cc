@@ -154,7 +154,7 @@ TEST_F(MemtableTest, GetAtVersion) {
     for (const auto& tc : testcases) {
         auto key = lsm::internal::key::encode({
           .key = tc.key,
-          .seq_num = lsm::internal::seqno(tc.version),
+          .seqno = lsm::internal::sequence_number(tc.version),
         });
         if (!tc.value) {
             EXPECT_TRUE(get(key).is_missing()) << "key: " << key.decode();

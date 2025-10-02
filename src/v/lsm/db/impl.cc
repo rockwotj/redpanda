@@ -14,15 +14,19 @@
 #include "base/vassert.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
+#include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/merging_iterator.h"
 #include "lsm/db/table_builder.h"
+#include "lsm/io/persistence.h"
 #include "lsm/sst/block_cache.h"
+#include "lsm/sst/builder.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/util/defer.hh>
 
 #include <exception>
+#include <ios>
 #include <memory>
 #include <utility>
 
@@ -155,7 +159,7 @@ ss::future<std::unique_ptr<internal::iterator>> impl::create_iterator() {
 ss::future<> impl::close() {
     co_await _table_cache->close();
     co_await _persistence->close();
-    _as.abort_requested();
+    _as.request_abort_ex(abort_requested_exception("database closing"));
     if (_background_work) {
         co_await *std::exchange(_background_work, std::nullopt);
     }
@@ -189,6 +193,44 @@ void impl::maybe_schedule_compaction() {
                          .or_terminate();
 }
 
+namespace {
+struct compaction_state {
+    struct output {
+        internal::file_id id;
+        uint64_t file_size = 0;
+        internal::key smallest, largest;
+        internal::sequence_number oldest, newest;
+    };
+
+    output& current_output() { return outputs.back(); }
+
+    ss::future<>
+    open_current_builder(internal::file_id id, io::persistence* p) {
+        outputs.emplace_back(id);
+        auto w = co_await p->open_sequential_writer(
+          internal::sst_file_name(id));
+        builder.emplace(std::move(w), sst::builder::options{});
+    }
+    ss::future<> finish_current_builder() {
+        auto b = std::exchange(builder, std::nullopt);
+        co_await b->finish().finally([&b] { return b->close(); });
+        uint64_t current_bytes = builder->file_size();
+        current_output().file_size = current_bytes;
+        total_bytes += current_bytes;
+    }
+
+    std::exception_ptr err;
+    chunked_vector<output> outputs;
+    // Sequence numbers < smallest_snapshot are not significant since we will
+    // never have to service a snapshot below smallest_snapshot. Therefore if we
+    // have seen a sequence number S <= smallest_snapshot, we can drop all
+    // entries for the same key with sequence numbers < S.
+    internal::sequence_number smallest_snapshot;
+    std::optional<sst::builder> builder;
+    uint64_t total_bytes = 0;
+};
+} // namespace
+
 ss::future<> impl::run_background_compaction() {
     if (_as.abort_requested()) {
         co_return;
@@ -205,21 +247,22 @@ ss::future<> impl::run_background_compaction() {
     if (!_imm) {
         co_return co_await flush_memtable();
     }
-    auto compaction = _versions->pick_compaction();
-    if (!compaction) {
+    auto maybe_compaction = _versions->pick_compaction();
+    if (!maybe_compaction) {
         co_return;
     }
-    if (compaction->is_trivial_move()) {
-        auto input_level_files = compaction->num_input_files(
+    auto compaction = *std::move(maybe_compaction);
+    if (compaction.is_trivial_move()) {
+        auto input_level_files = compaction.num_input_files(
           compaction::which::input_level);
         vassert(
           input_level_files == 1,
           "trivial compactions should only be for a single input file: {}",
           input_level_files);
-        auto file = compaction->input(compaction::which::input_level, 0);
-        compaction->edit()->remove_file(compaction->level(), file->id);
-        compaction->edit()->add_file({
-          .level = compaction->level() + 1_level,
+        auto file = compaction.input(compaction::which::input_level, 0);
+        compaction.edit()->remove_file(compaction.level(), file->id);
+        compaction.edit()->add_file({
+          .level = compaction.level() + 1_level,
           .file_id = file->id,
           .file_size = file->file_size,
           .smallest = file->smallest,
@@ -227,9 +270,99 @@ ss::future<> impl::run_background_compaction() {
           .oldest_seqno = file->oldest_seqno,
           .newest_seqno = file->newest_seqno,
         });
-        co_await _versions->log_and_apply(std::move(*compaction->edit()));
+        co_await _versions->log_and_apply(std::move(*compaction.edit()));
         co_return;
     }
+    compaction_state state{
+      // TODO: If we support snapshot reads we need to track the last seqno.
+      .smallest_snapshot = _versions->last_seqno(),
+    };
+    try {
+        auto input = co_await _versions->make_input_iterator(&compaction);
+        std::optional<internal::key> current_key;
+        internal::sequence_number last_seqno_for_key
+          = internal::sequence_number::max();
+        co_await input->seek_to_first();
+        while (input->valid() && !_as.abort_requested()) {
+            if (_imm) {
+                // Always prioritize memtable flushes
+                co_await flush_memtable();
+                _background_work_finished_signal.signal();
+            }
+            auto key = input->key();
+            if (state.builder && compaction.should_stop_before(key)) {
+                co_await state.finish_current_builder();
+            }
+            bool drop = false;
+            if (!current_key || key.user_key() != current_key->user_key()) {
+                // First occurrence of this user key
+                current_key = internal::key(key);
+                last_seqno_for_key = internal::sequence_number::max();
+            }
+            auto key_seqno = key.seqno();
+            // NOLINTNEXTLINE(*branch-clone*)
+            if (last_seqno_for_key <= state.smallest_snapshot) {
+                // Hidden by a newer entry for the same user key
+                drop = true;
+            } else if (
+              key.is_tombstone() && key_seqno <= state.smallest_snapshot
+              && compaction.is_base_level_for_key(key)) {
+                // For this user key:
+                // (1) there is no data in higher levels
+                // (2) data in lower levels will have larger sequence numbers
+                // (3) data in layers that are being compacted here and have
+                // smaller sequence numbers will be dropped in the next few
+                // iterations of this loop (by rule (A) above). Therefore this
+                // deletion marker is obsolete and can be dropped.
+                drop = true;
+            }
+            last_seqno_for_key = key_seqno;
+            if (!drop) {
+                if (!state.builder) {
+                    co_await state.open_current_builder(
+                      _versions->new_file_id(), _persistence.get());
+                }
+                auto& current = state.current_output();
+                if (state.builder->num_entries() == 0) {
+                    current.smallest = internal::key(key);
+                    current.oldest = key_seqno;
+                    current.newest = key_seqno;
+                }
+                current.largest = internal::key(key);
+                current.oldest = std::min(key_seqno, current.oldest);
+                current.newest = std::max(key_seqno, current.newest);
+                co_await state.builder->add(internal::key(key), input->value());
+                // Close output file if it is big enough
+                if (state.builder->file_size() >= _opts->target_file_size()) {
+                    co_await state.finish_current_builder();
+                }
+            }
+            co_await input->next();
+        }
+    } catch (const base_exception& ex) {
+        state.err = std::make_exception_ptr(ex);
+    }
+    if (state.builder) {
+        co_await state.finish_current_builder();
+    }
+    _as.check(); // Do this after we clean up the builder
+    if (state.err) {
+        std::rethrow_exception(state.err);
+    }
+    auto* edit = compaction.edit();
+    compaction.add_input_deletions(edit);
+    for (auto& output : state.outputs) {
+        edit->add_file({
+          .level = compaction.level() + 1_level,
+          .file_id = output.id,
+          .file_size = output.file_size,
+          .smallest = std::move(output.smallest),
+          .largest = std::move(output.largest),
+          .oldest_seqno = output.oldest,
+          .newest_seqno = output.newest,
+        });
+    }
+    co_await _versions->log_and_apply(std::move(*edit));
     co_await remove_obsolete_files();
 }
 

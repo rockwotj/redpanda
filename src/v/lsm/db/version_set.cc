@@ -668,7 +668,7 @@ version_set::read_manifest(io::sequential_file_reader* r) {
     manifest m;
     m.version = std::move(v);
     m.next_file_id = internal::file_id(manifest_proto.get_next_file_id());
-    m.last_seqno = internal::seqno(manifest_proto.get_last_seqno());
+    m.last_seqno = internal::sequence_number(manifest_proto.get_last_seqno());
     co_return m;
 }
 
