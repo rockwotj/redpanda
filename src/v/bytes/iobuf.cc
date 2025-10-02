@@ -22,7 +22,7 @@
 #include <compare>
 #include <cstddef>
 #include <iostream>
-#include <limits>
+#include <stdexcept>
 
 std::ostream& operator<<(std::ostream& o, const iobuf& io) {
     return o << "{bytes=" << io.size_bytes()

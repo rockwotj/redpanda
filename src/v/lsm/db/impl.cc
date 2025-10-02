@@ -26,7 +26,6 @@
 #include <seastar/util/defer.hh>
 
 #include <exception>
-#include <ios>
 #include <memory>
 #include <utility>
 
@@ -402,6 +401,10 @@ ss::future<> impl::flush_memtable() {
 ss::future<> impl::remove_obsolete_files() {
     // TODO
     co_return;
+}
+
+internal::sequence_number impl::max_persisted_seqno() const {
+    return _versions->last_seqno();
 }
 
 } // namespace lsm::db

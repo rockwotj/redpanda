@@ -45,6 +45,9 @@ public:
     impl& operator=(const impl&) = delete;
     ~impl() = default;
 
+    // The maximum sequence number that has been persisted to durable storage.
+    internal::sequence_number max_persisted_seqno() const;
+
     // Open the database
     static ss::future<std::unique_ptr<impl>> open(
       ss::lw_shared_ptr<internal::options>, std::unique_ptr<io::persistence>);
@@ -61,7 +64,9 @@ public:
     // Get a key from the database
     ss::future<lookup_result> get(internal::key_view);
 
-    // Create an iterator over the database.
+    // Create an iterator over the database. Note that this iterator
+    // results in ALL entries from the database, a deduplicating iterator
+    // needs to be added on top to give a traditional iterator view.
     ss::future<std::unique_ptr<internal::iterator>> create_iterator();
 
     // Close the database, no more operations should happen to the database at
