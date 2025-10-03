@@ -16,7 +16,6 @@
 #include "lsm/db/impl.h"
 #include "lsm/io/persistence.h"
 #include "model/fundamental.h"
-#include "model/record.h"
 
 #include <seastar/core/future.hh>
 

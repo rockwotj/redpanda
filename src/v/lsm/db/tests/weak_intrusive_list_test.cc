@@ -26,7 +26,7 @@ struct foo : list {
     explicit foo(int v)
       : value(v) {}
     int value;
-    ~foo() { fmt::print(stderr, "destroying {}\n", value); }
+    ~foo() = default;
 
     bool operator==(const foo& other) const { return value == other.value; };
     fmt::iterator format_to(fmt::iterator it) const {
