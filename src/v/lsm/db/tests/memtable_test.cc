@@ -31,12 +31,10 @@ public:
         for (auto& [k, v] : map) {
             batch.put(k, v.share());
         }
-        _memtable->apply(std::move(batch));
-        return _memtable->create_iterator();
+        auto memtable = ss::make_lw_shared<lsm::db::memtable>();
+        memtable->apply(std::move(batch));
+        return memtable->create_iterator();
     }
-
-    ss::lw_shared_ptr<lsm::db::memtable> _memtable
-      = ss::make_lw_shared<lsm::db::memtable>();
 };
 
 } // namespace
@@ -76,8 +74,8 @@ TEST_F(MemtableTest, GetAtVersion) {
     add("key0@4"_key, iobuf::from("value4"));
     add("key2@5"_key, iobuf::from("value5"));
     add("key1@6"_key, iobuf::from("value6"));
-    add("key3@6"_key, iobuf::from("boo!"));
-    remove("key3@-7"_key);
+    add("key3@7"_key, iobuf::from("boo!"));
+    remove("key3@-8"_key);
 
     struct testcase {
         uint64_t version;
@@ -135,17 +133,17 @@ TEST_F(MemtableTest, GetAtVersion) {
         .key = "key0",
       },
       {
-        .version = 6,
+        .version = 7,
         .key = "key3",
         .value = "boo!",
       },
       {
-        .version = 7,
+        .version = 8,
         .key = "key3",
         .value = "",
       },
       {
-        .version = 8,
+        .version = 9,
         .key = "key3",
         .value = "",
       },
@@ -171,14 +169,14 @@ TEST_F(MemtableTest, GetAtVersion) {
 TEST_F(MemtableTest, StableIterator) {
     add("key1@1"_key, iobuf::from("value1"));
     add("key1@2"_key, iobuf::from("value2"));
-    add("key5@1"_key, iobuf::from("value3"));
+    add("key5@3"_key, iobuf::from("value3"));
     auto it = create_iterator();
     it->seek("key1@2"_key).get();
     ASSERT_TRUE(it->valid());
     EXPECT_EQ(it->key(), "key1@2"_key);
     EXPECT_EQ(it->value(), iobuf::from("value2"));
-    add("key1@3"_key, iobuf::from("value4"));
-    add("key2@1"_key, iobuf::from("value5"));
+    add("key1@4"_key, iobuf::from("value4"));
+    add("key2@5"_key, iobuf::from("value5"));
     EXPECT_EQ(it->key(), "key1@2"_key) << it->key().decode();
     EXPECT_EQ(it->value(), iobuf::from("value2")) << it->value().hexdump(10);
     it->next().get();
@@ -189,6 +187,6 @@ TEST_F(MemtableTest, StableIterator) {
     ASSERT_TRUE(it->valid());
     it->prev().get();
     ASSERT_TRUE(it->valid());
-    EXPECT_EQ(it->key(), "key1@3"_key) << it->key().decode();
+    EXPECT_EQ(it->key(), "key1@4"_key) << it->key().decode();
     EXPECT_EQ(it->value(), iobuf::from("value4")) << it->value().hexdump(10);
 }

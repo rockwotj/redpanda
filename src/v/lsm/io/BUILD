@@ -1,6 +1,6 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
-package(default_visibility = ["//src/v/lsm:__subpackages__"])
+package(default_visibility = ["//visibility:public"])
 
 redpanda_cc_library(
     name = "persistence",

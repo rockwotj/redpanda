@@ -9,11 +9,13 @@ redpanda_cc_library(
         "lsm.h",
     ],
     implementation_deps = [
+        "//src/v/lsm/core/internal:batch",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/db:impl",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/lsm/io:persistence",
