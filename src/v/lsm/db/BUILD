@@ -25,6 +25,27 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "iter",
+    srcs = [
+        "iter.cc",
+    ],
+    hdrs = [
+        "iter.h",
+    ],
+    implementation_deps = [
+        "//src/v/random:generators",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "impl",
     srcs = [
         "impl.cc",
@@ -33,6 +54,7 @@ redpanda_cc_library(
         "impl.h",
     ],
     implementation_deps = [
+        ":iter",
         ":table_builder",
         ":version_edit",
         "//src/v/lsm/core/internal:merging_iterator",

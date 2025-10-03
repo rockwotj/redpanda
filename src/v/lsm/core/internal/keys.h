@@ -196,4 +196,7 @@ private:
 //              Otherwise it's a value type.
 key operator""_key(const char* s, size_t len);
 
+// Create a key for seeks.
+key operator""_seek_key(const char* s, size_t len);
+
 } // namespace lsm::internal

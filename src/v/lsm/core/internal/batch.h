@@ -32,10 +32,10 @@ public:
           "when adding a put to a batch, keys must be of value type",
           key.decode());
         dassert(
-          _last_seqno >= key.seqno(),
+          key.seqno() >= _last_seqno,
           "seqno should only go up: {} >= {}",
-          _last_seqno,
-          key.seqno());
+          key.seqno(),
+          _last_seqno);
         _memory_usage += key.memory_usage() + value.memory_usage();
         _last_seqno = key.seqno();
         _batch.emplace(std::move(key), std::move(value));
@@ -50,10 +50,10 @@ public:
           "when adding a remove to a batch, keys must be of tombstone type",
           key.decode());
         dassert(
-          _last_seqno >= key.seqno(),
+          key.seqno() >= _last_seqno,
           "seqno should only go up: {} >= {}",
-          _last_seqno,
-          key.seqno());
+          key.seqno(),
+          _last_seqno);
         iobuf value;
         _memory_usage += key.memory_usage() + value.memory_usage();
         _last_seqno = key.seqno();

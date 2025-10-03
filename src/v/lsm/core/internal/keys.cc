@@ -144,6 +144,14 @@ key::key(const iobuf& encoded)
 
 key::operator iobuf() const { return iobuf::from(_value); }
 
+key operator""_seek_key(const char* s, size_t len) {
+    return key::encode({
+      .key = ss::sstring(s, len),
+      .seqno = sequence_number::max(),
+      .type = value_type::value,
+    });
+}
+
 key operator""_key(const char* s, size_t len) {
     auto [k, seq_str] = std::pair<std::string_view, std::string_view>(
       absl::StrSplit(std::string_view{s, len}, "@"));

@@ -46,13 +46,15 @@ public:
       , _seqno(seqno)
       , _options(std::move(options))
       , _sample_fn(std::move(sample_fn))
-      , _bytes_until_sample(random_generators::get_int<size_t>()) {}
+      , _bytes_until_sample(random_compaction_period()) {}
 
     bool valid() const override { return _valid; }
     internal::key_view key() override {
+        assert(valid());
         return _dir == forward ? _iter->key() : _saved_key;
     }
     iobuf value() override {
+        assert(valid());
         return _dir == forward ? _iter->value() : _saved_value.share();
     }
 
@@ -90,6 +92,7 @@ public:
     }
 
     ss::future<> next() override {
+        assert(valid());
         if (_dir == reverse) {
             _dir = forward;
             // iter is pointing just before the entries for this->key(),
@@ -120,6 +123,7 @@ public:
     }
 
     ss::future<> prev() override {
+        assert(valid());
         if (_dir == forward) {
             _saved_key = internal::key(_iter->key());
             while (true) {
@@ -211,7 +215,7 @@ private:
             _bytes_until_sample += random_compaction_period();
             co_await _sample_fn(k);
         }
-        _bytes_until_sample -= bytes_read;
+        _bytes_until_sample -= std::min(bytes_read, _bytes_until_sample);
         co_return k.decode();
     }
 
