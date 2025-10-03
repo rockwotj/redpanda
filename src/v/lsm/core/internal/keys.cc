@@ -91,13 +91,11 @@ fmt::iterator key_view::format_to(fmt::iterator it) const {
 }
 
 key::parts key::parts::value(std::string_view key, sequence_number seq_num) {
-    return {
-      .key = ss::sstring(key), .seqno = seq_num, .type = value_type::value};
+    return {.key = key, .seqno = seq_num, .type = value_type::value};
 }
 key::parts
 key::parts::tombstone(std::string_view key, sequence_number seq_num) {
-    return {
-      .key = ss::sstring(key), .seqno = seq_num, .type = value_type::tombstone};
+    return {.key = key, .seqno = seq_num, .type = value_type::tombstone};
 }
 
 key_view::parts key_view::decode() const {
@@ -125,7 +123,7 @@ value_type key_view::type() const {
 }
 
 key_view::parts::operator key::parts() const {
-    return {.key = ss::sstring(key), .seqno = seqno, .type = type};
+    return {.key = key, .seqno = seqno, .type = type};
 }
 
 internal::key_view key_view::without_type() const {
@@ -161,7 +159,7 @@ key operator""_key(const char* s, size_t len) {
         seq_num = 0; // Default seqno
     }
     return key::encode({
-      .key = ss::sstring(k),
+      .key = k,
       .seqno = sequence_number(std::abs(seq_num)),
       .type = seq_num < 0 ? value_type::tombstone : value_type::value,
     });

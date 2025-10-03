@@ -57,7 +57,7 @@ class key {
 
 public:
     struct parts {
-        ss::sstring key;
+        std::string_view key;
         sequence_number seqno = sequence_number(0);
         value_type type = value_type::value;
 

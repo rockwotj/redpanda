@@ -33,6 +33,8 @@ class iterator;
 // Options for the database.
 struct options {};
 
+class write_batch;
+
 // A LSM tree database. Note that this database does *not* have a WAL.
 class database {
 public:
@@ -65,7 +67,7 @@ public:
     // - Tombstone records are treated as deletes
     // - Keys over 32KiB are skipped
     // - Records with null keys are skipped
-    ss::future<> apply(model::record_batch);
+    ss::future<> apply(write_batch);
 
     // Lookup a value in the database
     ss::future<std::optional<iobuf>> get(std::string_view key);
@@ -127,6 +129,35 @@ public:
 
 private:
     std::unique_ptr<internal::iterator> _impl;
+};
+
+namespace internal {
+class write_batch;
+}
+
+// A batch of data that can be applied to the database.
+class write_batch {
+public:
+    write_batch();
+    write_batch(const write_batch&) = delete;
+    write_batch(write_batch&&) noexcept = default;
+    write_batch& operator=(const write_batch&) = delete;
+    write_batch& operator=(write_batch&&) noexcept = default;
+    ~write_batch() noexcept;
+
+    // Set the key in the database with the given value for this offset.
+    //
+    // REQUIRES: offsets must be monotonically increasing as added to the batch.
+    void put(std::string_view key, iobuf value, model::offset offset);
+
+    // Remove the key in the database at this offset.
+    //
+    // REQUIRES: offsets must be monotonically increasing as added to the batch.
+    void remove(std::string_view key, model::offset);
+
+private:
+    friend class database;
+    std::unique_ptr<internal::write_batch> _batch;
 };
 
 } // namespace lsm

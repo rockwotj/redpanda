@@ -23,6 +23,12 @@ namespace lsm::internal {
 // A batch of writes that can be atomically applied.
 class write_batch {
 public:
+    write_batch() = default;
+    write_batch(const write_batch&) = delete;
+    write_batch(write_batch&&) noexcept = default;
+    write_batch& operator=(const write_batch&) = delete;
+    write_batch& operator=(write_batch&&) noexcept = default;
+    ~write_batch() noexcept = default;
     // Add a key-value pair to the database.
     //
     // REQUIRES: key.value_type is value

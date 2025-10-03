@@ -15,8 +15,6 @@
 #include "lsm/core/internal/iterator.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/db/impl.h"
-#include "model/batch_compression.h"
-#include "model/record.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -31,11 +29,11 @@ ss::lw_shared_ptr<internal::options> translate_options(options) {
     return ss::make_lw_shared<internal::options>();
 }
 
-model::offset translate_seqno(internal::sequence_number seqno) {
+model::offset seqno_cast(internal::sequence_number seqno) {
     return model::offset(static_cast<int64_t>(seqno()));
 }
 
-internal::sequence_number translate_offset(model::offset o) {
+internal::sequence_number seqno_cast(model::offset o) {
     if (o < model::offset{0}) {
         throw std::invalid_argument(
           fmt::format(
@@ -58,7 +56,7 @@ ss::future<> iterator::seek_to_first() { return _impl->seek_to_first(); }
 ss::future<> iterator::seek_to_last() { return _impl->seek_to_last(); }
 ss::future<> iterator::seek(std::string_view target) {
     auto key = internal::key::encode({
-      .key = ss::sstring(target),
+      .key = target,
       .seqno = internal::sequence_number::max(),
       .type = internal::value_type::value,
     });
@@ -83,41 +81,21 @@ database::open(options opts, std::unique_ptr<io::persistence> p) {
 ss::future<> database::close() { return _impl->close(); }
 
 model::offset database::max_persisted_offset() const {
-    return translate_seqno(_impl->max_persisted_seqno());
+    return seqno_cast(_impl->max_persisted_seqno());
 }
 
-ss::future<> database::apply(model::record_batch records) {
-    constexpr static int32_t max_key_size = 32_KiB;
-    if (records.compressed()) {
-        records = co_await model::decompress_batch(records);
-    }
-    auto iter = model::record_batch_iterator::create(records);
-    internal::write_batch batch;
-    while (iter.has_next()) {
-        auto record = iter.next();
-        if (!record.has_key() || record.key_size() > max_key_size) {
-            continue;
-        }
-        auto seqno = translate_offset(
-          records.base_offset() + model::offset_delta(record.offset_delta()));
-        internal::key key = internal::key::encode({
-          .key = record.key().linearize(),
-          .seqno = seqno,
-          .type = record.is_tombstone() ? internal::value_type::tombstone
-                                        : internal::value_type::value,
-        });
-        if (record.is_tombstone()) {
-            batch.remove(key);
-        } else {
-            batch.put(key, record.release_value());
-        }
-    }
-    co_await _impl->apply(batch);
+model::offset database::max_applied_offset() const {
+    return seqno_cast(_impl->max_applied_seqno());
+}
+
+ss::future<> database::apply(write_batch batch) {
+    auto b = std::move(batch._batch);
+    co_await _impl->apply(std::move(*b));
 }
 
 ss::future<std::optional<iobuf>> database::get(std::string_view target) {
     auto key = internal::key::encode({
-      .key = ss::sstring(target),
+      .key = target,
       .seqno = internal::sequence_number::max(),
       .type = internal::value_type::value,
     });
@@ -128,6 +106,29 @@ ss::future<std::optional<iobuf>> database::get(std::string_view target) {
 ss::future<iterator> database::create_iterator() {
     auto iter = co_await _impl->create_iterator();
     co_return iterator(std::move(iter));
+}
+
+write_batch::write_batch()
+  : _batch(std::make_unique<internal::write_batch>()) {}
+
+write_batch::~write_batch() noexcept = default;
+
+void write_batch::put(std::string_view key, iobuf value, model::offset offset) {
+    auto k = internal::key::encode({
+      .key = key,
+      .seqno = seqno_cast(offset),
+      .type = internal::value_type::value,
+    });
+    _batch->put(std::move(k), std::move(value));
+}
+
+void write_batch::remove(std::string_view key, model::offset offset) {
+    auto k = internal::key::encode({
+      .key = key,
+      .seqno = seqno_cast(offset),
+      .type = internal::value_type::tombstone,
+    });
+    _batch->remove(std::move(k));
 }
 
 } // namespace lsm
