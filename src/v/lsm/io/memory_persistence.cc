@@ -35,7 +35,7 @@ struct memory_file_state {
 class memory_sequential_file_reader : public sequential_file_reader {
 public:
     explicit memory_sequential_file_reader(
-      ss::shared_ptr<memory_file_state> state)
+      ss::lw_shared_ptr<memory_file_state> state)
       : _state(std::move(state)) {
         ++_state->open_read_handles;
     }
@@ -68,13 +68,13 @@ public:
 private:
     size_t _offset = 0;
     bool _closed = false;
-    ss::shared_ptr<memory_file_state> _state;
+    ss::lw_shared_ptr<memory_file_state> _state;
 };
 
 class memory_random_access_file_reader : public random_access_file_reader {
 public:
     explicit memory_random_access_file_reader(
-      ss::shared_ptr<memory_file_state> state)
+      ss::lw_shared_ptr<memory_file_state> state)
       : _state(std::move(state)) {
         ++_state->open_read_handles;
     }
@@ -105,13 +105,13 @@ public:
 
 private:
     bool _closed = false;
-    ss::shared_ptr<memory_file_state> _state;
+    ss::lw_shared_ptr<memory_file_state> _state;
 };
 
 class memory_sequential_file_writer : public sequential_file_writer {
 public:
     explicit memory_sequential_file_writer(
-      ss::shared_ptr<memory_file_state> state)
+      ss::lw_shared_ptr<memory_file_state> state)
       : _state(std::move(state)) {
         if (_state->open_handles() > 0) {
             throw io_error_exception(
@@ -143,7 +143,7 @@ public:
 
 private:
     bool _closed = false;
-    ss::shared_ptr<memory_file_state> _state;
+    ss::lw_shared_ptr<memory_file_state> _state;
 };
 
 class impl : public persistence {
@@ -173,7 +173,7 @@ public:
     open_sequential_writer(std::string_view name) override {
         auto key = std::string(name);
         auto it = _data.try_emplace(
-          ss::sstring(name), ss::make_shared<memory_file_state>());
+          ss::sstring(name), ss::make_lw_shared<memory_file_state>());
         co_return std::make_unique<memory_sequential_file_writer>(
           it.first->second);
     }
@@ -181,8 +181,9 @@ public:
     ss::future<> write_file_atomically(
       std::string_view name, std::string_view contents) override {
         auto writer = co_await open_sequential_writer(name);
-        co_await writer->append(iobuf::from(contents));
-        co_await writer->close();
+        co_await writer->append(iobuf::from(contents)).finally([&writer] {
+            return writer->close();
+        });
     }
 
     ss::future<> remove_file(std::string_view name) override {
@@ -221,7 +222,7 @@ public:
 
 private:
     bool _closed = false;
-    std::map<ss::sstring, ss::shared_ptr<memory_file_state>> _data;
+    std::map<ss::sstring, ss::lw_shared_ptr<memory_file_state>> _data;
 };
 
 } // namespace

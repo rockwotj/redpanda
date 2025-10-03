@@ -57,6 +57,7 @@ redpanda_cc_library(
         ":iter",
         ":table_builder",
         ":version_edit",
+        "//src/v/lsm/core/internal:logger",
         "//src/v/lsm/core/internal:merging_iterator",
         "//src/v/lsm/sst:builder",
     ],

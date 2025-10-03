@@ -106,6 +106,7 @@ private:
     ssx::condition_variable _background_work_finished_signal;
     std::exception_ptr _background_error;
     ss::abort_source _as;
+    bool _background_work_running;
     std::optional<ss::future<>> _background_work;
 };
 

@@ -12,9 +12,11 @@
 #include "lsm/db/impl.h"
 
 #include "base/vassert.h"
+#include "base/vlog.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/keys.h"
+#include "lsm/core/internal/logger.h"
 #include "lsm/core/internal/merging_iterator.h"
 #include "lsm/db/iter.h"
 #include "lsm/db/table_builder.h"
@@ -60,8 +62,14 @@ ss::future<std::unique_ptr<impl>> impl::open(
       = ss::do_until(
           [db = db.get()] { return db->_as.abort_requested(); },
           [db = db.get()] {
+              db->_background_work_running = false;
+              vlog(log.trace, "waiting for background work");
               return db->_start_background_work_signal.wait(db->_as)
-                .then([db] { return db->run_background_compaction(); })
+                .then([db] {
+                    db->_background_work_running = true;
+                    vlog(log.trace, "start background compaction");
+                    return db->run_background_compaction();
+                })
                 .handle_exception_type([db](const base_exception& ex) {
                     db->_background_error = std::make_exception_ptr(ex);
                 });
@@ -131,6 +139,7 @@ ss::future<> impl::make_room_for_write() {
             continue;
         }
         // We're over our limit, let's make a new memtable
+        vlog(log.info, "scheduling memtable flush");
         _imm = std::exchange(_mem, ss::make_lw_shared<memtable>());
         maybe_schedule_compaction();
     }
@@ -189,12 +198,12 @@ impl::create_internal_iterator() {
 }
 
 ss::future<> impl::close() {
-    co_await _table_cache->close();
-    co_await _persistence->close();
     _as.request_abort_ex(abort_requested_exception("database closing"));
     if (_background_work) {
         co_await *std::exchange(_background_work, std::nullopt);
     }
+    co_await _table_cache->close();
+    co_await _persistence->close();
 }
 
 ss::future<> impl::recover() {
@@ -203,7 +212,7 @@ ss::future<> impl::recover() {
 }
 
 void impl::maybe_schedule_compaction() {
-    if (_background_work) {
+    if (_background_work && _background_work_running) {
         return;
     }
     if (_background_error) {
@@ -269,7 +278,7 @@ ss::future<> impl::run_background_compaction() {
         maybe_schedule_compaction();
         _background_work_finished_signal.broadcast();
     });
-    if (!_imm) {
+    if (_imm) {
         co_return co_await flush_memtable();
     }
     auto maybe_compaction = _versions->pick_compaction();
