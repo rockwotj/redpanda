@@ -62,7 +62,7 @@ public:
     std::unique_ptr<internal::iterator> create_iterator();
 
     // The approximate amount of memory used for this memtable.
-    size_t approximate_memory_usage();
+    size_t approximate_memory_usage() const { return _memory_usage; }
 
     std::optional<internal::sequence_number> last_seqno() {
         return _last_seqno;

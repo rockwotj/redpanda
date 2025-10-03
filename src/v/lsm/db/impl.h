@@ -21,8 +21,8 @@
 #include "lsm/db/table_cache.h"
 #include "lsm/db/version_set.h"
 #include "lsm/io/persistence.h"
+#include "ssx/condition_variable.h"
 
-#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 
 #include <memory>
@@ -48,6 +48,7 @@ public:
     // the maximum sequence number that has been applied to in memory state or
     // durable storage.
     internal::sequence_number max_applied_seqno() const;
+
     // The maximum sequence number that has been persisted to durable storage.
     internal::sequence_number max_persisted_seqno() const;
 
@@ -101,7 +102,8 @@ private:
     ss::optimized_optional<ss::lw_shared_ptr<memtable>> _imm;
     std::unique_ptr<table_cache> _table_cache;
     std::unique_ptr<version_set> _versions;
-    ss::condition_variable _background_work_finished_signal;
+    ssx::condition_variable _start_background_work_signal;
+    ssx::condition_variable _background_work_finished_signal;
     std::exception_ptr _background_error;
     ss::abort_source _as;
     std::optional<ss::future<>> _background_work;

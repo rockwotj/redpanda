@@ -56,6 +56,17 @@ ss::future<std::unique_ptr<impl>> impl::open(
     auto db = std::make_unique<impl>(
       ctor{}, std::move(persistence), std::move(opts));
     co_await db->recover();
+    db->_background_work
+      = ss::do_until(
+          [db = db.get()] { return db->_as.abort_requested(); },
+          [db = db.get()] {
+              return db->_start_background_work_signal.wait(db->_as)
+                .then([db] { return db->run_background_compaction(); })
+                .handle_exception_type([db](const base_exception& ex) {
+                    db->_background_error = std::make_exception_ptr(ex);
+                });
+          })
+          .or_terminate();
     co_return db;
 }
 
@@ -102,20 +113,21 @@ ss::future<> impl::make_room_for_write() {
         }
         if (_mem->approximate_memory_usage() <= _opts->write_buffer_size) {
             // We're under our write buffer limit, let's proceed
-            // Note there is a scheduling point here, so this is a soft limit.
+            // Note there is a scheduling point here, so this is a soft
+            // limit.
             co_return;
         }
         if (_imm) {
-            // We are over the write buffer limit and we have a pending memtable
-            // flush, wait for it to finish.
-            co_await _background_work_finished_signal.wait();
+            // We are over the write buffer limit and we have a pending
+            // memtable flush, wait for it to finish.
+            co_await _background_work_finished_signal.wait(_as);
             continue;
         }
         if (
           _versions->current()->num_files(0_level)
           > _opts->level_zero_stop_writes_trigger) {
             // We've hit out L0 file limit, wait for compaction to finish.
-            co_await _background_work_finished_signal.wait();
+            co_await _background_work_finished_signal.wait(_as);
             continue;
         }
         // We're over our limit, let's make a new memtable
@@ -203,14 +215,7 @@ void impl::maybe_schedule_compaction() {
     if (_as.abort_requested()) {
         return;
     }
-    _background_work = run_background_compaction()
-                         .handle_exception_type(
-                           [this](const base_exception& ex) {
-                               _background_error = std::make_exception_ptr(
-                                 background_exception(ex));
-                           })
-                         // Yo dude don't throw other kinds of errors in here.
-                         .or_terminate();
+    _start_background_work_signal.signal();
 }
 
 namespace {
@@ -241,10 +246,11 @@ struct compaction_state {
 
     std::exception_ptr err;
     chunked_vector<output> outputs;
-    // Sequence numbers < smallest_snapshot are not significant since we will
-    // never have to service a snapshot below smallest_snapshot. Therefore if we
-    // have seen a sequence number S <= smallest_snapshot, we can drop all
-    // entries for the same key with sequence numbers < S.
+    // Sequence numbers < smallest_snapshot are not significant since we
+    // will never have to service a snapshot below smallest_snapshot.
+    // Therefore if we have seen a sequence number S <=
+    // smallest_snapshot, we can drop all entries for the same key with
+    // sequence numbers < S.
     internal::sequence_number smallest_snapshot;
     std::optional<sst::builder> builder;
     uint64_t total_bytes = 0;
@@ -259,7 +265,6 @@ ss::future<> impl::run_background_compaction() {
         // Failure, there currently is no recovery other than re-opening.
         co_return;
     }
-    // When compaction finishes, always check if we need to run compaction
     auto _ = ss::defer([this] {
         maybe_schedule_compaction();
         _background_work_finished_signal.broadcast();
@@ -329,11 +334,12 @@ ss::future<> impl::run_background_compaction() {
               && compaction.is_base_level_for_key(key)) {
                 // For this user key:
                 // (1) there is no data in higher levels
-                // (2) data in lower levels will have larger sequence numbers
-                // (3) data in layers that are being compacted here and have
-                // smaller sequence numbers will be dropped in the next few
-                // iterations of this loop (by rule (A) above). Therefore this
-                // deletion marker is obsolete and can be dropped.
+                // (2) data in lower levels will have larger sequence
+                // numbers (3) data in layers that are being compacted here
+                // and have smaller sequence numbers will be dropped in the
+                // next few iterations of this loop (by rule (A) above).
+                // Therefore this deletion marker is obsolete and can be
+                // dropped.
                 drop = true;
             }
             last_seqno_for_key = key_seqno;
@@ -413,9 +419,9 @@ ss::future<> impl::flush_memtable() {
     // Now that the new version has been applied, it's safe to remove the
     // immutable memtable, as readers will pick up the new file instead.
     //
-    // Note that due to the above scheduling point, it's possible for a reader
-    // to pick up both the memtable and the new version with the file. This is
-    // OK because all iterators deduplicate already.
+    // Note that due to the above scheduling point, it's possible for a
+    // reader to pick up both the memtable and the new version with the
+    // file. This is OK because all iterators deduplicate already.
     _imm = std::nullopt;
 }
 
