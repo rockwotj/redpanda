@@ -45,6 +45,9 @@ public:
     impl& operator=(const impl&) = delete;
     ~impl() = default;
 
+    // the maximum sequence number that has been applied to in memory state or
+    // durable storage.
+    internal::sequence_number max_applied_seqno() const;
     // The maximum sequence number that has been persisted to durable storage.
     internal::sequence_number max_persisted_seqno() const;
 
@@ -76,6 +79,8 @@ public:
     ss::future<> close();
 
 private:
+    ss::future<std::unique_ptr<internal::iterator>> create_internal_iterator();
+
     ss::future<> recover();
 
     ss::future<> make_room_for_write();

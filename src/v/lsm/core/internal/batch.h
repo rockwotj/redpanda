@@ -31,7 +31,13 @@ public:
           key.type() == internal::value_type::value,
           "when adding a put to a batch, keys must be of value type",
           key.decode());
+        dassert(
+          _last_seqno >= key.seqno(),
+          "seqno should only go up: {} >= {}",
+          _last_seqno,
+          key.seqno());
         _memory_usage += key.memory_usage() + value.memory_usage();
+        _last_seqno = key.seqno();
         _batch.emplace(std::move(key), std::move(value));
     }
 
@@ -43,16 +49,25 @@ public:
           key.type() == internal::value_type::tombstone,
           "when adding a remove to a batch, keys must be of tombstone type",
           key.decode());
+        dassert(
+          _last_seqno >= key.seqno(),
+          "seqno should only go up: {} >= {}",
+          _last_seqno,
+          key.seqno());
         iobuf value;
         _memory_usage += key.memory_usage() + value.memory_usage();
+        _last_seqno = key.seqno();
         _batch.emplace(std::move(key), std::move(value));
     }
 
     // The entries in the write batch.
     absl::btree_map<internal::key, iobuf>& entries() { return _batch; }
-    size_t memory_usage() { return _memory_usage; }
+    size_t memory_usage() const { return _memory_usage; }
+    bool empty() const { return _batch.empty(); }
+    internal::sequence_number last_seqno() const { return _last_seqno; }
 
 private:
+    internal::sequence_number _last_seqno;
     absl::btree_map<internal::key, iobuf> _batch;
     size_t _memory_usage = 0;
 };

@@ -13,6 +13,7 @@
 
 #include "base/format_to.h"
 #include "base/seastarx.h"
+#include "base/vassert.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
@@ -95,6 +96,10 @@ public:
 
     // Returns the user portion of the key.
     std::string_view user_key() const {
+        dassert(
+          _value.size() >= 5,
+          "expected key size to be at least 5, got: {}",
+          _value.size());
         return {_value.data(), _value.size() - sizeof(uint64_t) - 1};
     }
 
@@ -139,6 +144,10 @@ public:
 
     // The user portion of the key.
     std::string_view user_key() const {
+        dassert(
+          _value.size() >= 5,
+          "expected key size to be at least 5, got: {}",
+          _value.size());
         return {_value.data(), _value.size() - sizeof(uint64_t) - 1};
     }
     // Returns this key's value type

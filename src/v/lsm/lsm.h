@@ -55,6 +55,9 @@ public:
 
     // The maximum offset that has been persisted to durable storage.
     model::offset max_persisted_offset() const;
+    // The maximum offset that has been applied to the database (persisted or
+    // not).
+    model::offset max_applied_offset() const;
 
     // Apply a record batch to the database.
     //

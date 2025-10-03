@@ -95,6 +95,10 @@ struct options {
     constexpr static size_t default_compact_after_seek_bytes = 8_KiB;
     size_t compact_after_seek_bytes = default_compact_after_seek_bytes;
 
+    // Approximate gap in bytes between samples of data read during iteration.
+    constexpr static size_t default_read_bytes_period = 10_MiB;
+    size_t read_bytes_period = default_read_bytes_period;
+
     fmt::iterator format_to(fmt::iterator) const;
 };
 } // namespace lsm::internal

@@ -16,6 +16,7 @@
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/merging_iterator.h"
+#include "lsm/db/iter.h"
 #include "lsm/db/table_builder.h"
 #include "lsm/io/persistence.h"
 #include "lsm/sst/block_cache.h"
@@ -71,6 +72,9 @@ ss::future<> impl::remove(internal::key key) {
 }
 
 ss::future<> impl::apply(internal::write_batch batch) {
+    if (batch.empty()) {
+        co_return;
+    }
     co_await make_room_for_write();
     _mem->apply(std::move(batch));
 }
@@ -146,6 +150,23 @@ ss::future<lookup_result> impl::get(internal::key_view key) {
 }
 
 ss::future<std::unique_ptr<internal::iterator>> impl::create_iterator() {
+    auto iter = co_await create_internal_iterator();
+    co_return create_db_iterator(
+      std::move(iter),
+      max_applied_seqno(),
+      _opts,
+      [this](internal::key_view key) {
+          return _versions->current()->record_read_sample(key).then(
+            [this](bool compaction_needed) {
+                if (compaction_needed) {
+                    maybe_schedule_compaction();
+                }
+            });
+      });
+}
+
+ss::future<std::unique_ptr<internal::iterator>>
+impl::create_internal_iterator() {
     chunked_vector<std::unique_ptr<internal::iterator>> list;
     list.push_back(_mem->create_iterator());
     if (_imm) {
@@ -405,6 +426,12 @@ ss::future<> impl::remove_obsolete_files() {
 
 internal::sequence_number impl::max_persisted_seqno() const {
     return _versions->last_seqno();
+}
+
+internal::sequence_number impl::max_applied_seqno() const {
+    return _mem->last_seqno()
+      .or_else([this] { return _imm ? (*_imm)->last_seqno() : std::nullopt; })
+      .value_or(max_persisted_seqno());
 }
 
 } // namespace lsm::db

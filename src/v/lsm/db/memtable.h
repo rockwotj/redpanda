@@ -64,6 +64,10 @@ public:
     // The approximate amount of memory used for this memtable.
     size_t approximate_memory_usage();
 
+    std::optional<internal::sequence_number> last_seqno() {
+        return _last_seqno;
+    }
+
 private:
     friend class iterator;
 
@@ -71,6 +75,7 @@ private:
 
     table _table;
     size_t _memory_usage = 0;
+    std::optional<internal::sequence_number> _last_seqno;
     // We keep a dummy iterator alive to be able to reference all live
     // iterators.
     //

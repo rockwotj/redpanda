@@ -13,6 +13,7 @@
 
 #include "absl/container/btree_map.h"
 #include "base/vassert.h"
+#include "lsm/core/internal/keys.h"
 #include "lsm/core/lookup_result.h"
 
 #include <seastar/util/variant_utils.hh>
@@ -134,8 +135,17 @@ private:
 };
 
 void memtable::apply(internal::write_batch batch) {
+    if (_last_seqno) {
+        dassert(
+          _last_seqno < batch.last_seqno(),
+          "expected new batch seqno to be greater than what is applied: {} < "
+          "{}",
+          _last_seqno.value(),
+          batch.last_seqno());
+    }
     invalidate_iterators();
     _memory_usage += batch.memory_usage();
+    _last_seqno = batch.last_seqno();
     _table.merge(std::move(batch.entries()));
 }
 
