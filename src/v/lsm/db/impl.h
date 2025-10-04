@@ -73,6 +73,9 @@ public:
     // needs to be added on top to give a traditional iterator view.
     ss::future<std::unique_ptr<internal::iterator>> create_iterator();
 
+    // Flush any pending state in memtables to disk.
+    ss::future<> flush();
+
     // Close the database, no more operations should happen to the database at
     // this point.
     //

@@ -20,19 +20,65 @@
 
 #include <gtest/gtest.h>
 
+namespace io = lsm::io;
+
 namespace {
+
+class proxy_persistence : public io::persistence {
+public:
+    explicit proxy_persistence(io::persistence* p)
+      : _p(p) {}
+
+    ss::future<io::optional_pointer<io::sequential_file_reader>>
+    open_sequential_reader(std::string_view name) override {
+        return _p->open_sequential_reader(name);
+    }
+
+    ss::future<io::optional_pointer<io::random_access_file_reader>>
+    open_random_access_reader(std::string_view name) override {
+        return _p->open_random_access_reader(name);
+    }
+
+    ss::future<std::unique_ptr<io::sequential_file_writer>>
+    open_sequential_writer(std::string_view name) override {
+        return _p->open_sequential_writer(name);
+    }
+
+    ss::future<> write_file_atomically(
+      std::string_view name, std::string_view contents) override {
+        return _p->write_file_atomically(name, contents);
+    }
+
+    ss::future<> remove_file(std::string_view file) override {
+        return _p->remove_file(file);
+    }
+
+    ss::coroutine::experimental::generator<ss::sstring> list_files() override {
+        return _p->list_files();
+    }
+
+    ss::future<> close() override { co_return; };
+
+private:
+    io::persistence* _p;
+};
 
 class ImplTest : public testing::Test {
 public:
     void SetUp() override {
         _options = ss::make_lw_shared<lsm::internal::options>(
-          {.write_buffer_size = 1_MiB});
-        auto persistence = lsm::io::make_memory_persistence();
-        _persistence = persistence.get();
-        _db = lsm::db::impl::open(_options, std::move(persistence)).get();
+          {.write_buffer_size = 512_KiB});
+        _persistence = lsm::io::make_memory_persistence();
+        _db = lsm::db::impl::open(
+                _options,
+                std::make_unique<proxy_persistence>(_persistence.get()))
+                .get();
     }
 
-    void TearDown() override { _db->close().get(); }
+    void TearDown() override {
+        _db->close().get();
+        _persistence->close().get();
+    }
 
     void write_at_least(size_t size) {
         lsm::internal::write_batch batch;
@@ -42,7 +88,7 @@ public:
               .seqno = ++_db->max_applied_seqno(),
             });
             auto value = iobuf::from(
-              random_generators::gen_alphanum_string(32_KiB));
+              random_generators::gen_alphanum_string(16_KiB));
             _shadow.insert_or_assign(
               ss::sstring(key.user_key()), value.share());
             batch.put(key, value.share());
@@ -62,6 +108,17 @@ public:
         return testing::AssertionFailure();
     }
 
+    void restart() {
+        _db->close().get();
+        _db = lsm::db::impl::open(
+                _options,
+                std::make_unique<proxy_persistence>(_persistence.get()))
+                .get();
+    }
+
+    auto max_applied_seqno() { return _db->max_applied_seqno(); }
+    auto max_persisted_seqno() { return _db->max_persisted_seqno(); }
+
     ss::future<std::vector<ss::sstring>> list_files() {
         auto gen = _persistence->list_files();
         std::vector<ss::sstring> files;
@@ -74,24 +131,34 @@ public:
 protected:
     std::map<ss::sstring, iobuf> _shadow;
     ss::lw_shared_ptr<lsm::internal::options> _options;
-    lsm::io::persistence* _persistence = nullptr;
+    std::unique_ptr<lsm::io::persistence> _persistence;
     std::unique_ptr<lsm::db::impl> _db;
 };
 
 TEST_F(ImplTest, MemtableIsFlushed) {
     EXPECT_TRUE(matches_shadow());
-    write_at_least(512_KiB);
+    write_at_least(256_KiB);
     EXPECT_TRUE(matches_shadow());
-    write_at_least(512_KiB);
+    write_at_least(256_KiB);
     EXPECT_TRUE(matches_shadow());
-    write_at_least(512_KiB);
+    write_at_least(256_KiB);
     EXPECT_TRUE(matches_shadow());
-    write_at_least(512_KiB);
+    write_at_least(256_KiB);
     EXPECT_TRUE(matches_shadow());
     RPTEST_REQUIRE_EVENTUALLY(10s, [this] {
         return list_files().then(
           [](const auto& files) { return files.size() > 0; });
     });
+}
+
+TEST_F(ImplTest, Recovery) {
+    write_at_least(512_KiB);
+    write_at_least(512_KiB);
+    EXPECT_TRUE(matches_shadow());
+    _db->flush().get();
+    EXPECT_EQ(max_applied_seqno(), max_persisted_seqno());
+    restart();
+    EXPECT_TRUE(matches_shadow());
 }
 
 } // namespace

@@ -197,6 +197,17 @@ impl::create_internal_iterator() {
     co_return internal::create_merging_iterator(std::move(list));
 }
 
+ss::future<> impl::flush() {
+    while (_imm) {
+        co_await _background_work_finished_signal.wait(_as);
+    }
+    if (!_mem->empty()) {
+        _imm = std::exchange(_mem, ss::make_lw_shared<memtable>());
+        maybe_schedule_compaction();
+        co_await _background_work_finished_signal.wait(_as);
+    }
+}
+
 ss::future<> impl::close() {
     _as.request_abort_ex(abort_requested_exception("database closing"));
     if (_background_work) {

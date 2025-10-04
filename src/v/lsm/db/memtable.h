@@ -64,6 +64,9 @@ public:
     // The approximate amount of memory used for this memtable.
     size_t approximate_memory_usage() const { return _memory_usage; }
 
+    // If the memtable is empty or not.
+    bool empty() const { return _table.empty(); }
+
     std::optional<internal::sequence_number> last_seqno() {
         return _last_seqno;
     }
