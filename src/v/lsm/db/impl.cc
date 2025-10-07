@@ -70,8 +70,29 @@ ss::future<std::unique_ptr<impl>> impl::open(
                     vlog(log.trace, "start background compaction");
                     return db->run_background_compaction();
                 })
-                .handle_exception_type([db](const base_exception& ex) {
-                    db->_background_error = std::make_exception_ptr(ex);
+                .then_wrapped([db](ss::future<> fut) {
+                    try {
+                        fut.get();
+                    } catch (const abort_requested_exception& ex) {
+                        vlog(
+                          log.debug,
+                          "LSM background loop got abort request: {}",
+                          ex.what());
+                    } catch (const io_error_exception& ex) {
+                        vlog(
+                          log.warn,
+                          "LSM background loop hit IO error: {}",
+                          ex.what());
+                    } catch (...) {
+                        auto ep = std::current_exception();
+                        vlog(
+                          log.error,
+                          "Unexpected error in LSM background loop: {}",
+                          ep);
+                    }
+                    // Signal so that we immediately retry
+                    // TODO(lsm): consider some kind of backoff or backpressure?
+                    db->_start_background_work_signal.signal();
                 });
           })
           .or_terminate();
@@ -101,9 +122,6 @@ ss::future<> impl::apply(internal::write_batch batch) {
 ss::future<> impl::make_room_for_write() {
     bool allow_delay = true;
     while (true) {
-        if (_background_error) {
-            std::rethrow_exception(_background_error);
-        }
         if (
           allow_delay
           && _versions->current()->num_files(0_level)
@@ -226,9 +244,6 @@ void impl::maybe_schedule_compaction() {
     if (_background_work && _background_work_running) {
         return;
     }
-    if (_background_error) {
-        return;
-    }
     if (!_imm && !_versions->needs_compaction()) {
         return;
     }
@@ -279,10 +294,6 @@ struct compaction_state {
 
 ss::future<> impl::run_background_compaction() {
     if (_as.abort_requested()) {
-        co_return;
-    }
-    if (_background_error) {
-        // Failure, there currently is no recovery other than re-opening.
         co_return;
     }
     auto _ = ss::defer([this] {
