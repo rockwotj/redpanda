@@ -14,6 +14,7 @@
 #include "base/format_to.h"
 #include "base/units.h"
 #include "lsm/core/internal/files.h"
+#include "lsm/sst/builder.h"
 
 #include <cstddef>
 
@@ -74,11 +75,20 @@ struct options {
         return multiplier * target_file_size();
     }
 
+    // The max number of SST files that should be opened at one time.
     constexpr static uint32_t default_max_open_files = 1000;
     uint32_t max_open_files = default_max_open_files;
 
+    // The size of the cache that stores uncompressed blocks.
     constexpr static size_t default_block_cache_size = 10_MiB;
     size_t block_cache_size = default_block_cache_size;
+
+    // The size of a single block within an SST file.
+    constexpr static size_t default_sst_block_size = 4_KiB;
+    size_t sst_block_size = default_sst_block_size;
+
+    // The compression to use for SST blocks.
+    compression_type compression = compression_type::none;
 
     // We arrange to automatically compact after a file after a certain
     // number of seeks. Let's assume:

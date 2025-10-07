@@ -264,12 +264,17 @@ struct compaction_state {
 
     output& current_output() { return outputs.back(); }
 
-    ss::future<>
-    open_current_builder(internal::file_id id, io::persistence* p) {
+    ss::future<> open_current_builder(
+      internal::file_id id, io::persistence* p, const internal::options& opts) {
         outputs.emplace_back(id);
         auto w = co_await p->open_sequential_writer(
           internal::sst_file_name(id));
-        builder.emplace(std::move(w), sst::builder::options{});
+        builder.emplace(
+          std::move(w),
+          sst::builder::options{
+            .block_size = opts.sst_block_size,
+            .compression = opts.compression,
+          });
     }
     ss::future<> finish_current_builder() {
         auto b = std::exchange(builder, std::nullopt);
@@ -377,7 +382,7 @@ ss::future<> impl::run_background_compaction() {
             if (!drop) {
                 if (!state.builder) {
                     co_await state.open_current_builder(
-                      _versions->new_file_id(), _persistence.get());
+                      _versions->new_file_id(), _persistence.get(), *_opts);
                 }
                 auto& current = state.current_output();
                 if (state.builder->num_entries() == 0) {
@@ -428,7 +433,11 @@ ss::future<> impl::flush_memtable() {
     auto v = _versions->current();
     auto id = _versions->new_file_id();
     auto result = co_await build_table(
-      _persistence.get(), id, (*_imm)->create_iterator(), {}, &_as);
+      _persistence.get(),
+      id,
+      (*_imm)->create_iterator(),
+      {.block_size = _opts->sst_block_size, .compression = _opts->compression},
+      &_as);
     if (!result) {
         _versions->reuse_file_id(id);
         co_return;

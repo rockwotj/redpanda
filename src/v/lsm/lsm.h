@@ -60,12 +60,7 @@ public:
     // not).
     model::offset max_applied_offset() const;
 
-    // Apply a record batch to the database.
-    //
-    // Caveats:
-    // - Tombstone records are treated as deletes
-    // - Keys over 32KiB are skipped
-    // - Records with null keys are skipped
+    // Apply a batch of data atomically to the database.
     ss::future<> apply(write_batch);
 
     // Lookup a value in the database
