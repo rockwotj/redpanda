@@ -811,6 +811,18 @@ version_set::make_input_iterator(compaction* c) {
     co_return internal::create_merging_iterator(std::move(list));
 }
 
+chunked_hash_set<internal::file_id> version_set::get_live_files() {
+    chunked_hash_set<internal::file_id> all_files;
+    for (auto v = _current; v != nullptr; v = *v->next()) {
+        for (const auto& files : v->_files) {
+            for (const auto& file : files) {
+                all_files.insert(file->id);
+            }
+        }
+    }
+    return all_files;
+}
+
 bool compaction::is_trivial_move() const {
     auto* vset = _input_version->_vset;
     // Avoid a move if there is lots of overlapping grandparent data.

@@ -170,6 +170,13 @@ public:
     ss::future<std::unique_ptr<internal::iterator>>
     make_input_iterator(compaction*);
 
+    // Get all the files that are currently being used by any live version.
+    chunked_hash_set<internal::file_id> get_live_files();
+
+    internal::file_id current_manifest_id() const {
+        return _current_manifest_id;
+    }
+
 private:
     friend class version;
     friend class compaction;

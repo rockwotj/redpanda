@@ -52,6 +52,8 @@ public:
     }
 
     // Get the next element in the linked list if it exists.
+    //
+    // Maybe `nullptr` if at the end of the list.
     ss::optimized_optional<ss::lw_shared_ptr<T>> next() {
         if (_next) {
             return (*_next)->shared_from_this();

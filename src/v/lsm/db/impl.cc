@@ -99,18 +99,6 @@ ss::future<std::unique_ptr<impl>> impl::open(
     co_return db;
 }
 
-ss::future<> impl::put(internal::key key, iobuf value) {
-    internal::write_batch batch;
-    batch.put(std::move(key), std::move(value));
-    co_await apply(std::move(batch));
-}
-
-ss::future<> impl::remove(internal::key key) {
-    internal::write_batch batch;
-    batch.remove(std::move(key));
-    co_await apply(std::move(batch));
-}
-
 ss::future<> impl::apply(internal::write_batch batch) {
     if (batch.empty()) {
         co_return;
@@ -466,8 +454,35 @@ ss::future<> impl::flush_memtable() {
 }
 
 ss::future<> impl::remove_obsolete_files() {
-    // TODO
-    co_return;
+    chunked_hash_set<internal::file_id> files = _versions->get_live_files();
+    auto gen = _persistence->list_files();
+    while (auto filename = co_await gen()) {
+        auto parsed = internal::parse_filename(*filename);
+        if (!parsed) {
+            continue;
+        }
+        bool keep = true;
+        switch (parsed->type) {
+        case internal::file_type::manifest:
+            keep = parsed->id >= _versions->current_manifest_id();
+            break;
+        case internal::file_type::sst:
+            keep = files.contains(parsed->id);
+            break;
+        case internal::file_type::tmp:
+            keep = false;
+            break;
+        case internal::file_type::current:
+            keep = true;
+            break;
+        }
+        if (!keep) {
+            co_await _persistence->remove_file(*filename);
+            if (parsed->type == internal::file_type::sst) {
+                co_await _table_cache->evict(parsed->id);
+            }
+        }
+    }
 }
 
 internal::sequence_number impl::max_persisted_seqno() const {

@@ -56,12 +56,6 @@ public:
     static ss::future<std::unique_ptr<impl>> open(
       ss::lw_shared_ptr<internal::options>, std::unique_ptr<io::persistence>);
 
-    // Put a key+value into the database
-    ss::future<> put(internal::key, iobuf value);
-
-    // Remove a key from the database
-    ss::future<> remove(internal::key);
-
     // Apply a batch of writes to the database atomically.
     ss::future<> apply(internal::write_batch);
 
