@@ -13,8 +13,8 @@
 
 #include "base/format_to.h"
 #include "base/units.h"
+#include "lsm/core/compression.h"
 #include "lsm/core/internal/files.h"
-#include "lsm/sst/builder.h"
 
 #include <cstddef>
 

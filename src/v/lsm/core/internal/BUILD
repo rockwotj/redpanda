@@ -91,6 +91,7 @@ redpanda_cc_library(
     deps = [
         ":files",
         "//src/v/base",
+        "//src/v/lsm/core:compression",
         "@seastar",
     ],
 )
