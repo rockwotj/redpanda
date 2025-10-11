@@ -82,13 +82,14 @@ public:
 
     void write_at_least(size_t size) {
         lsm::internal::write_batch batch;
+        auto seqno = _db->max_applied_seqno();
         while (batch.memory_usage() < size) {
             auto key = lsm::internal::key::encode({
-              .key = random_generators::gen_alphanum_string(64),
-              .seqno = ++_db->max_applied_seqno(),
+              .key = random_generators::gen_alphanum_max_distinct(100'000),
+              .seqno = ++seqno,
             });
             auto value = iobuf::from(
-              random_generators::gen_alphanum_string(16_KiB));
+              random_generators::gen_alphanum_string(8_KiB));
             _shadow.insert_or_assign(
               ss::sstring(key.user_key()), value.share());
             batch.put(key, value.share());
@@ -98,14 +99,33 @@ public:
 
     testing::AssertionResult matches_shadow() {
         auto iter = _db->create_iterator().get();
-        std::map<ss::sstring, iobuf> actual;
+        auto it = _shadow.begin();
+        std::vector<std::string> errors;
         for (iter->seek_to_first().get(); iter->valid(); iter->next().get()) {
-            actual.emplace(iter->key().user_key(), iter->value());
+            if (it == _shadow.end()) {
+                errors.emplace_back("extra elements");
+                break;
+            }
+            if (*it != std::make_pair(iter->key().user_key(), iter->value())) {
+                errors.push_back(
+                  fmt::format(
+                    "expected key {}, got key {}, keys equal {}, values equal "
+                    "{}",
+                    it->first,
+                    iter->key(),
+                    it->first == iter->key().user_key(),
+                    it->second == iter->value()));
+            }
+            ++it;
         }
-        if (actual == _shadow) {
+        if (it != _shadow.end()) {
+            errors.emplace_back("missing elements");
+        }
+        if (errors.empty()) {
             return testing::AssertionSuccess();
         }
-        return testing::AssertionFailure();
+        return testing::AssertionFailure()
+               << fmt::format("{}", fmt::join(errors, "\n"));
     }
 
     void restart() {
@@ -159,6 +179,15 @@ TEST_F(ImplTest, Recovery) {
     EXPECT_EQ(max_applied_seqno(), max_persisted_seqno());
     restart();
     EXPECT_TRUE(matches_shadow());
+}
+
+TEST_F(ImplTest, Randomized) {
+    for (int i = 0; i < 10; ++i) {
+        write_at_least(512_KiB);
+        EXPECT_TRUE(matches_shadow());
+        _db->flush().get();
+        EXPECT_TRUE(matches_shadow());
+    }
 }
 
 } // namespace

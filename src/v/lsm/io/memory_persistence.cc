@@ -23,6 +23,7 @@ namespace lsm::io {
 namespace {
 
 struct memory_file_state {
+    ss::sstring filename;
     iobuf data;
     int32_t open_read_handles = 0;
     int32_t open_write_handles = 0;
@@ -37,6 +38,11 @@ public:
     explicit memory_sequential_file_reader(
       ss::lw_shared_ptr<memory_file_state> state)
       : _state(std::move(state)) {
+        if (_state->open_write_handles > 0) {
+            throw io_error_exception(
+              "unable to open new readable file with open write handles: {}",
+              _state->open_handles());
+        }
         ++_state->open_read_handles;
     }
     ~memory_sequential_file_reader() override {
@@ -76,8 +82,14 @@ public:
     explicit memory_random_access_file_reader(
       ss::lw_shared_ptr<memory_file_state> state)
       : _state(std::move(state)) {
+        if (_state->open_write_handles > 0) {
+            throw io_error_exception(
+              "unable to open new readable file with open write handles: {}",
+              _state->open_handles());
+        }
         ++_state->open_read_handles;
     }
+
     ~memory_random_access_file_reader() override {
         vassert(_closed, "files must be closed before destructing");
     }
@@ -173,7 +185,8 @@ public:
     open_sequential_writer(std::string_view name) override {
         auto key = std::string(name);
         auto it = _data.try_emplace(
-          ss::sstring(name), ss::make_lw_shared<memory_file_state>());
+          ss::sstring(name),
+          ss::make_lw_shared<memory_file_state>(ss::sstring(name)));
         co_return std::make_unique<memory_sequential_file_writer>(
           it.first->second);
     }

@@ -51,7 +51,7 @@ footer footer::from_iobuf(iobuf buf) {
       = parser.consume_type<std::decay_t<decltype(table_magic_number)>>();
     if (magic != table_magic_number) {
         throw corruption_exception(
-          "sstable corruption, bad magic number: {}", magic);
+          "sstable corruption, bad magic number: 0x{:x}", magic);
     }
     dassert(
       parser.bytes_left() == 0,

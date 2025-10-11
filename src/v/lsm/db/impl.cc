@@ -62,7 +62,6 @@ ss::future<std::unique_ptr<impl>> impl::open(
       = ss::do_until(
           [db = db.get()] { return db->_as.abort_requested(); },
           [db = db.get()] {
-              db->_background_work_running = false;
               vlog(log.trace, "waiting for background work");
               return db->_start_background_work_signal.wait(db->_as)
                 .then([db] {
@@ -71,8 +70,12 @@ ss::future<std::unique_ptr<impl>> impl::open(
                     return db->run_background_compaction();
                 })
                 .then_wrapped([db](ss::future<> fut) {
+                    db->_background_work_running = false;
+                    db->maybe_schedule_compaction();
+                    db->_background_work_finished_signal.broadcast();
                     try {
                         fut.get();
+                        return;
                     } catch (const abort_requested_exception& ex) {
                         vlog(
                           log.debug,
@@ -267,7 +270,7 @@ struct compaction_state {
     ss::future<> finish_current_builder() {
         auto b = std::exchange(builder, std::nullopt);
         co_await b->finish().finally([&b] { return b->close(); });
-        uint64_t current_bytes = builder->file_size();
+        uint64_t current_bytes = b->file_size();
         current_output().file_size = current_bytes;
         total_bytes += current_bytes;
     }
@@ -289,10 +292,6 @@ ss::future<> impl::run_background_compaction() {
     if (_as.abort_requested()) {
         co_return;
     }
-    auto _ = ss::defer([this] {
-        maybe_schedule_compaction();
-        _background_work_finished_signal.broadcast();
-    });
     if (_imm) {
         co_return co_await flush_memtable();
     }

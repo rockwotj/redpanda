@@ -23,6 +23,9 @@
 #include "lsm/sst/footer.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/coroutine/as_future.hh>
+
+#include <exception>
 
 namespace lsm::sst {
 
@@ -158,29 +161,36 @@ ss::future<reader> reader::open(
   internal::file_id id,
   size_t file_size,
   ss::lw_shared_ptr<block_cache> block_cache) {
-    if (file_size < footer::encoded_length) {
-        throw corruption_exception(
-          "corruption: file is too short to be an sstable");
+    std::exception_ptr ep;
+    try {
+        if (file_size < footer::encoded_length) {
+            throw corruption_exception(
+              "corruption: file is too short to be an sstable");
+        }
+        auto encoded_footer = co_await file->read(
+          file_size - footer::encoded_length, footer::encoded_length);
+        auto footer = footer::from_iobuf(encoded_footer.as_iobuf());
+        auto index_block_contents = co_await read_block(
+          file.get(), footer.index_handle);
+        auto metaindex_block_contents = co_await read_block(
+          file.get(), footer.metaindex_handle);
+        block::reader index_block(std::move(index_block_contents));
+        block::reader metaindex_block(std::move(metaindex_block_contents));
+        auto filter = co_await read_filter(file.get(), metaindex_block);
+        co_return reader(
+          std::make_unique<impl>(
+            id,
+            std::move(index_block),
+            std::move(file),
+            std::move(filter),
+            std::move(block_cache)));
+    } catch (...) {
+        ep = std::current_exception();
     }
-    auto encoded_footer = co_await file->read(
-      file_size - footer::encoded_length, footer::encoded_length);
-    auto footer = footer::from_iobuf(encoded_footer.as_iobuf());
-    auto index_block_contents = co_await read_block(
-      file.get(), footer.index_handle);
-    auto metaindex_block_contents = co_await read_block(
-      file.get(), footer.metaindex_handle);
-
-    block::reader index_block(std::move(index_block_contents));
-
-    block::reader metaindex_block(std::move(metaindex_block_contents));
-    auto filter = co_await read_filter(file.get(), metaindex_block);
-    co_return reader(
-      std::make_unique<impl>(
-        id,
-        std::move(index_block),
-        std::move(file),
-        std::move(filter),
-        std::move(block_cache)));
+    if (file) {
+        co_await file->close();
+    }
+    std::rethrow_exception(ep);
 }
 
 std::unique_ptr<internal::iterator> reader::create_iterator() {
