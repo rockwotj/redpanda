@@ -73,6 +73,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/container:chunked_vector",
         "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
         "@seastar",
     ],
 )

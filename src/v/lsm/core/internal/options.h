@@ -87,6 +87,14 @@ struct options {
     constexpr static size_t default_sst_block_size = 4_KiB;
     size_t sst_block_size = default_sst_block_size;
 
+    // The frequency at which to generate a new bloom filter.
+    //
+    // If set to 0 then no bloom filters will be generated.
+    //
+    // REQUIRED: this value must be a power of two
+    constexpr static size_t default_sst_filter_period = 2_KiB;
+    size_t sst_filter_period = default_sst_filter_period;
+
     // The compression to use for SST blocks.
     compression_type compression = compression_type::none;
 

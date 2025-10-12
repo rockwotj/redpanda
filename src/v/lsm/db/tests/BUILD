@@ -46,6 +46,7 @@ redpanda_cc_gtest(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:options",
         "//src/v/lsm/db:table_cache",
         "//src/v/lsm/io:memory_persistence",
         "//src/v/lsm/sst:block_cache",

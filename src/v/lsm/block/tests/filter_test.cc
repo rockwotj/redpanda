@@ -25,7 +25,7 @@ using key_vector = std::vector<std::string_view>;
 using keys_by_block = std::map<uint64_t, key_vector>;
 
 lsm::block::filter_reader make_filter(const keys_by_block& keys) {
-    lsm::block::filter_builder builder;
+    lsm::block::filter_builder builder({});
     for (const auto& [block, keys_in_block] : keys) {
         builder.start_block(block);
         for (const auto& key : keys_in_block) {

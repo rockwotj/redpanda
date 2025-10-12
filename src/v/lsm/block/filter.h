@@ -16,6 +16,7 @@
 #include "container/chunked_vector.h"
 #include "lsm/block/contents.h"
 #include "lsm/core/internal/keys.h"
+#include "lsm/core/internal/options.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
@@ -29,6 +30,8 @@ namespace lsm::block {
 // table.
 class filter_builder {
 public:
+    explicit filter_builder(const internal::options& o);
+
     void start_block(size_t block_offset);
     void add_key(internal::key_view key);
     iobuf finish();
@@ -39,6 +42,8 @@ private:
     chunked_vector<ss::sstring> _keys;
     chunked_vector<uint32_t> _filter_offsets;
     iobuf _filter;
+    uint8_t _filter_base_lg;
+    size_t _filter_base;
 };
 
 // A reader for a filter block in an SST.

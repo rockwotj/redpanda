@@ -24,6 +24,7 @@ redpanda_cc_library(
         "//src/v/lsm/block:handle",
         "//src/v/lsm/core:compression",
         "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
         "//src/v/lsm/io:persistence",
         "@seastar",
     ],

@@ -31,8 +31,9 @@ public:
         auto filename = fmt::format("test{}.sst", ++_counter);
         {
             auto file = _persistence->open_sequential_writer(filename).get();
-            lsm::sst::builder builder(
-              std::move(file), {.compression = CompressionType});
+            auto opts = ss::make_lw_shared<lsm::internal::options>();
+            opts->compression = CompressionType;
+            lsm::sst::builder builder(std::move(file), opts);
             for (auto& [key, value] : map) {
                 builder.add(key, std::move(value)).get();
             }

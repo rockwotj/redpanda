@@ -12,12 +12,12 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "base/units.h"
 #include "lsm/block/builder.h"
 #include "lsm/block/filter.h"
 #include "lsm/block/handle.h"
 #include "lsm/core/compression.h"
 #include "lsm/core/internal/keys.h"
+#include "lsm/core/internal/options.h"
 #include "lsm/io/persistence.h"
 
 #include <seastar/core/iostream.hh>
@@ -28,18 +28,10 @@ namespace lsm::sst {
 // which is an immutable and sorted map from keys to values.
 class builder {
 public:
-    // Options for the builder.
-    struct options {
-        // The target block size for the SST, note that this is measured by
-        // uncompressed size, so for compressed tables actual blocks might be
-        // much smaller.
-        size_t block_size = 4_KiB;
-        // The compression type to use for SST blocks.
-        compression_type compression = compression_type::none;
-    };
-
     // Construct a new builder that will write to the given file.
-    builder(std::unique_ptr<io::sequential_file_writer>, options);
+    builder(
+      std::unique_ptr<io::sequential_file_writer>,
+      ss::lw_shared_ptr<internal::options> o);
 
     // Add key, value to the table being constructed.
     // REQUIRES: key is after any previously added key according to comparator.
@@ -71,7 +63,7 @@ private:
     block::handle _pending_handle;
     internal::key _last_key;
     std::unique_ptr<io::sequential_file_writer> _writer;
-    options _opts;
+    ss::lw_shared_ptr<internal::options> _opts;
     std::optional<block::filter_builder> _filter;
     bool _pending_index_entry = false;
 };

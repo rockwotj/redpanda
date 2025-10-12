@@ -12,6 +12,7 @@
 #include "lsm/block/filter.h"
 
 #include "base/units.h"
+#include "base/vassert.h"
 #include "hashing/xx.h"
 #include "lsm/core/internal/keys.h"
 
@@ -47,7 +48,7 @@ void create(const chunked_vector<ss::sstring>& keys, iobuf* filter) {
         std::fill_n(buf.get_write(), buf.size(), 0);
     }
     for (const auto& key : keys) {
-        uint32_t h = xxhash_32(key.data(), key.size());
+        uint32_t h = XXH3_64bits(key.data(), key.size());
         // NOLINTNEXTLINE(*magic-number*)
         uint32_t delta = (h >> 17u) | (h << 15u); // Rotate right 17 bits
         for (size_t j = 0; j < num_probes; ++j) {
@@ -78,7 +79,7 @@ bool key_may_match(
     if (n_probes > max_probes) {
         return true;
     }
-    uint32_t h = xxhash_32(key.data(), key.size());
+    uint32_t h = XXH3_64bits(key.data(), key.size());
     // NOLINTNEXTLINE(*magic-number*)
     uint32_t delta = (h >> 17u) | (h << 15u); // Rotate right 17 bits
     for (size_t j = 0; j < n_probes; j++) {
@@ -96,12 +97,18 @@ bool key_may_match(
 } // namespace
 } // namespace bloom_filter
 
-// Generate new filter every 2KB of data
-constexpr static uint8_t filter_base_lg = 11;
-constexpr static uint32_t filter_base = 1u << filter_base_lg;
+filter_builder::filter_builder(const internal::options& o)
+  : _filter_base_lg(
+      static_cast<uint8_t>(std::bit_width(o.sst_filter_period) - 1))
+  , _filter_base(1u << _filter_base_lg) {
+    dassert(
+      _filter_base == o.sst_filter_period,
+      "sst_filter_period must be a power of two, got: {}",
+      o.sst_filter_period);
+}
 
 void filter_builder::start_block(size_t block_offset) {
-    uint64_t filter_index = block_offset / filter_base;
+    uint64_t filter_index = block_offset / _filter_base;
     while (filter_index > _filter_offsets.size()) {
         generate_filter();
     }
@@ -126,8 +133,7 @@ iobuf filter_builder::finish() {
       std::bit_cast<std::array<uint8_t, sizeof(uint32_t)>>(offsets_start));
     // Save the encoding parameter for backwards compatibility
     _filter.append(
-      std::bit_cast<std::array<uint8_t, sizeof(filter_base_lg)>>(
-        filter_base_lg));
+      std::bit_cast<std::array<uint8_t, sizeof(uint8_t)>>(_filter_base_lg));
     return std::exchange(_filter, {});
 }
 
@@ -146,7 +152,7 @@ filter_reader::filter_reader(ss::lw_shared_ptr<block::contents> c)
   , _num(0)
   , _base_lg(0) {
     size_t n = _contents->size();
-    constexpr static size_t min_footer_size = sizeof(filter_base_lg)
+    constexpr static size_t min_footer_size = sizeof(uint8_t)
                                               + sizeof(uint32_t);
     if (n < min_footer_size) {
         return;

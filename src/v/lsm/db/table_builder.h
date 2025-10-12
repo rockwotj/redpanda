@@ -15,8 +15,8 @@
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/iterator.h"
 #include "lsm/core/internal/keys.h"
+#include "lsm/core/internal/options.h"
 #include "lsm/io/persistence.h"
-#include "lsm/sst/builder.h"
 
 #include <seastar/core/future.hh>
 
@@ -39,7 +39,7 @@ ss::future<std::optional<build_table_result>> build_table(
   io::persistence* persistence,
   internal::file_id id,
   std::unique_ptr<internal::iterator> iter,
-  const sst::builder::options& opts,
+  ss::lw_shared_ptr<internal::options> opts,
   ss::abort_source*);
 
 } // namespace lsm::db

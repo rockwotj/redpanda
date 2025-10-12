@@ -12,14 +12,16 @@ redpanda_cc_library(
     hdrs = [
         "table_builder.h",
     ],
-    implementation_deps = [],
+    implementation_deps = [
+        "//src/v/lsm/sst:builder",
+    ],
     deps = [
         "//src/v/base",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
         "//src/v/lsm/io:persistence",
-        "//src/v/lsm/sst:builder",
         "@seastar",
     ],
 )
