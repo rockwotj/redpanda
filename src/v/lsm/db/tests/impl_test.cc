@@ -182,7 +182,7 @@ TEST_F(ImplTest, Recovery) {
 }
 
 TEST_F(ImplTest, Randomized) {
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 1000; ++i) {
         write_at_least(512_KiB);
         EXPECT_TRUE(matches_shadow());
         _db->flush().get();

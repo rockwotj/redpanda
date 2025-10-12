@@ -469,10 +469,10 @@ ss::future<> impl::remove_obsolete_files() {
             break;
         }
         if (!keep) {
-            co_await _persistence->remove_file(*filename);
             if (parsed->type == internal::file_type::sst) {
                 co_await _table_cache->evict(parsed->id);
             }
+            co_await _persistence->remove_file(*filename);
         }
     }
 }

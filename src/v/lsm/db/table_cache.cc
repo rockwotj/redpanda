@@ -168,7 +168,9 @@ public:
             co_return;
         }
         _cache.remove(*it->second);
-        _ghost_fifo.erase(_ghost_fifo.iterator_to(*it->second));
+        if (it->second->ghost_hook.is_linked()) {
+            _ghost_fifo.erase(_ghost_fifo.iterator_to(*it->second));
+        }
         auto reader = std::exchange(it->second->value, {});
         _map.erase(it);
         co_await reader->close();
