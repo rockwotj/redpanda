@@ -170,6 +170,7 @@ std::unique_ptr<internal::iterator> memtable::create_iterator() {
     // Insert into our circularly linked list.
     it->_next = _list_holder->_next;
     it->_prev = _list_holder.get();
+    _list_holder->_next->_prev = it.get();
     _list_holder->_next = it.get();
     return it;
 }
