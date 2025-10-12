@@ -12,10 +12,12 @@
 #include "lsm/db/table_cache.h"
 
 #include "base/vassert.h"
+#include "base/vlog.h"
 #include "container/chunked_hash_map.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/iterator.h"
+#include "lsm/core/internal/logger.h"
 #include "lsm/sst/reader.h"
 #include "ssx/work_queue.h"
 #include "utils/mutex.h"
@@ -132,9 +134,10 @@ public:
       , _cache(compute_cache_config(max_entries), eviction(this))
       , _block_cache(std::move(block_cache))
       , _cleanup_queue([](const std::exception_ptr& ex) {
-          // TODO: log an error instead
-          std::ignore = ex;
-          vassert(false, "unexpected exception on table cache cleanup queue");
+          vlog(
+            log.error,
+            "expected exception on table cache cleanup queue: {}",
+            ex);
       }) {}
 
     ss::future<std::unique_ptr<internal::iterator>>

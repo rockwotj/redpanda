@@ -110,19 +110,22 @@ redpanda_cc_library(
     hdrs = [
         "table_cache.h",
     ],
-    deps = [
-        "//src/v/base",
+    implementation_deps = [
         "//src/v/container:chunked_hash_map",
         "//src/v/lsm/core:exceptions",
+        "//src/v/lsm/core/internal:logger",
+        "//src/v/lsm/sst:reader",
+        "//src/v/ssx:work_queue",
+        "//src/v/utils:mutex",
+        "//src/v/utils:s3_fifo",
+    ],
+    deps = [
+        "//src/v/base",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/io:persistence",
         "//src/v/lsm/sst:block_cache",
-        "//src/v/lsm/sst:reader",
-        "//src/v/ssx:work_queue",
-        "//src/v/utils:mutex",
-        "//src/v/utils:s3_fifo",
         "@abseil-cpp//absl/functional:function_ref",
         "@seastar",
     ],
