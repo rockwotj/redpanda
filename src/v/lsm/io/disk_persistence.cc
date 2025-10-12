@@ -65,7 +65,16 @@ public:
               "io error seq skipping: {}", std::current_exception());
         }
     }
-    ss::future<> close() override { return _stream.close(); }
+    ss::future<> close() override {
+        try {
+            co_await _stream.close();
+        } catch (const std::system_error& err) {
+            throw io_error_exception(err.code(), "io error closing: {}", err);
+        } catch (...) {
+            throw io_error_exception(
+              "io error closing: {}", std::current_exception());
+        }
+    }
 
 private:
     ss::input_stream<char> _stream;
@@ -105,7 +114,16 @@ public:
         }
     }
 
-    ss::future<> close() override { return _file.close(); }
+    ss::future<> close() override {
+        try {
+            co_await _file.close();
+        } catch (const std::system_error& err) {
+            throw io_error_exception(err.code(), "io error closing: {}", err);
+        } catch (...) {
+            throw io_error_exception(
+              "io error closing: {}", std::current_exception());
+        }
+    }
 
 private:
     ss::file _file;
@@ -142,8 +160,15 @@ public:
         }
     }
     ss::future<> close() override {
-        co_await _stream.flush();
-        co_await _stream.close();
+        try {
+            co_await _stream.flush().finally(
+              [this] { return _stream.close(); });
+        } catch (const std::system_error& err) {
+            throw io_error_exception(err.code(), "io error closing: {}", err);
+        } catch (...) {
+            throw io_error_exception(
+              "io error closing: {}", std::current_exception());
+        }
     }
 
 private:
@@ -235,8 +260,16 @@ public:
             co_await remove_file(staging_name);
             std::rethrow_exception(ex);
         }
-        co_await ss::rename_file(
-          path(staging_name).native(), path(name).native());
+        try {
+            co_await ss::rename_file(
+              path(staging_name).native(), path(name).native());
+        } catch (const std::system_error& e) {
+            throw io_error_exception(
+              e.code(), "io error removing file: {}", std::current_exception());
+        } catch (...) {
+            throw io_error_exception(
+              "io error removing file: {}", std::current_exception());
+        }
     }
 
     ss::future<> remove_file(std::string_view name) override {
