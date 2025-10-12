@@ -37,8 +37,8 @@ struct cache_key {
 
 class block_cache::impl {
 public:
-    explicit impl(size_t max_bytes)
-      : _cache(compute_cache_config(max_bytes)) {}
+    explicit impl(size_t max_entries)
+      : _cache(compute_cache_config(max_entries)) {}
     ss::future<> lock(internal::file_id id, block::handle h) {
         auto it = _mu_map.find({id, h});
         ssx::semaphore* mu = nullptr;
@@ -81,12 +81,7 @@ private:
             return reader.size_bytes();
         }
     };
-    using cache_t = utils::chunked_kv_cache<
-      cache_key,
-      block::reader,
-      detail::avalanching_absl_hash<cache_key>,
-      std::equal_to<>,
-      block_cost_fn>;
+    using cache_t = utils::chunked_kv_cache<cache_key, block::reader>;
     static cache_t::config compute_cache_config(size_t max_entries) {
         auto main_cache_size = static_cast<size_t>(
           static_cast<double>(max_entries) * 0.90);
@@ -118,8 +113,8 @@ std::optional<block::reader> block_cache::handle::get() {
     return _cache->get(_id, _handle);
 }
 
-block_cache::block_cache(size_t max_bytes)
-  : _impl(std::make_unique<impl>(max_bytes)) {}
+block_cache::block_cache(size_t max_entries)
+  : _impl(std::make_unique<impl>(max_entries)) {}
 
 block_cache::~block_cache() = default;
 

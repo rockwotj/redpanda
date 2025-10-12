@@ -52,8 +52,8 @@ public:
         block::handle _handle;
     };
 
-    // Create a new block cache that holds the given number of bytes.
-    explicit block_cache(size_t max_bytes);
+    // Create a new block cache that holds the given number of blocks.
+    explicit block_cache(size_t max_entries);
     block_cache(const block_cache&) = delete;
     block_cache& operator=(const block_cache&) = delete;
     block_cache(block_cache&&) = default;

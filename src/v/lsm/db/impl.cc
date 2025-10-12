@@ -47,7 +47,8 @@ impl::impl(
       std::make_unique<table_cache>(
         _persistence.get(),
         _opts->max_open_files,
-        ss::make_lw_shared<sst::block_cache>(_opts->block_cache_size)))
+        ss::make_lw_shared<sst::block_cache>(
+          _opts->block_cache_size / _opts->sst_block_size)))
   , _versions(
       std::make_unique<version_set>(
         _persistence.get(), _table_cache.get(), _opts)) {}
