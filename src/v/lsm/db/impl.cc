@@ -149,7 +149,7 @@ ss::future<> impl::make_room_for_write() {
             continue;
         }
         // We're over our limit, let's make a new memtable
-        vlog(log.info, "scheduling memtable flush");
+        vlog(log.trace, "scheduling memtable flush");
         _imm = std::exchange(_mem, ss::make_lw_shared<memtable>());
         maybe_schedule_compaction();
     }
