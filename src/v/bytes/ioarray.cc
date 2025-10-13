@@ -188,6 +188,7 @@ std::vector<::iovec> ioarray::as_iovec() {
 
 char& ioarray::operator[](size_t i) {
     dassert(i < _size, "i {} must be < size {}", i, _size);
+    i += _offset;
     char* it = _buffers[i / max_chunk_size].get_write();
     std::advance(it, i % max_chunk_size);
     return *it;
@@ -195,6 +196,7 @@ char& ioarray::operator[](size_t i) {
 
 char ioarray::operator[](size_t i) const {
     dassert(i < _size, "i {} must be < size {}", i, _size);
+    i += _offset;
     return _buffers[i / max_chunk_size][i % max_chunk_size];
 }
 

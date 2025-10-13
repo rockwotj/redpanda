@@ -121,10 +121,6 @@ public:
     }
     // Return this ioarray for scatter/gather IO.
     std::vector<::iovec> as_iovec();
-    // Get readonly access to the raw underlying buffers.
-    const std::span<const ss::temporary_buffer<char>> buffers() const {
-        return _buffers;
-    }
 
 private:
     // An internal constructor for creating an ioarray without initializing data
