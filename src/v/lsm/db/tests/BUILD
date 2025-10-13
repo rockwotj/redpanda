@@ -1,4 +1,26 @@
+load("//bazel:build.bzl", "redpanda_cc_binary")
 load("//bazel:test.bzl", "redpanda_cc_gtest")
+
+redpanda_cc_binary(
+    name = "db_bench",
+    srcs = [
+        "db_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core:compression",
+        "//src/v/lsm/core/internal:batch",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "//src/v/lsm/db:impl",
+        "//src/v/lsm/io:disk_persistence",
+        "//src/v/random:generators",
+        "@boost//:program_options",
+        "@seastar",
+    ],
+)
 
 redpanda_cc_gtest(
     name = "memtable_test",

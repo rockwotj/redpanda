@@ -1,0 +1,693 @@
+/*
+ * Copyright 2025 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+#include "base/seastarx.h"
+#include "bytes/iobuf.h"
+#include "lsm/core/compression.h"
+#include "lsm/core/internal/batch.h"
+#include "lsm/core/internal/iterator.h"
+#include "lsm/core/internal/keys.h"
+#include "lsm/core/internal/options.h"
+#include "lsm/db/impl.h"
+#include "lsm/io/disk_persistence.h"
+#include "random/generators.h"
+
+#include <seastar/core/app-template.hh>
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/reactor.hh>
+#include <seastar/core/smp.hh>
+#include <seastar/util/log.hh>
+
+#include <boost/program_options.hpp>
+
+#include <chrono>
+#include <exception>
+#include <map>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace po = boost::program_options;
+
+static ss::logger bench_log("db_bench");
+
+struct benchmark_config {
+    size_t num = 1000000;
+    size_t duration = 0; // seconds, 0 = run once
+    std::string benchmarks = "fillseq";
+    size_t value_size = 100;
+    bool verify = false;
+    size_t verify_interval = 1000;
+    std::string db_path = "/tmp/lsm_bench";
+    bool use_existing_db = false;
+    size_t write_buffer_size = 16 * 1024 * 1024;
+    bool compression = false; // Enable zstd compression
+};
+
+struct benchmark_stats {
+    size_t ops_done = 0;
+    size_t bytes_written = 0;
+    size_t bytes_read = 0;
+    size_t verification_failures = 0;
+    size_t verification_checks = 0;
+    std::chrono::steady_clock::time_point start;
+    std::chrono::steady_clock::time_point finish;
+
+    void report(std::string_view name) const {
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          finish - start);
+        double seconds = elapsed.count() / 1000.0;
+        double ops_per_sec = seconds > 0 ? ops_done / seconds : 0;
+        double mb_per_sec = seconds > 0 ? (bytes_written + bytes_read)
+                                            / (1024.0 * 1024.0 * seconds)
+                                        : 0;
+
+        if (verification_checks > 0) {
+            double error_rate = verification_failures
+                                / static_cast<double>(verification_checks);
+            bench_log.info(
+              "{}: {:.0f} ops/sec, {:.2f} MB/sec, {} ops in {:.3f}s, verified "
+              "{} ops, {} failures ({:.4f}%)",
+              name,
+              ops_per_sec,
+              mb_per_sec,
+              ops_done,
+              seconds,
+              verification_checks,
+              verification_failures,
+              error_rate * 100.0);
+        } else {
+            bench_log.info(
+              "{}: {:.0f} ops/sec, {:.2f} MB/sec, {} ops in {:.3f}s",
+              name,
+              ops_per_sec,
+              mb_per_sec,
+              ops_done,
+              seconds);
+        }
+    }
+};
+
+// Shadow map to track expected database state for verification
+struct shadow_state {
+    std::map<ss::sstring, std::optional<iobuf>> data;
+
+    void put(ss::sstring key, iobuf value) {
+        data[std::move(key)] = std::move(value);
+    }
+
+    void remove(const ss::sstring& key) { data[key] = std::nullopt; }
+
+    std::optional<iobuf> get(const ss::sstring& key) const {
+        auto it = data.find(key);
+        if (it == data.end()) {
+            return std::nullopt;
+        }
+        return it->second ? std::optional<iobuf>(it->second->copy())
+                          : std::nullopt;
+    }
+
+    bool exists(const ss::sstring& key) const {
+        auto it = data.find(key);
+        return it != data.end() && it->second.has_value();
+    }
+};
+
+class benchmark {
+public:
+    benchmark(benchmark_config cfg, lsm::internal::sequence_number start_seqno)
+      : _cfg(std::move(cfg))
+      , _seqno(start_seqno) {}
+
+    ss::future<> setup() {
+        auto opts = ss::make_lw_shared<lsm::internal::options>(
+          lsm::internal::options{
+            .write_buffer_size = _cfg.write_buffer_size,
+            .compression = _cfg.compression ? lsm::compression_type::zstd
+                                            : lsm::compression_type::none,
+          });
+
+        // Create per-shard database directory
+        auto shard_db_path = fmt::format(
+          "{}/shard{}", _cfg.db_path, ss::this_shard_id());
+
+        if (!_cfg.use_existing_db) {
+            // Clean up existing database files
+            try {
+                std::filesystem::remove_all(shard_db_path);
+                bench_log.info(
+                  "Removed existing database at {}", shard_db_path);
+            } catch (const std::exception& e) {
+                std::ignore = e;
+            }
+            co_await ss::recursive_touch_directory(shard_db_path);
+        }
+
+        auto persistence = co_await lsm::io::open_disk_persistence(
+          shard_db_path);
+        _db = co_await lsm::db::impl::open(opts, std::move(persistence));
+
+        bench_log.info(
+          "Database opened at {} with write_buffer_size={}, compression={}",
+          shard_db_path,
+          _cfg.write_buffer_size,
+          _cfg.compression ? "zstd" : "none");
+    }
+
+    ss::future<> teardown() {
+        if (_db) {
+            co_await _db->close();
+        }
+    }
+
+    ss::future<benchmark_stats> run(std::string_view bench_name) {
+        bench_log.info(
+          "Starting benchmark: {} with {} operations", bench_name, _cfg.num);
+
+        benchmark_stats stats;
+        stats.start = std::chrono::steady_clock::now();
+
+        if (bench_name == "fillseq") {
+            co_await fillseq(stats);
+        } else if (bench_name == "fillrandom") {
+            co_await fillrandom(stats);
+        } else if (bench_name == "overwrite") {
+            co_await overwrite(stats);
+        } else if (bench_name == "deleteseq") {
+            co_await deleteseq(stats);
+        } else if (bench_name == "deleterandom") {
+            co_await deleterandom(stats);
+        } else if (bench_name == "readrandom") {
+            co_await readrandom(stats);
+        } else if (bench_name == "readseq") {
+            co_await readseq(stats);
+        } else if (bench_name == "readmissing") {
+            co_await readmissing(stats);
+        } else if (bench_name == "mixedworkload") {
+            co_await mixedworkload(stats);
+        } else {
+            bench_log.error("Unknown benchmark: {}", bench_name);
+        }
+
+        stats.finish = std::chrono::steady_clock::now();
+        co_return stats;
+    }
+
+private:
+    ss::future<> fillseq(benchmark_stats& stats) {
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key = ss::sstring(fmt::format("key{:016d}", i));
+            auto value = generate_value();
+
+            co_await write_key(key, value.copy(), stats);
+
+            if (_cfg.verify && (i % _cfg.verify_interval == 0)) {
+                co_await verify_all(stats);
+            }
+        }
+
+        if (_cfg.verify) {
+            co_await verify_all(stats);
+        }
+    }
+
+    ss::future<> fillrandom(benchmark_stats& stats) {
+        auto& rng = random_generators::global();
+
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key_num = rng.get_int<size_t>(0, _cfg.num - 1);
+            auto key = ss::sstring(fmt::format("key{:016d}", key_num));
+            auto value = generate_value();
+
+            co_await write_key(key, value.copy(), stats);
+
+            if (_cfg.verify && (i % _cfg.verify_interval == 0)) {
+                co_await verify_all(stats);
+            }
+        }
+
+        if (_cfg.verify) {
+            co_await verify_all(stats);
+        }
+    }
+
+    ss::future<> overwrite(benchmark_stats& stats) {
+        // First, ensure we have keys to overwrite
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key = ss::sstring(fmt::format("key{:016d}", i));
+            auto value = generate_value();
+            co_await write_key(key, value.copy(), stats);
+        }
+
+        // Now overwrite them
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key = ss::sstring(fmt::format("key{:016d}", i));
+            auto value = generate_value();
+
+            co_await write_key(key, value.copy(), stats);
+
+            if (_cfg.verify && (i % _cfg.verify_interval == 0)) {
+                co_await verify_all(stats);
+            }
+        }
+
+        if (_cfg.verify) {
+            co_await verify_all(stats);
+        }
+    }
+
+    ss::future<> deleteseq(benchmark_stats& stats) {
+        // First, ensure we have keys to delete
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key = ss::sstring(fmt::format("key{:016d}", i));
+            auto value = generate_value();
+            co_await write_key(key, value.copy(), stats);
+        }
+
+        // Now delete them
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key = ss::sstring(fmt::format("key{:016d}", i));
+            co_await delete_key(key, stats);
+
+            if (_cfg.verify && (i % _cfg.verify_interval == 0)) {
+                co_await verify_all(stats);
+            }
+        }
+
+        if (_cfg.verify) {
+            co_await verify_all(stats);
+        }
+    }
+
+    ss::future<> deleterandom(benchmark_stats& stats) {
+        auto& rng = random_generators::global();
+
+        // First, ensure we have keys to delete
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key = ss::sstring(fmt::format("key{:016d}", i));
+            auto value = generate_value();
+            co_await write_key(key, value.copy(), stats);
+        }
+
+        // Now delete them randomly
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key_num = rng.get_int<size_t>(0, _cfg.num - 1);
+            auto key = ss::sstring(fmt::format("key{:016d}", key_num));
+            co_await delete_key(key, stats);
+
+            if (_cfg.verify && (i % _cfg.verify_interval == 0)) {
+                co_await verify_all(stats);
+            }
+        }
+
+        if (_cfg.verify) {
+            co_await verify_all(stats);
+        }
+    }
+
+    ss::future<> readrandom(benchmark_stats& stats) {
+        auto& rng = random_generators::global();
+
+        // First populate with data
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key = ss::sstring(fmt::format("key{:016d}", i));
+            auto value = generate_value();
+            co_await write_key(key, value.copy(), stats);
+        }
+
+        // Reset stats for read phase
+        stats.ops_done = 0;
+        stats.bytes_read = 0;
+
+        // Now perform random reads
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key_num = rng.get_int<size_t>(0, _cfg.num - 1);
+            auto key = ss::sstring(fmt::format("key{:016d}", key_num));
+
+            co_await read_key(key, stats);
+
+            if (_cfg.verify && (i % _cfg.verify_interval == 0)) {
+                co_await verify_all(stats);
+            }
+        }
+
+        if (_cfg.verify) {
+            co_await verify_all(stats);
+        }
+    }
+
+    ss::future<> readseq(benchmark_stats& stats) {
+        // First populate with data
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key = ss::sstring(fmt::format("key{:016d}", i));
+            auto value = generate_value();
+            co_await write_key(key, value.copy(), stats);
+        }
+
+        // Reset stats for read phase
+        stats.ops_done = 0;
+        stats.bytes_read = 0;
+
+        // Perform sequential iteration
+        auto iter = co_await _db->create_iterator();
+        co_await iter->seek_to_first();
+
+        size_t count = 0;
+        while (iter->valid() && count < _cfg.num) {
+            auto key = ss::sstring(iter->key().user_key());
+            auto value = iter->value();
+
+            stats.ops_done++;
+            stats.bytes_read += key.size() + value.size_bytes();
+
+            if (_cfg.verify) {
+                stats.verification_checks++;
+                // Check if key exists in shadow map
+                auto it = _shadow.data.find(key);
+                if (it == _shadow.data.end()) {
+                    bench_log.error(
+                      "Verification failed for key {}: not in shadow map", key);
+                    stats.verification_failures++;
+                } else if (!it->second.has_value()) {
+                    bench_log.error(
+                      "Verification failed for key {}: expected deleted", key);
+                    stats.verification_failures++;
+                } else if (it->second.value() != value) {
+                    bench_log.error(
+                      "Verification failed for key {}: value mismatch", key);
+                    stats.verification_failures++;
+                }
+            }
+
+            co_await iter->next();
+            count++;
+        }
+
+        if (_cfg.verify) {
+            co_await verify_all(stats);
+        }
+    }
+
+    ss::future<> readmissing(benchmark_stats& stats) {
+        // Try to read keys that don't exist
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto key = ss::sstring(fmt::format("missing{:016d}", i));
+
+            auto key_encoded = lsm::internal::key::encode(
+              {.key = key,
+               .seqno = _seqno,
+               .type = lsm::internal::value_type::value});
+
+            auto result = co_await _db->get(key_encoded);
+
+            stats.ops_done++;
+            stats.verification_checks++;
+
+            if (!result.is_missing()) {
+                bench_log.error(
+                  "Verification failed: key {} should not exist", key);
+                stats.verification_failures++;
+            }
+        }
+    }
+
+    ss::future<> mixedworkload(benchmark_stats& stats) {
+        auto& rng = random_generators::global();
+
+        for (size_t i = 0; i < _cfg.num; ++i) {
+            auto op = rng.get_int<int>(0, 99);
+            auto key_num = rng.get_int<size_t>(0, _cfg.num - 1);
+            auto key = ss::sstring(fmt::format("key{:016d}", key_num));
+
+            if (op < 50) {
+                // 50% writes
+                auto value = generate_value();
+                co_await write_key(key, value.copy(), stats);
+            } else if (op < 90) {
+                // 40% reads
+                co_await read_key(key, stats);
+            } else {
+                // 10% deletes
+                co_await delete_key(key, stats);
+            }
+
+            if (_cfg.verify && (i % _cfg.verify_interval == 0)) {
+                co_await verify_all(stats);
+            }
+        }
+
+        if (_cfg.verify) {
+            co_await verify_all(stats);
+        }
+    }
+
+    ss::future<>
+    write_key(ss::sstring key, iobuf value, benchmark_stats& stats) {
+        lsm::internal::write_batch batch;
+        auto key_encoded = lsm::internal::key::encode(
+          {.key = key,
+           .seqno = ++_seqno,
+           .type = lsm::internal::value_type::value});
+
+        stats.bytes_written += key.size() + value.size_bytes();
+        batch.put(std::move(key_encoded), value.copy());
+
+        if (_cfg.verify) {
+            _shadow.put(key, value.copy());
+        }
+
+        co_await _db->apply(std::move(batch));
+        stats.ops_done++;
+    }
+
+    ss::future<> delete_key(const ss::sstring& key, benchmark_stats& stats) {
+        lsm::internal::write_batch batch;
+        auto key_encoded = lsm::internal::key::encode(
+          {.key = key,
+           .seqno = ++_seqno,
+           .type = lsm::internal::value_type::tombstone});
+
+        batch.remove(std::move(key_encoded));
+
+        if (_cfg.verify) {
+            _shadow.remove(key);
+        }
+
+        co_await _db->apply(std::move(batch));
+        stats.ops_done++;
+    }
+
+    ss::future<> read_key(const ss::sstring& key, benchmark_stats& stats) {
+        auto key_encoded = lsm::internal::key::encode(
+          {.key = key,
+           .seqno = _seqno,
+           .type = lsm::internal::value_type::value});
+
+        auto result = co_await _db->get(key_encoded);
+
+        stats.ops_done++;
+        stats.bytes_read += key.size();
+        auto result_value = result.value();
+        if (result_value) {
+            stats.bytes_read += result_value->size_bytes();
+        }
+
+        if (_cfg.verify) {
+            stats.verification_checks++;
+            auto it = _shadow.data.find(key);
+
+            if (it == _shadow.data.end()) {
+                // Key not in shadow map
+                if (result_value) {
+                    bench_log.error(
+                      "Verification failed: key {} exists in DB but not in "
+                      "shadow map",
+                      key);
+                    stats.verification_failures++;
+                }
+            } else if (!it->second.has_value()) {
+                // Key was deleted
+                if (!result.is_missing() && !result.is_tombstone()) {
+                    bench_log.error(
+                      "Verification failed: deleted key {} still exists in DB",
+                      key);
+                    stats.verification_failures++;
+                }
+            } else {
+                // Key should exist with specific value
+                if (!result_value) {
+                    bench_log.error(
+                      "Verification failed: key {} missing from DB", key);
+                    stats.verification_failures++;
+                } else if (it->second.value() != result_value.value()) {
+                    bench_log.error(
+                      "Verification failed: key {} value mismatch", key);
+                    stats.verification_failures++;
+                }
+            }
+        }
+    }
+
+    ss::future<> verify_all(benchmark_stats& stats) {
+        bench_log.debug("Performing full verification scan");
+
+        // Build a set of all keys from iterator
+        std::map<ss::sstring, iobuf> db_keys;
+        auto iter = co_await _db->create_iterator();
+        co_await iter->seek_to_first();
+
+        while (iter->valid()) {
+            auto key = ss::sstring(iter->key().user_key());
+            auto value = iter->value();
+            db_keys[key] = value.copy();
+            co_await iter->next();
+        }
+
+        // Verify shadow map matches database
+        for (const auto& [key, expected_value_opt] : _shadow.data) {
+            stats.verification_checks++;
+
+            if (!expected_value_opt.has_value()) {
+                // Should be deleted
+                if (db_keys.contains(key)) {
+                    bench_log.error(
+                      "Verification failed: deleted key {} still exists in DB",
+                      key);
+                    stats.verification_failures++;
+                }
+            } else {
+                // Should exist with value
+                auto it = db_keys.find(key);
+                if (it == db_keys.end()) {
+                    bench_log.error(
+                      "Verification failed: key {} missing from DB", key);
+                    stats.verification_failures++;
+                } else if (it->second != expected_value_opt.value()) {
+                    bench_log.error(
+                      "Verification failed: key {} value mismatch", key);
+                    stats.verification_failures++;
+                }
+            }
+        }
+
+        // Verify database doesn't have extra keys
+        for (const auto& [key, _] : db_keys) {
+            if (!_shadow.data.contains(key)) {
+                stats.verification_checks++;
+                bench_log.error(
+                  "Verification failed: key {} exists in DB but not in shadow "
+                  "map",
+                  key);
+                stats.verification_failures++;
+            }
+        }
+
+        bench_log.debug("Verification scan complete");
+    }
+
+    iobuf generate_value() {
+        auto str = random_generators::gen_alphanum_string(_cfg.value_size);
+        return iobuf::from(std::move(str));
+    }
+
+    benchmark_config _cfg;
+    std::unique_ptr<lsm::db::impl> _db;
+    shadow_state _shadow;
+    lsm::internal::sequence_number _seqno;
+};
+
+ss::future<> run_benchmarks(benchmark_config cfg) {
+    benchmark bench(cfg, {});
+    std::exception_ptr ep;
+    try {
+        co_await bench.setup();
+
+        // Parse benchmark names
+        std::vector<std::string> bench_names;
+        std::istringstream ss(cfg.benchmarks);
+        std::string name;
+        while (std::getline(ss, name, ',')) {
+            bench_names.push_back(name);
+        }
+
+        // Run each benchmark
+        for (const auto& bench_name : bench_names) {
+            auto stats = co_await bench.run(bench_name);
+            stats.report(bench_name);
+        }
+    } catch (...) {
+        ep = std::current_exception();
+    }
+    co_await bench.teardown();
+    if (ep) {
+        std::rethrow_exception(ep);
+    }
+}
+
+// clang-format off
+// LSM Database Benchmark
+//
+// Run examples (note: Seastar flags like --smp go before the second --):
+//
+//   # Simple sequential write test
+//   bazel run //src/v/lsm/db/tests:db_bench -- --smp 1 -- --num 100000 --benchmarks fillseq
+//
+//   # Multi-core with verification
+//   bazel run //src/v/lsm/db/tests:db_bench -- --smp 8 -- --num 1000000 --benchmarks fillseq,readrandom --verify
+//
+//   # Overnight stress test
+//   bazel run //src/v/lsm/db/tests:db_bench -- --smp 16 -- --num 10000000 --benchmarks mixedworkload --verify
+//
+//   # Mixed workload with deletes
+//   bazel run //src/v/lsm/db/tests:db_bench -- --smp 4 -- --num 1000000 --benchmarks fillrandom,deleterandom --verify
+//
+// clang-format on
+int main(int ac, char* av[]) {
+    ss::app_template app;
+
+    benchmark_config cfg;
+
+    app.add_options()(
+      "num",
+      po::value<size_t>(&cfg.num)->default_value(1000000),
+      "Number of operations per benchmark")(
+      "duration",
+      po::value<size_t>(&cfg.duration)->default_value(0),
+      "Duration in seconds (0 = run once)")(
+      "benchmarks",
+      po::value<std::string>(&cfg.benchmarks)->default_value("fillseq"),
+      "Comma-separated list: fillseq, fillrandom, overwrite, deleteseq, "
+      "deleterandom, readrandom, readseq, readmissing, mixedworkload")(
+      "value_size",
+      po::value<size_t>(&cfg.value_size)->default_value(100),
+      "Size of each value in bytes")(
+      "verify", po::bool_switch(&cfg.verify), "Enable verification mode")(
+      "verify_interval",
+      po::value<size_t>(&cfg.verify_interval)->default_value(1000),
+      "Number of operations between full verification scans")(
+      "db",
+      po::value<std::string>(&cfg.db_path)->default_value("/tmp/lsm_bench"),
+      "Database directory path")(
+      "use_existing_db",
+      po::bool_switch(&cfg.use_existing_db),
+      "Use existing database instead of creating new")(
+      "write_buffer_size",
+      po::value<size_t>(&cfg.write_buffer_size)->default_value(16_MiB),
+      "Write buffer size in bytes")(
+      "compression",
+      po::bool_switch(&cfg.compression),
+      "Enable zstd compression for SST blocks");
+
+    return app.run(ac, av, [&cfg]() mutable {
+        return ss::smp::invoke_on_all([cfg] { return run_benchmarks(cfg); })
+          .then([] { return 0; });
+    });
+}
