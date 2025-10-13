@@ -25,6 +25,8 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/as_future.hh>
 
+#include <sys/uio.h>
+
 #include <exception>
 
 namespace lsm::sst {
@@ -51,14 +53,16 @@ read_block(io::random_access_file_reader* file, block::handle handle) {
     expected_crc = crc::unmask(ss::le_to_cpu(expected_crc));
     crc::crc32c actual_crc;
     data.trim_back(sizeof(crc::crc32c::value_type));
-    for (const auto& chunk : data.buffers()) {
-        actual_crc.extend(chunk.get(), chunk.size());
+    for (auto& chunk : data.as_iovec()) {
+        actual_crc.extend(static_cast<char*>(chunk.iov_base), chunk.iov_len);
     }
     if (expected_crc != actual_crc.value()) {
         throw corruption_exception(
-          "unexpected crc, got: {}, want: {}",
+          "unexpected crc, got: {}, want: {} for handle {} and file {}",
           actual_crc.value(),
-          expected_crc);
+          expected_crc,
+          handle,
+          fmt::streamed(*file));
     }
     data.trim_back(sizeof(compression_type));
     if (compression != compression_type::none) {

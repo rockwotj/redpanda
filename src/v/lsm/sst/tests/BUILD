@@ -20,3 +20,25 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "sst_test",
+    timeout = "short",
+    srcs = [
+        "sst_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/io:disk_persistence",
+        "//src/v/lsm/io:memory_persistence",
+        "//src/v/lsm/sst:block_cache",
+        "//src/v/lsm/sst:builder",
+        "//src/v/lsm/sst:reader",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
