@@ -119,6 +119,7 @@ ss::future<> impl::make_room_for_write() {
           && _versions->current()->num_files(0_level)
                > _opts->level_zero_slowdown_writes_trigger) {
             // We're in throttling mode
+            vlog(log.debug, "throttling writes due to number of L0 files");
             try {
                 co_await ss::sleep_abortable(std::chrono::seconds(1), _as);
             } catch (...) {
@@ -136,6 +137,7 @@ ss::future<> impl::make_room_for_write() {
             co_return;
         }
         if (_imm) {
+            vlog(log.warn, "blocking writes as in memory buffers are full");
             // We are over the write buffer limit and we have a pending
             // memtable flush, wait for it to finish.
             co_await _background_work_finished_signal.wait(_as);
@@ -144,6 +146,10 @@ ss::future<> impl::make_room_for_write() {
         if (
           _versions->current()->num_files(0_level)
           > _opts->level_zero_stop_writes_trigger) {
+            vlog(
+              log.warn,
+              "too many L0 files, writing for compaction to finish before "
+              "allowing more writes");
             // We've hit out L0 file limit, wait for compaction to finish.
             co_await _background_work_finished_signal.wait(_as);
             continue;

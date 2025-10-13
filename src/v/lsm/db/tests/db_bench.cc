@@ -332,7 +332,7 @@ private:
             }
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             auto value = generate_value();
-            co_await write_key(key, value.copy(), stats);
+            co_await write_key(key, std::move(value), stats);
         }
 
         // Now overwrite them
@@ -343,7 +343,7 @@ private:
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             auto value = generate_value();
 
-            co_await write_key(key, value.copy(), stats);
+            co_await write_key(key, std::move(value), stats);
 
             if (_cfg.verify && (i % _cfg.verify_interval == 0)) {
                 co_await verify_all(stats);
@@ -550,8 +550,7 @@ private:
 
             if (op < 50) {
                 // 50% writes
-                auto value = generate_value();
-                co_await write_key(key, value.copy(), stats);
+                co_await write_key(key, generate_value(), stats);
             } else if (op < 90) {
                 // 40% reads
                 co_await read_key(key, stats);
