@@ -161,7 +161,7 @@ template<typename Range>
 std::pair<internal::key, internal::key> get_key_range(const Range& r) {
     auto it = r.begin();
     auto end = r.end();
-    dassert(it != end, "cannot get range for empty set of files");
+    vassert(it != end, "cannot get range for empty set of files");
     internal::key smallest = (*it)->smallest, largest = (*it)->largest;
     for (++it; it != end; ++it) {
         const auto& file = *it;

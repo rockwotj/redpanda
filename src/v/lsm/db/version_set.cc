@@ -686,6 +686,9 @@ std::optional<compaction> version_set::pick_compaction() {
     bool seek_compaction = _current->_file_to_compact != std::nullopt;
     if (size_compaction) {
         level = _current->_compaction_level;
+        vassert(
+          level() + 1 < _options->levels.size(),
+          "cannot compact the bottom-most level");
         c.emplace(compaction(_options, level));
         // Pick the first file that comes after _compact_pointer[level]
         for (const auto& f : _current->_files[level]) {
@@ -704,6 +707,7 @@ std::optional<compaction> version_set::pick_compaction() {
     } else if (seek_compaction) {
         level = _current->_file_to_compact_level;
         c.emplace(compaction(_options, level));
+        c->_inputs[which::input_level].push_back(*_current->_file_to_compact);
     } else {
         return std::nullopt;
     }

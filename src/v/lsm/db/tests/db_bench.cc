@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "absl/strings/str_split.h"
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "lsm/core/compression.h"
@@ -18,6 +19,7 @@
 #include "lsm/core/internal/options.h"
 #include "lsm/db/impl.h"
 #include "lsm/io/disk_persistence.h"
+#include "lsm/io/memory_persistence.h"
 #include "random/generators.h"
 
 #include <seastar/core/app-template.hh>
@@ -41,14 +43,14 @@ static ss::logger bench_log("db_bench");
 
 struct benchmark_config {
     size_t num = 1000000;
-    size_t duration = 0; // seconds, 0 = run once
     std::string benchmarks = "fillseq";
-    size_t value_size = 100;
+    size_t value_size = 1024;
     bool verify = false;
     size_t verify_interval = 1000;
+    size_t report_interval = 5; // Report progress every N seconds (0 = disable)
     std::string db_path = "/tmp/lsm_bench";
     bool use_existing_db = false;
-    size_t write_buffer_size = 16 * 1024 * 1024;
+    size_t write_buffer_size = 16_MiB;
     bool compression = false; // Enable zstd compression
 };
 
@@ -87,6 +89,39 @@ struct benchmark_stats {
         } else {
             bench_log.info(
               "{}: {:.0f} ops/sec, {:.2f} MB/sec, {} ops in {:.3f}s",
+              name,
+              ops_per_sec,
+              mb_per_sec,
+              ops_done,
+              seconds);
+        }
+    }
+
+    void report_progress(std::string_view name) const {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          now - start);
+        double seconds = elapsed.count() / 1000.0;
+        double ops_per_sec = seconds > 0 ? ops_done / seconds : 0;
+        double mb_per_sec = seconds > 0 ? (bytes_written + bytes_read)
+                                            / (1024.0 * 1024.0 * seconds)
+                                        : 0;
+
+        if (verification_checks > 0) {
+            bench_log.info(
+              "{} [progress]: {:.0f} ops/sec, {:.2f} MB/sec, {} ops, {:.1f}s "
+              "elapsed, {} verified, {} failures",
+              name,
+              ops_per_sec,
+              mb_per_sec,
+              ops_done,
+              seconds,
+              verification_checks,
+              verification_failures);
+        } else {
+            bench_log.info(
+              "{} [progress]: {:.0f} ops/sec, {:.2f} MB/sec, {} ops, {:.1f}s "
+              "elapsed",
               name,
               ops_per_sec,
               mb_per_sec,
@@ -135,31 +170,45 @@ public:
                                             : lsm::compression_type::none,
           });
 
-        // Create per-shard database directory
-        auto shard_db_path = fmt::format(
-          "{}/shard{}", _cfg.db_path, ss::this_shard_id());
+        std::unique_ptr<lsm::io::persistence> persistence;
 
-        if (!_cfg.use_existing_db) {
-            // Clean up existing database files
-            try {
-                std::filesystem::remove_all(shard_db_path);
-                bench_log.info(
-                  "Removed existing database at {}", shard_db_path);
-            } catch (const std::exception& e) {
-                std::ignore = e;
+        if (_cfg.db_path == ":memory:") {
+            // Use in-memory persistence
+            persistence = lsm::io::make_memory_persistence();
+            bench_log.info(
+              "Using in-memory persistence on shard {} with "
+              "write_buffer_size={}, compression={}",
+              ss::this_shard_id(),
+              _cfg.write_buffer_size,
+              _cfg.compression ? "zstd" : "none");
+        } else {
+            // Create per-shard database directory
+            auto shard_db_path = fmt::format(
+              "{}/shard{}", _cfg.db_path, ss::this_shard_id());
+
+            if (!_cfg.use_existing_db) {
+                // Clean up existing database files
+                try {
+                    std::filesystem::remove_all(shard_db_path);
+                    bench_log.info(
+                      "Removed existing database at {}", shard_db_path);
+                } catch (const std::exception& e) {
+                    std::ignore = e;
+                }
+                co_await ss::recursive_touch_directory(shard_db_path);
             }
-            co_await ss::recursive_touch_directory(shard_db_path);
+
+            persistence = co_await lsm::io::open_disk_persistence(
+              shard_db_path);
+            bench_log.info(
+              "Database opened at {} with write_buffer_size={}, "
+              "compression={}",
+              shard_db_path,
+              _cfg.write_buffer_size,
+              _cfg.compression ? "zstd" : "none");
         }
 
-        auto persistence = co_await lsm::io::open_disk_persistence(
-          shard_db_path);
         _db = co_await lsm::db::impl::open(opts, std::move(persistence));
-
-        bench_log.info(
-          "Database opened at {} with write_buffer_size={}, compression={}",
-          shard_db_path,
-          _cfg.write_buffer_size,
-          _cfg.compression ? "zstd" : "none");
     }
 
     ss::future<> teardown() {
@@ -174,6 +223,15 @@ public:
 
         benchmark_stats stats;
         stats.start = std::chrono::steady_clock::now();
+
+        // Start background progress reporter timer
+        ss::timer<> progress_timer;
+        if (_cfg.report_interval > 0) {
+            progress_timer.set_callback(
+              [&stats, bench_name] { stats.report_progress(bench_name); });
+            progress_timer.arm_periodic(
+              std::chrono::seconds(_cfg.report_interval));
+        }
 
         if (bench_name == "fillseq") {
             co_await fillseq(stats);
@@ -196,6 +254,9 @@ public:
         } else {
             bench_log.error("Unknown benchmark: {}", bench_name);
         }
+
+        // Stop progress reporter
+        progress_timer.cancel();
 
         stats.finish = std::chrono::steady_clock::now();
         co_return stats;
@@ -611,13 +672,8 @@ ss::future<> run_benchmarks(benchmark_config cfg) {
         co_await bench.setup();
 
         // Parse benchmark names
-        std::vector<std::string> bench_names;
-        std::istringstream ss(cfg.benchmarks);
-        std::string name;
-        while (std::getline(ss, name, ',')) {
-            bench_names.push_back(name);
-        }
-
+        std::vector<std::string> bench_names = absl::StrSplit(
+          cfg.benchmarks, ",");
         // Run each benchmark
         for (const auto& bench_name : bench_names) {
             auto stats = co_await bench.run(bench_name);
@@ -649,6 +705,9 @@ ss::future<> run_benchmarks(benchmark_config cfg) {
 //   # Mixed workload with deletes
 //   bazel run //src/v/lsm/db/tests:db_bench -- --smp 4 -- --num 1000000 --benchmarks fillrandom,deleterandom --verify
 //
+//   # In-memory benchmark
+//   bazel run //src/v/lsm/db/tests:db_bench -- --smp 4 -- --num 1000000 --benchmarks mixedworkload --db :memory:
+//
 // clang-format on
 int main(int ac, char* av[]) {
     ss::app_template app;
@@ -657,33 +716,36 @@ int main(int ac, char* av[]) {
 
     app.add_options()(
       "num",
-      po::value<size_t>(&cfg.num)->default_value(1000000),
+      po::value<size_t>(&cfg.num)->default_value(cfg.num),
       "Number of operations per benchmark")(
-      "duration",
-      po::value<size_t>(&cfg.duration)->default_value(0),
-      "Duration in seconds (0 = run once)")(
       "benchmarks",
-      po::value<std::string>(&cfg.benchmarks)->default_value("fillseq"),
+      po::value<std::string>(&cfg.benchmarks)->default_value(cfg.benchmarks),
       "Comma-separated list: fillseq, fillrandom, overwrite, deleteseq, "
       "deleterandom, readrandom, readseq, readmissing, mixedworkload")(
       "value_size",
-      po::value<size_t>(&cfg.value_size)->default_value(100),
+      po::value<size_t>(&cfg.value_size)->default_value(cfg.value_size),
       "Size of each value in bytes")(
       "verify", po::bool_switch(&cfg.verify), "Enable verification mode")(
       "verify_interval",
-      po::value<size_t>(&cfg.verify_interval)->default_value(1000),
+      po::value<size_t>(&cfg.verify_interval)
+        ->default_value(cfg.verify_interval),
       "Number of operations between full verification scans")(
+      "report_interval",
+      po::value<size_t>(&cfg.report_interval)
+        ->default_value(cfg.report_interval),
+      "Number of seconds between progress reports (0 = disable)")(
       "db",
-      po::value<std::string>(&cfg.db_path)->default_value("/tmp/lsm_bench"),
-      "Database directory path")(
+      po::value<std::string>(&cfg.db_path)->default_value(cfg.db_path),
+      "Database directory path (use :memory: for in-memory persistence)")(
       "use_existing_db",
-      po::bool_switch(&cfg.use_existing_db),
+      po::bool_switch(&cfg.use_existing_db)->default_value(cfg.use_existing_db),
       "Use existing database instead of creating new")(
       "write_buffer_size",
-      po::value<size_t>(&cfg.write_buffer_size)->default_value(16_MiB),
+      po::value<size_t>(&cfg.write_buffer_size)
+        ->default_value(cfg.write_buffer_size),
       "Write buffer size in bytes")(
       "compression",
-      po::bool_switch(&cfg.compression),
+      po::bool_switch(&cfg.compression)->default_value(cfg.compression),
       "Enable zstd compression for SST blocks");
 
     return app.run(ac, av, [&cfg]() mutable {
