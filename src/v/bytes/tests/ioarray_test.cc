@@ -331,4 +331,29 @@ TEST(IOArray, MoveSemantics) {
     EXPECT_EQ("test data", result);
 }
 
+TEST(IOArray, ReadFixed32) {
+    iobuf b;
+    for (size_t i = 0; i < 200_KiB; ++i) {
+        char c = static_cast<char>(i & 0xFF);
+        b.append(&c, 1);
+    }
+    auto contents = ioarray::copy_from(b);
+
+    EXPECT_EQ(0x03020100, contents.read_fixed32(0));
+    EXPECT_EQ(0x04030201, contents.read_fixed32(1));
+
+    EXPECT_EQ(0x03020100, contents.read_fixed32(128_KiB));
+    EXPECT_EQ(0x04030201, contents.read_fixed32(128_KiB + 1));
+    EXPECT_EQ(0x020100ff, contents.read_fixed32(128_KiB - 1));
+
+    contents = ioarray::copy_from(b).share(100, b.size_bytes() - 100);
+    EXPECT_EQ(0x67666564, contents.read_fixed32(0));
+    EXPECT_EQ(0x68676665, contents.read_fixed32(1));
+
+    auto contents2 = ioarray::copy_from(b).share(
+      128_KiB, b.size_bytes() - 128_KiB);
+    EXPECT_EQ(0x03020100, contents2.read_fixed32(0));
+    EXPECT_EQ(0x04030201, contents2.read_fixed32(1));
+}
+
 // NOLINTEND(*magic-numbers*)

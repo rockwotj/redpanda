@@ -107,6 +107,8 @@ public:
     char& operator[](size_t i);
     char operator[](size_t i) const;
 
+    uint32_t read_fixed32(size_t i) const;
+
     // Remove the last n bytes from this ioarray.
     void trim_back(size_t n);
 

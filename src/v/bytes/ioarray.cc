@@ -200,6 +200,25 @@ char ioarray::operator[](size_t i) const {
     return _buffers[i / max_chunk_size][i % max_chunk_size];
 }
 
+uint32_t ioarray::read_fixed32(size_t i) const {
+    dassert(
+      i + sizeof(uint32_t) <= _size,
+      "i {} + sizeof(uint32_t) {} must be <= size {}",
+      i,
+      sizeof(uint32_t),
+      _size);
+    i += _offset;
+    auto read = [this](size_t o) -> uint32_t {
+        return static_cast<uint8_t>(
+          _buffers[o / max_chunk_size][o % max_chunk_size]);
+    };
+    uint32_t v = read(i);
+    v |= read(++i) << 8u;
+    v |= read(++i) << 16u;
+    v |= read(++i) << 24u;
+    return v;
+}
+
 void ioarray::trim_back(size_t n) {
     dassert(n <= _size, "n {} must be <= size {}", n, _size);
     _size -= n;

@@ -42,13 +42,7 @@ contents::contents(ioarray data)
   : _data(std::move(data)) {}
 
 uint32_t contents::read_fixed32(size_t offset) const {
-    auto read = [this](size_t offset) -> uint32_t {
-        return static_cast<uint8_t>(_data[offset]);
-    };
-    uint32_t v = read(offset);
-    v |= read(++offset) << 8u;
-    v |= read(++offset) << 16u;
-    v |= read(++offset) << 24u;
+    uint32_t v = _data.read_fixed32(offset);
     v = ss::le_to_cpu(v);
     return v;
 }
