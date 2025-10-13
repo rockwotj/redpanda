@@ -18,6 +18,7 @@ redpanda_cc_binary(
         "//src/v/lsm/io:disk_persistence",
         "//src/v/lsm/io:memory_persistence",
         "//src/v/random:generators",
+        "//src/v/ssx:future_util",
         "@abseil-cpp//absl/strings",
         "@boost//:program_options",
         "@seastar",

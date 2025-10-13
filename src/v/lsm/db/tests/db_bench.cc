@@ -21,10 +21,12 @@
 #include "lsm/io/disk_persistence.h"
 #include "lsm/io/memory_persistence.h"
 #include "random/generators.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/signal.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/util/log.hh>
 
@@ -38,6 +40,8 @@
 #include <vector>
 
 namespace po = boost::program_options;
+
+namespace {
 
 static ss::logger bench_log("db_bench");
 
@@ -158,9 +162,8 @@ struct shadow_state {
 
 class benchmark {
 public:
-    benchmark(benchmark_config cfg, lsm::internal::sequence_number start_seqno)
-      : _cfg(std::move(cfg))
-      , _seqno(start_seqno) {}
+    explicit benchmark(benchmark_config cfg)
+      : _cfg(std::move(cfg)) {}
 
     ss::future<> setup() {
         auto opts = ss::make_lw_shared<lsm::internal::options>(
@@ -211,13 +214,28 @@ public:
         _db = co_await lsm::db::impl::open(opts, std::move(persistence));
     }
 
+    ss::future<> interrupt() {
+        _as.request_abort();
+        co_return;
+    }
+
     ss::future<> teardown() {
         if (_db) {
             co_await _db->close();
         }
     }
 
-    ss::future<benchmark_stats> run(std::string_view bench_name) {
+    ss::future<> run(std::vector<std::string> benches) {
+        bench_log.info("running benchmarks: {}", benches);
+        for (const auto& bench : benches) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
+            co_await do_run(bench);
+        }
+    }
+
+    ss::future<> do_run(std::string_view bench_name) {
         bench_log.info(
           "Starting benchmark: {} with {} operations", bench_name, _cfg.num);
 
@@ -259,12 +277,15 @@ public:
         progress_timer.cancel();
 
         stats.finish = std::chrono::steady_clock::now();
-        co_return stats;
+        stats.report(bench_name);
     }
 
 private:
     ss::future<> fillseq(benchmark_stats& stats) {
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             auto value = generate_value();
 
@@ -284,6 +305,9 @@ private:
         auto& rng = random_generators::global();
 
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key_num = rng.get_int<size_t>(0, _cfg.num - 1);
             auto key = ss::sstring(fmt::format("key{:016d}", key_num));
             auto value = generate_value();
@@ -303,6 +327,9 @@ private:
     ss::future<> overwrite(benchmark_stats& stats) {
         // First, ensure we have keys to overwrite
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             auto value = generate_value();
             co_await write_key(key, value.copy(), stats);
@@ -310,6 +337,9 @@ private:
 
         // Now overwrite them
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             auto value = generate_value();
 
@@ -328,6 +358,9 @@ private:
     ss::future<> deleteseq(benchmark_stats& stats) {
         // First, ensure we have keys to delete
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             auto value = generate_value();
             co_await write_key(key, value.copy(), stats);
@@ -335,6 +368,9 @@ private:
 
         // Now delete them
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             co_await delete_key(key, stats);
 
@@ -353,6 +389,9 @@ private:
 
         // First, ensure we have keys to delete
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             auto value = generate_value();
             co_await write_key(key, value.copy(), stats);
@@ -360,6 +399,9 @@ private:
 
         // Now delete them randomly
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key_num = rng.get_int<size_t>(0, _cfg.num - 1);
             auto key = ss::sstring(fmt::format("key{:016d}", key_num));
             co_await delete_key(key, stats);
@@ -379,6 +421,9 @@ private:
 
         // First populate with data
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             auto value = generate_value();
             co_await write_key(key, value.copy(), stats);
@@ -390,6 +435,9 @@ private:
 
         // Now perform random reads
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key_num = rng.get_int<size_t>(0, _cfg.num - 1);
             auto key = ss::sstring(fmt::format("key{:016d}", key_num));
 
@@ -408,6 +456,9 @@ private:
     ss::future<> readseq(benchmark_stats& stats) {
         // First populate with data
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(fmt::format("key{:016d}", i));
             auto value = generate_value();
             co_await write_key(key, value.copy(), stats);
@@ -423,6 +474,9 @@ private:
 
         size_t count = 0;
         while (iter->valid() && count < _cfg.num) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(iter->key().user_key());
             auto value = iter->value();
 
@@ -460,6 +514,9 @@ private:
     ss::future<> readmissing(benchmark_stats& stats) {
         // Try to read keys that don't exist
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(fmt::format("missing{:016d}", i));
 
             auto key_encoded = lsm::internal::key::encode(
@@ -484,6 +541,9 @@ private:
         auto& rng = random_generators::global();
 
         for (size_t i = 0; i < _cfg.num; ++i) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto op = rng.get_int<int>(0, 99);
             auto key_num = rng.get_int<size_t>(0, _cfg.num - 1);
             auto key = ss::sstring(fmt::format("key{:016d}", key_num));
@@ -606,6 +666,9 @@ private:
         co_await iter->seek_to_first();
 
         while (iter->valid()) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             auto key = ss::sstring(iter->key().user_key());
             auto value = iter->value();
             db_keys[key] = value.copy();
@@ -614,6 +677,9 @@ private:
 
         // Verify shadow map matches database
         for (const auto& [key, expected_value_opt] : _shadow.data) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             stats.verification_checks++;
 
             if (!expected_value_opt.has_value()) {
@@ -641,6 +707,9 @@ private:
 
         // Verify database doesn't have extra keys
         for (const auto& [key, _] : db_keys) {
+            if (_as.abort_requested()) {
+                co_return;
+            }
             if (!_shadow.data.contains(key)) {
                 stats.verification_checks++;
                 bench_log.error(
@@ -661,32 +730,36 @@ private:
 
     benchmark_config _cfg;
     std::unique_ptr<lsm::db::impl> _db;
+    ss::abort_source _as;
     shadow_state _shadow;
     lsm::internal::sequence_number _seqno;
 };
 
 ss::future<> run_benchmarks(benchmark_config cfg) {
-    benchmark bench(cfg, {});
+    ss::sharded<benchmark> bench;
+    ss::gate gate;
+    ss::handle_signal(SIGINT, [&bench, &gate] {
+        ssx::spawn_with_gate(gate, [&bench] {
+            return bench.invoke_on_all(&benchmark::interrupt);
+        });
+    });
+    std::vector<std::string> bench_names = absl::StrSplit(cfg.benchmarks, ",");
     std::exception_ptr ep;
     try {
-        co_await bench.setup();
-
-        // Parse benchmark names
-        std::vector<std::string> bench_names = absl::StrSplit(
-          cfg.benchmarks, ",");
-        // Run each benchmark
-        for (const auto& bench_name : bench_names) {
-            auto stats = co_await bench.run(bench_name);
-            stats.report(bench_name);
-        }
+        co_await bench.start(cfg);
+        co_await bench.invoke_on_all(&benchmark::setup);
+        co_await bench.invoke_on_all(&benchmark::run, bench_names);
     } catch (...) {
         ep = std::current_exception();
     }
-    co_await bench.teardown();
+    co_await bench.invoke_on_all(&benchmark::teardown);
+    co_await gate.close();
+    co_await bench.stop();
     if (ep) {
         std::rethrow_exception(ep);
     }
 }
+} // namespace
 
 // clang-format off
 // LSM Database Benchmark
@@ -710,7 +783,9 @@ ss::future<> run_benchmarks(benchmark_config cfg) {
 //
 // clang-format on
 int main(int ac, char* av[]) {
-    ss::app_template app;
+    ss::app_template::config seastar_cfg;
+    seastar_cfg.auto_handle_sigint_sigterm = false;
+    ss::app_template app(seastar_cfg);
 
     benchmark_config cfg;
 
@@ -749,7 +824,6 @@ int main(int ac, char* av[]) {
       "Enable zstd compression for SST blocks");
 
     return app.run(ac, av, [&cfg]() mutable {
-        return ss::smp::invoke_on_all([cfg] { return run_benchmarks(cfg); })
-          .then([] { return 0; });
+        return run_benchmarks(cfg).then([] { return 0; });
     });
 }
