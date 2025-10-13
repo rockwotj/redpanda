@@ -28,17 +28,17 @@ redpanda_cc_bench(
     ],
 )
 
-redpanda_cc_bench(
-    name = "s3_fifo_rpbench",
-    srcs = [
-        "s3_fifo_bench.cc",
-    ],
-    deps = [
-        "//src/v/random:generators",
-        "//src/v/utils:chunked_kv_cache",
-        "@abseil-cpp//absl/strings",
-        "@fmt",
-        "@seastar",
-        "@seastar//:benchmark",
-    ],
-)
+# redpanda_cc_bench(
+#     name = "s3_fifo_rpbench",
+#     srcs = [
+#         "s3_fifo_bench.cc",
+#     ],
+#     deps = [
+#         "//src/v/random:generators",
+#         "//src/v/utils:chunked_kv_cache",
+#         "@abseil-cpp//absl/strings",
+#         "@fmt",
+#         "@seastar",
+#         "@seastar//:benchmark",
+#     ],
+# )
