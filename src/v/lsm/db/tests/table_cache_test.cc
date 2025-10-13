@@ -80,6 +80,7 @@ TEST_F(TableCacheTest, MaxEntries) {
     for (const auto& [id, size] : files) {
         cache.create_iterator(id, size).get();
     }
+    tests::drain_task_queue().get();
     // We get 5 on the small queue (+1 over the limit) and a full ghost queue of
     // 2 entries. The main queue is empty because nothing is touched twice.
     EXPECT_EQ(cache.statistics().open_file_handles, 7) << cache.statistics();

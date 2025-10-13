@@ -213,7 +213,12 @@ ss::future<> impl::flush() {
     }
     if (!_mem->empty()) {
         _imm = std::exchange(_mem, ss::make_lw_shared<memtable>());
+        if (_background_work_running) {
+            co_await _background_work_finished_signal.wait(_as);
+        }
         maybe_schedule_compaction();
+    }
+    while (_imm) {
         co_await _background_work_finished_signal.wait(_as);
     }
 }

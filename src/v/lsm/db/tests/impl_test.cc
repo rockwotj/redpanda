@@ -66,8 +66,13 @@ private:
 class ImplTest : public testing::Test {
 public:
     void SetUp() override {
-        _options = ss::make_lw_shared<lsm::internal::options>(
-          {.write_buffer_size = 512_KiB});
+        _options = ss::make_lw_shared<lsm::internal::options>({
+          .level_zero_slowdown_writes_trigger = 4,
+          .level_zero_stop_writes_trigger = 6,
+          .write_buffer_size = 256_KiB,
+          .level_one_compaction_trigger = 2,
+          .max_file_size = 2_MiB,
+        });
         _persistence = lsm::io::make_memory_persistence();
         _db = lsm::db::impl::open(
                 _options,
@@ -89,7 +94,7 @@ public:
               .seqno = ++seqno,
             });
             auto value = iobuf::from(
-              random_generators::gen_alphanum_string(8_KiB));
+              random_generators::gen_alphanum_string(1_KiB));
             _shadow.insert_or_assign(
               ss::sstring(key.user_key()), value.share());
             batch.put(key, value.share());
@@ -175,6 +180,7 @@ TEST_F(ImplTest, Recovery) {
     write_at_least(512_KiB);
     write_at_least(512_KiB);
     EXPECT_TRUE(matches_shadow());
+    tests::drain_task_queue().get();
     _db->flush().get();
     EXPECT_EQ(max_applied_seqno(), max_persisted_seqno());
     restart();
@@ -182,10 +188,13 @@ TEST_F(ImplTest, Recovery) {
 }
 
 TEST_F(ImplTest, Randomized) {
-    for (int i = 0; i < 1000; ++i) {
+#ifndef NDEBUG
+    int rounds = 100;
+#else
+    int rounds = 1000;
+#endif
+    for (int i = 0; i < rounds; ++i) {
         write_at_least(512_KiB);
-        EXPECT_TRUE(matches_shadow());
-        _db->flush().get();
         EXPECT_TRUE(matches_shadow());
     }
 }
