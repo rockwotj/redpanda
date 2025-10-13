@@ -19,6 +19,8 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
+#include <limits>
+
 TEST_CORO(Contents, StringView) {
     auto persistence = lsm::io::make_memory_persistence();
     iobuf b;
@@ -119,4 +121,25 @@ TEST_CORO(Contents, IobufShare) {
     }
     co_await (*file)->close();
     co_await persistence->close();
+}
+
+TEST(Contents, ReadFixed32) {
+    iobuf b;
+    std::vector<uint32_t> values{
+      0,
+      1,
+      4,
+      1209381,
+      1232348239,
+      std::numeric_limits<uint32_t>::max(),
+      std::numeric_limits<uint32_t>::max() / 2};
+    for (auto v : values) {
+        b.append(std::bit_cast<std::array<uint8_t, sizeof(uint32_t)>>(v));
+    }
+    auto contents = lsm::block::contents::copy_from(b);
+    for (size_t i = 0; i < values.size(); ++i) {
+        auto expected = values[i];
+        auto actual = contents->read_fixed32(i * sizeof(uint32_t));
+        EXPECT_EQ(expected, actual);
+    }
 }
