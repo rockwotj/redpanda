@@ -29,8 +29,10 @@ namespace {
 
 class disk_seq_file_reader : public sequential_file_reader {
 public:
-    explicit disk_seq_file_reader(ss::input_stream<char> stream)
-      : _stream(std::move(stream)) {}
+    disk_seq_file_reader(
+      std::filesystem::path path, ss::input_stream<char> stream)
+      : _path(std::move(path))
+      , _stream(std::move(stream)) {}
 
     ss::future<iobuf> read(size_t n) override {
         iobuf buf;
@@ -76,14 +78,20 @@ public:
         }
     }
 
+    fmt::iterator format_to(fmt::iterator it) const override {
+        return fmt::format_to(it, "{{path={}}}", _path);
+    }
+
 private:
+    std::filesystem::path _path;
     ss::input_stream<char> _stream;
 };
 
 class disk_file_reader : public random_access_file_reader {
 public:
-    explicit disk_file_reader(ss::file file)
-      : _file(std::move(file)) {}
+    disk_file_reader(std::filesystem::path path, ss::file file)
+      : _path(std::move(path))
+      , _file(std::move(file)) {}
 
     ss::future<ioarray> read(size_t offset, size_t n) override {
         size_t memory_alignment = _file.memory_dma_alignment();
@@ -125,18 +133,25 @@ public:
         }
     }
 
+    fmt::iterator format_to(fmt::iterator it) const override {
+        return fmt::format_to(it, "{{path={}}}", _path);
+    }
+
 private:
+    std::filesystem::path _path;
     ss::file _file;
 };
 
 class disk_seq_file_writer : public sequential_file_writer {
 public:
-    explicit disk_seq_file_writer(ss::output_stream<char> stream)
-      : _stream(std::move(stream)) {}
+    disk_seq_file_writer(
+      std::filesystem::path path, ss::output_stream<char> stream)
+      : _path(std::move(path))
+      , _stream(std::move(stream)) {}
 
     ss::future<> append(iobuf buf) override {
         try {
-            for (const auto& frag : buf) {
+            for (auto& frag : buf) {
                 co_await _stream.write(frag.get(), frag.size());
             }
         } catch (const std::system_error& err) {
@@ -161,8 +176,7 @@ public:
     }
     ss::future<> close() override {
         try {
-            co_await _stream.flush().finally(
-              [this] { return _stream.close(); });
+            co_await _stream.close();
         } catch (const std::system_error& err) {
             throw io_error_exception(err.code(), "io error closing: {}", err);
         } catch (...) {
@@ -170,8 +184,12 @@ public:
               "io error closing: {}", std::current_exception());
         }
     }
+    fmt::iterator format_to(fmt::iterator it) const override {
+        return fmt::format_to(it, "{{path={}}}", _path);
+    }
 
 private:
+    std::filesystem::path _path;
     ss::output_stream<char> _stream;
 };
 
@@ -185,14 +203,16 @@ public:
     ss::future<optional_pointer<sequential_file_reader>>
     open_sequential_reader(std::string_view name) override {
         try {
+            auto filepath = path(name);
             auto file = ss::open_file_dma(
-              path(name).native(), ss::open_flags::ro);
+              filepath.native(), ss::open_flags::ro);
             auto stream = co_await ss::with_file_close_on_failure(
               std::move(file), [](ss::file f) {
                   return ss::make_file_input_stream(std::move(f));
               });
             std::unique_ptr<sequential_file_reader> ptr;
-            ptr = std::make_unique<disk_seq_file_reader>(std::move(stream));
+            ptr = std::make_unique<disk_seq_file_reader>(
+              std::move(filepath), std::move(stream));
             co_return ptr;
         } catch (const std::system_error& e) {
             if (e.code() == std::errc::no_such_file_or_directory) {
@@ -209,10 +229,12 @@ public:
     ss::future<optional_pointer<random_access_file_reader>>
     open_random_access_reader(std::string_view name) override {
         try {
+            auto filepath = path(name);
             auto file = co_await ss::open_file_dma(
-              path(name).native(), ss::open_flags::ro);
+              filepath.native(), ss::open_flags::ro);
             std::unique_ptr<random_access_file_reader> ptr;
-            ptr = std::make_unique<disk_file_reader>(std::move(file));
+            ptr = std::make_unique<disk_file_reader>(
+              std::move(filepath), std::move(file));
             co_return ptr;
         } catch (const std::system_error& e) {
             if (e.code() == std::errc::no_such_file_or_directory) {
@@ -229,15 +251,17 @@ public:
     ss::future<std::unique_ptr<sequential_file_writer>>
     open_sequential_writer(std::string_view name) override {
         try {
+            auto filepath = path(name);
             auto file = ss::open_file_dma(
-              path(name).native(),
+              filepath.native(),
               ss::open_flags::create | ss::open_flags::rw
                 | ss::open_flags::truncate);
             auto stream = co_await ss::with_file_close_on_failure(
               std::move(file), [](ss::file f) {
                   return ss::make_file_output_stream(std::move(f));
               });
-            co_return std::make_unique<disk_seq_file_writer>(std::move(stream));
+            co_return std::make_unique<disk_seq_file_writer>(
+              std::move(filepath), std::move(stream));
         } catch (const std::system_error& e) {
             throw io_error_exception(
               e.code(), "io error opening file writer: {}", e);

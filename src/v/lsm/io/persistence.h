@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "bytes/ioarray.h"
 #include "bytes/iobuf.h"
@@ -45,6 +46,9 @@ public:
     // Closes the file, must always be called, even if `read` or `skip` return
     // an error future.
     virtual ss::future<> close() = 0;
+
+    // Print debug information about the file
+    virtual fmt::iterator format_to(fmt::iterator) const = 0;
 };
 
 // A file abstraction for randomly reading the contents of a file.
@@ -66,6 +70,9 @@ public:
     // Closes the file, must always be called, even if `read` or `skip` return
     // an error future.
     virtual ss::future<> close() = 0;
+
+    // Print debug information about the file
+    virtual fmt::iterator format_to(fmt::iterator) const = 0;
 };
 
 // A file abstraction for sequential writing. The implementation must provide
@@ -88,6 +95,9 @@ public:
     // Close the file, this ensures the file is properly written to persistent
     // storage (ie. flushed and fsync'd, etc).
     virtual ss::future<> close() = 0;
+
+    // Print debug information about the file
+    virtual fmt::iterator format_to(fmt::iterator) const = 0;
 };
 
 template<typename T>

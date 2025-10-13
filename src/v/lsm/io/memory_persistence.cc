@@ -11,6 +11,7 @@
 
 #include "lsm/io/memory_persistence.h"
 
+#include "base/format_to.h"
 #include "lsm/core/exceptions.h"
 
 #include <seastar/core/coroutine.hh>
@@ -71,6 +72,15 @@ public:
         co_return;
     }
 
+    fmt::iterator format_to(fmt::iterator it) const override {
+        return fmt::format_to(
+          it,
+          "{{file={}, size={}, current_offset={}}}",
+          _state->filename,
+          _state->data.size_bytes(),
+          _offset);
+    }
+
 private:
     size_t _offset = 0;
     bool _closed = false;
@@ -115,6 +125,14 @@ public:
         co_return;
     }
 
+    fmt::iterator format_to(fmt::iterator it) const override {
+        return fmt::format_to(
+          it,
+          "{{file={}, size={}}}",
+          _state->filename,
+          _state->data.size_bytes());
+    }
+
 private:
     bool _closed = false;
     ss::lw_shared_ptr<memory_file_state> _state;
@@ -151,6 +169,10 @@ public:
         _closed = true;
         --_state->open_write_handles;
         co_return;
+    }
+
+    fmt::iterator format_to(fmt::iterator it) const override {
+        return fmt::format_to(it, "{{file={}}}", _state->filename);
     }
 
 private:
