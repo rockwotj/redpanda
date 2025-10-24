@@ -692,9 +692,8 @@ std::optional<compaction> version_set::pick_compaction() {
         c.emplace(compaction(_options, level));
         // Pick the first file that comes after _compact_pointer[level]
         for (const auto& f : _current->_files[level]) {
-            if (
-              _compact_pointer[level]->empty()
-              || f->largest > _compact_pointer[level]) {
+            const auto& key = _compact_pointer[level];
+            if (!key || f->largest > *key) {
                 c->_inputs[which::input_level].push_back(f);
                 break;
             }
