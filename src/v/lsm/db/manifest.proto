@@ -10,11 +10,11 @@
  */
 syntax = "proto3";
 
-package redpanda.internal.lsm;
+package redpanda.core.internal.lsm;
 
-import "proto/redpanda/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/options.proto";
 
-option (redpanda.pbgen.cpp_namespace) = "lsm::proto";
+option (pbgen.cpp_namespace) = "lsm::proto";
 
 // The message used for manifest files in our LSM Database.
 message Manifest {

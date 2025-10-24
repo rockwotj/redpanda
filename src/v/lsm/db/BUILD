@@ -219,7 +219,7 @@ redpanda_cc_library(
 proto_library(
     name = "manifest_proto",
     srcs = ["manifest.proto"],
-    deps = ["//proto/redpanda/pbgen:options_proto"],
+    deps = ["//proto/redpanda/core/pbgen:options_proto"],
 )
 
 redpanda_proto_library(
