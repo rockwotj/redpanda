@@ -123,6 +123,24 @@ redpanda_cc_bench(
 )
 
 redpanda_cc_gtest(
+    name = "ioarray_test",
+    timeout = "short",
+    srcs = [
+        "ioarray_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:ioarray",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "iobuf_parser_test",
     timeout = "short",
     srcs = [
