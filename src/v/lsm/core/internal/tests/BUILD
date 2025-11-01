@@ -14,3 +14,15 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "iterator_test_harness",
+    hdrs = ["iterator_test_harness.h"],
+    visibility = ["//src/v/lsm:__subpackages__"],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "@googletest//:gtest",
+    ],
+)
