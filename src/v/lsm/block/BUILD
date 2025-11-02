@@ -57,6 +57,27 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "filter",
+    srcs = [
+        "filter.cc",
+    ],
+    hdrs = [
+        "filter.h",
+    ],
+    implementation_deps = [
+        "//src/v/hashing:xx",
+    ],
+    deps = [
+        ":contents",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_vector",
+        "//src/v/lsm/core/internal:keys",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "reader",
     srcs = [
         "reader.cc",

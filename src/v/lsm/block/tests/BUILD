@@ -19,6 +19,24 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "filter_test",
+    timeout = "short",
+    srcs = [
+        "filter_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/block:contents",
+        "//src/v/lsm/block:filter",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "iterator_test",
     timeout = "short",
     srcs = [
