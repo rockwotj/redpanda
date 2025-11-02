@@ -40,3 +40,18 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "files",
+    srcs = ["files.cc"],
+    hdrs = ["files.h"],
+    implementation_deps = [
+        "//src/v/strings:string_switch",
+        "@abseil-cpp//absl/strings",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)

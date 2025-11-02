@@ -15,6 +15,21 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "files_test",
+    timeout = "short",
+    srcs = [
+        "files_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_test_cc_library(
     name = "iterator_test_harness",
     hdrs = ["iterator_test_harness.h"],
