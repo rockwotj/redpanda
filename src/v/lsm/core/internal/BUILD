@@ -55,3 +55,15 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "options",
+    srcs = ["options.cc"],
+    hdrs = ["options.h"],
+    deps = [
+        ":files",
+        "//src/v/base",
+        "//src/v/lsm/core:compression",
+        "@seastar",
+    ],
+)
