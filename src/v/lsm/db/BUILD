@@ -1,4 +1,6 @@
+load("@rules_proto//proto:defs.bzl", "proto_library")
 load("//bazel:build.bzl", "redpanda_cc_library")
+load("//bazel/pbgen:pbgen.bzl", "redpanda_proto_library")
 
 package(default_visibility = ["//src/v/lsm:__subpackages__"])
 
@@ -92,10 +94,56 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "version_set",
+    srcs = [
+        "version_set.cc",
+    ],
+    hdrs = [
+        "version_set.h",
+    ],
+    implementation_deps = [
+        ":file_utils",
+        ":manifest_redpanda_proto",
+        "//src/v/lsm/core:exceptions",
+        "//src/v/lsm/core/internal:merging_iterator",
+        "//src/v/lsm/core/internal:two_level_iterator",
+        "//src/v/utils:to_string",
+        "@abseil-cpp//absl/container:btree",
+    ],
+    deps = [
+        ":table_cache",
+        ":version_edit",
+        ":weak_intrusive_list",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/lsm/core:lookup_result",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "//src/v/lsm/io:persistence",
+        "@abseil-cpp//absl/container:fixed_array",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "weak_intrusive_list",
     hdrs = ["weak_intrusive_list.h"],
     deps = [
         "//src/v/base",
         "@seastar",
     ],
+)
+
+proto_library(
+    name = "manifest_proto",
+    srcs = ["manifest.proto"],
+    deps = ["//proto/redpanda/core/pbgen:options_proto"],
+)
+
+redpanda_proto_library(
+    name = "manifest_redpanda_proto",
+    protos = [":manifest_proto"],
 )
