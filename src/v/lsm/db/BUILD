@@ -43,3 +43,12 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "weak_intrusive_list",
+    hdrs = ["weak_intrusive_list.h"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)

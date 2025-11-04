@@ -20,3 +20,18 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "weak_intrusive_list_test",
+    timeout = "short",
+    srcs = [
+        "weak_intrusive_list_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/db:weak_intrusive_list",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
