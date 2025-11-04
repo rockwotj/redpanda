@@ -25,6 +25,28 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "iter",
+    srcs = [
+        "iter.cc",
+    ],
+    hdrs = [
+        "iter.h",
+    ],
+    implementation_deps = [
+        "//src/v/random:generators",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_library(
     name = "memtable",
     srcs = [
