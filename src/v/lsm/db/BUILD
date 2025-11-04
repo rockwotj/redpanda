@@ -21,3 +21,25 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "version_edit",
+    srcs = [
+        "version_edit.cc",
+    ],
+    hdrs = [
+        "version_edit.h",
+    ],
+    implementation_deps = [
+        "//src/v/utils:to_string",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "@abseil-cpp//absl/container:fixed_array",
+        "@seastar",
+    ],
+)
