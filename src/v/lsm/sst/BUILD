@@ -50,6 +50,37 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "reader",
+    srcs = [
+        "reader.cc",
+    ],
+    hdrs = [
+        "reader.h",
+    ],
+    implementation_deps = [
+        ":footer",
+        "//src/v/bytes:iobuf",
+        "//src/v/hashing:crc32c",
+        "//src/v/lsm/block:contents",
+        "//src/v/lsm/block:filter",
+        "//src/v/lsm/block:handle",
+        "//src/v/lsm/block:reader",
+        "//src/v/lsm/core:compression",
+        "//src/v/lsm/core:exceptions",
+        "//src/v/lsm/core/internal:two_level_iterator",
+    ],
+    deps = [
+        ":block_cache",
+        "//src/v/base",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/io:persistence",
+        "@abseil-cpp//absl/functional:function_ref",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "block_cache",
     srcs = [
         "block_cache.cc",
