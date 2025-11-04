@@ -27,6 +27,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "two_level_iterator",
+    srcs = ["two_level_iterator.cc"],
+    hdrs = ["two_level_iterator.h"],
+    implementation_deps = [
+        "//src/v/lsm/core:exceptions",
+    ],
+    deps = [
+        ":iterator",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "keys",
     srcs = ["keys.cc"],
     hdrs = ["keys.h"],
