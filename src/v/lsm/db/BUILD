@@ -88,6 +88,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:keys",
+        "@boost//:range",
         "@fmt",
         "@seastar",
     ],
