@@ -56,3 +56,20 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "file_utils_test",
+    timeout = "short",
+    srcs = [
+        "file_utils_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/db:file_utils",
+        "//src/v/lsm/db:version_edit",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

@@ -74,6 +74,24 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "file_utils",
+    srcs = [
+        "file_utils.cc",
+    ],
+    hdrs = [
+        "file_utils.h",
+    ],
+    deps = [
+        ":version_edit",
+        "//src/v/base",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:keys",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "weak_intrusive_list",
     hdrs = ["weak_intrusive_list.h"],
     deps = [
