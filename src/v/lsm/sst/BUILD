@@ -48,3 +48,25 @@ redpanda_cc_library(
         "//src/v/lsm/block:handle",
     ],
 )
+
+redpanda_cc_library(
+    name = "block_cache",
+    srcs = [
+        "block_cache.cc",
+    ],
+    hdrs = [
+        "block_cache.h",
+    ],
+    implementation_deps = [
+        "//src/v/container:chunked_hash_map",
+        "//src/v/ssx:semaphore",
+        "//src/v/utils:chunked_kv_cache",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm/block:handle",
+        "//src/v/lsm/block:reader",
+        "//src/v/lsm/core/internal:files",
+        "@seastar",
+    ],
+)
