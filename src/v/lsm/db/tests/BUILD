@@ -1,4 +1,29 @@
+load("//bazel:build.bzl", "redpanda_cc_binary")
 load("//bazel:test.bzl", "redpanda_cc_gtest")
+
+redpanda_cc_binary(
+    name = "db_bench",
+    srcs = [
+        "db_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core:compression",
+        "//src/v/lsm/core/internal:batch",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "//src/v/lsm/db:impl",
+        "//src/v/lsm/io:disk_persistence",
+        "//src/v/lsm/io:memory_persistence",
+        "//src/v/random:generators",
+        "//src/v/ssx:future_util",
+        "@abseil-cpp//absl/strings",
+        "@boost//:program_options",
+        "@seastar",
+    ],
+)
 
 redpanda_cc_gtest(
     name = "memtable_test",
@@ -112,6 +137,28 @@ redpanda_cc_gtest(
         "//src/v/lsm/core/internal:options",
         "//src/v/lsm/db:iter",
         "//src/v/lsm/db:memtable",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "impl_test",
+    timeout = "short",
+    srcs = [
+        "impl_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:batch",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "//src/v/lsm/db:impl",
+        "//src/v/lsm/io:memory_persistence",
+        "//src/v/lsm/sst:builder",
+        "//src/v/random:generators",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",

@@ -48,6 +48,41 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "impl",
+    srcs = [
+        "impl.cc",
+    ],
+    hdrs = [
+        "impl.h",
+    ],
+    implementation_deps = [
+        ":iter",
+        ":table_builder",
+        ":version_edit",
+        "//src/v/lsm/core/internal:logger",
+        "//src/v/lsm/core/internal:merging_iterator",
+        "//src/v/lsm/sst:builder",
+    ],
+    deps = [
+        ":memtable",
+        ":table_cache",
+        ":version_set",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core:exceptions",
+        "//src/v/lsm/core/internal:batch",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "//src/v/lsm/io:persistence",
+        "//src/v/lsm/sst:block_cache",
+        "//src/v/ssx:condition_variable",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "memtable",
     srcs = [
         "memtable.cc",
