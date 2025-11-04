@@ -22,3 +22,13 @@ redpanda_cc_library(
     hdrs = ["exceptions.h"],
     deps = ["@fmt"],
 )
+
+redpanda_cc_library(
+    name = "lookup_result",
+    hdrs = ["lookup_result.h"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "@seastar",
+    ],
+)
