@@ -41,3 +41,21 @@ redpanda_test_cc_library(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "merging_iterator_test",
+    timeout = "short",
+    srcs = [
+        "merging_iterator_test.cc",
+    ],
+    deps = [
+        ":iterator_test_harness",
+        "//src/v/base",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:merging_iterator",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

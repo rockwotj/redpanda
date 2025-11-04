@@ -42,6 +42,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "merging_iterator",
+    srcs = ["merging_iterator.cc"],
+    hdrs = ["merging_iterator.h"],
+    deps = [
+        ":iterator",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_vector",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "keys",
     srcs = ["keys.cc"],
     hdrs = ["keys.h"],
