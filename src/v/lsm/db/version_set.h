@@ -159,6 +159,17 @@ public:
     // The latest seqno applied to the LSM tree.
     internal::sequence_number last_seqno() const { return _last_seqno; }
 
+    // Returns true iff some level needs compaction.
+    bool needs_compaction() const;
+
+    // Pick level and inputs for a new compaction run.
+    // Returns std::nullopt if there is no compaction.
+    std::optional<compaction> pick_compaction();
+
+    // Create an iterator that reads over the compaction inputs.
+    ss::future<std::unique_ptr<internal::iterator>>
+    make_input_iterator(compaction*);
+
     // Get all the files that are currently being used by any live version.
     chunked_hash_set<internal::file_id> get_live_files();
 
@@ -168,6 +179,7 @@ public:
 
 private:
     friend class version;
+    friend class compaction;
 
     void set_current(ss::lw_shared_ptr<version>);
     void finalize(version*);
@@ -189,6 +201,83 @@ private:
     internal::file_id _current_manifest_id;
     internal::sequence_number _last_seqno;
     absl::FixedArray<std::optional<internal::key>> _compact_pointer;
+};
+
+// Encapulate information about a compaction event.
+class compaction {
+public:
+    // Return the level that is being compacted.  Inputs from "level"
+    // and "level+1" will be merged to produce a set of "level+1" files.
+    internal::level level() const { return _level; }
+    // Return the object that holds the edits to the descriptor done
+    // by this compaction.
+    version_edit* edit() { return &_edit; }
+
+    enum which : uint8_t {
+        input_level = 0,
+        output_level = 1,
+    };
+
+    // "which" must be either input_level or output_level
+    size_t num_input_files(which w) const { return _inputs.at(w).size(); }
+
+    // Return the ith input file at "level()+which" ("which" must be 0 or 1).
+    ss::lw_shared_ptr<file_meta_data> input(which w, size_t i) const {
+        return _inputs.at(w).at(i);
+    }
+
+    // Maximum size of files to build during this compaction.
+    uint64_t max_output_file_size() const { return _max_output_file_size; }
+
+    // Is this a trivial compaction that can be implemented by just
+    // moving a single input file to the next level (no merging or splitting)
+    bool is_trivial_move() const;
+
+    // Add all inputs to this compaction as delete operations to *edit.
+    void add_input_deletions(version_edit* edit);
+
+    // Returns true if the information we have available guarantees that
+    // the compaction is producing data in "level+1" for which no data exists
+    // in levels greater than "level+1".
+    bool is_base_level_for_key(internal::key_view key);
+
+    // Returns true iff we should stop building the current output
+    // before processing "internal_key".
+    bool should_stop_before(internal::key_view key);
+
+private:
+    friend class version;
+    friend class version_set;
+
+    compaction(
+      ss::lw_shared_ptr<internal::options> options, internal::level level)
+      : _level(level)
+      , _edit(*options)
+      , _level_ptrs(options->levels.size()) {}
+
+    internal::level _level;
+    uint64_t _max_output_file_size = 0;
+    ss::lw_shared_ptr<version> _input_version;
+    version_edit _edit;
+    // Each compaction reads inputs from "level_" and "level_+1"
+    std::array<chunked_vector<ss::lw_shared_ptr<file_meta_data>>, 2>
+      _inputs; // The two sets of inputs
+
+    // State used to check for number of overlapping grandparent files
+    // (parent == level_ + 1, grandparent == level_ + 2)
+    chunked_vector<ss::lw_shared_ptr<file_meta_data>> _grandparents;
+    size_t _grandparent_index = 0;  // Index in grandparent_starts_
+    bool _seen_key = false;         // Some output key has been seen
+    uint64_t _overlapped_bytes = 0; // Bytes of overlap between current output
+                                    // and grandparent files
+
+    // State for implementing is_base_level_for_key
+
+    // level_ptrs_ holds indices into input_version_->levels_: our state
+    // is that we are positioned at one of the file ranges for each
+    // higher level than the ones involved in this compaction (i.e. for
+    // all L >= level_ + 2).
+    absl::FixedArray<size_t> _level_ptrs;
 };
 
 } // namespace lsm::db
