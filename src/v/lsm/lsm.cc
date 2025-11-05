@@ -69,7 +69,8 @@ iobuf iterator::value() { return _impl->value(); }
 
 database::database(std::unique_ptr<db::impl> impl)
   : _impl(std::move(impl)) {}
-
+database::database(database&&) noexcept = default;
+database& database::operator=(database&&) noexcept = default;
 database::~database() noexcept = default;
 
 ss::future<database>
@@ -110,7 +111,8 @@ ss::future<iterator> database::create_iterator() {
 
 write_batch::write_batch()
   : _batch(std::make_unique<internal::write_batch>()) {}
-
+write_batch::write_batch(write_batch&&) noexcept = default;
+write_batch& write_batch::operator=(write_batch&&) noexcept = default;
 write_batch::~write_batch() noexcept = default;
 
 void write_batch::put(std::string_view key, iobuf value, model::offset offset) {

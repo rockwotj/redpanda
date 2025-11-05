@@ -12,8 +12,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "lsm/core/internal/iterator.h"
-#include "lsm/db/impl.h"
 #include "lsm/io/persistence.h"
 #include "model/fundamental.h"
 
@@ -39,9 +37,9 @@ class database {
 public:
     explicit database(std::unique_ptr<db::impl> impl);
     database(const database&) = delete;
-    database(database&&) = default;
+    database(database&&) noexcept;
     database& operator=(const database&) = delete;
-    database& operator=(database&&) = default;
+    database& operator=(database&&) noexcept;
     ~database() noexcept;
 
     // Open the database.
@@ -134,9 +132,9 @@ class write_batch {
 public:
     write_batch();
     write_batch(const write_batch&) = delete;
-    write_batch(write_batch&&) noexcept = default;
+    write_batch(write_batch&&) noexcept;
     write_batch& operator=(const write_batch&) = delete;
-    write_batch& operator=(write_batch&&) noexcept = default;
+    write_batch& operator=(write_batch&&) noexcept;
     ~write_batch() noexcept;
 
     // Set the key in the database with the given value for this offset.
