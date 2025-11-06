@@ -350,6 +350,9 @@ cluster::topic_configuration to_topic_config(
         topic_property_message_timestamp_after_max_ms,
         /*clamp_to_duration_max=*/true);
 
+    cfg.properties.key_index_enabled = get_bool_value(
+      config_entries, topic_property_key_index_enabled);
+
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
 

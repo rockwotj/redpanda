@@ -107,6 +107,9 @@ inline constexpr std::string_view topic_property_message_timestamp_before_max_ms
 inline constexpr std::string_view topic_property_message_timestamp_after_max_ms
   = "message.timestamp.after.max.ms";
 
+inline constexpr std::string_view topic_property_key_index_enabled
+  = "redpanda.key_index.enabled";
+
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
 inline constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {

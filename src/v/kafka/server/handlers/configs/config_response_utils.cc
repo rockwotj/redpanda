@@ -1205,6 +1205,16 @@ config_response_container_t make_topic_configs(
         config::shard_local_cfg().log_message_timestamp_after_max_ms.desc()),
       describe_as_string<std::chrono::milliseconds>);
 
+    add_topic_config_if_requested(
+      config_keys,
+      result,
+      topic_property_key_index_enabled,
+      topic_properties.key_index_enabled,
+      include_synonyms,
+      maybe_make_documentation(
+        include_documentation, "If a key index and key lookups are enabled."),
+      &describe_as_string<std::optional<bool>>);
+
     return result;
 }
 

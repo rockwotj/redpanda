@@ -330,6 +330,14 @@ bool maybe_append_update(
           kafka::max_compaction_lag_ms_validator);
     }
 
+    if (config_name == kafka::topic_property_key_index_enabled) {
+        return parse_and_set(
+          topic_config.tp_ns,
+          update.properties.key_index_enabled,
+          config_value,
+          topic_config.properties.key_index_enabled);
+    }
+
     return false;
 }
 } // namespace cluster_link::utils

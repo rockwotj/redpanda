@@ -92,6 +92,8 @@ public:
         // Controls behavior during pause
         std::optional<bool> remote_allow_gaps;
 
+        std::optional<bool> key_index_enabled;
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };
@@ -461,6 +463,13 @@ public:
             return _overrides->max_compaction_lag_ms.value();
         }
         return config::shard_local_cfg().max_compaction_lag_ms();
+    }
+
+    bool key_index_enabled() const {
+        if (!_overrides) {
+            return false;
+        }
+        return _overrides->key_index_enabled.value_or(false);
     }
 
     ntp_config copy() const {

@@ -119,7 +119,8 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
       "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
       "flush_bytes: {}, iceberg_mode: {}, remote_allow_gaps: {}, "
       "delete_retention_ms: {}, min_cleanable_dirty_ratio: {}, "
-      "min_compaction_lag_ms: {}, max_compaction_lag_ms: {} }}",
+      "min_compaction_lag_ms: {}, max_compaction_lag_ms: {}, "
+      "key_index_enabled: {} }}",
       v.compaction_strategy,
       v.cleanup_policy_bitflags,
       v.segment_size,
@@ -140,7 +141,8 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
       v.delete_retention_ms,
       v.min_cleanable_dirty_ratio,
       v.min_compaction_lag_ms,
-      v.max_compaction_lag_ms);
+      v.max_compaction_lag_ms,
+      v.key_index_enabled);
 
     if (config::shard_local_cfg().cloud_topics_enabled()) {
         fmt::print(o, ", cloud_topic_enabled: {}", v.cloud_topic_enabled);

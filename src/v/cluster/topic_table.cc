@@ -1206,6 +1206,8 @@ topic_properties topic_table::update_topic_properties(
     incremental_update(
       updated_properties.message_timestamp_after_max_ms,
       overrides.message_timestamp_after_max_ms);
+    incremental_update(
+      updated_properties.key_index_enabled, overrides.key_index_enabled);
     return updated_properties;
 }
 

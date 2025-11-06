@@ -95,7 +95,7 @@ create_topic_properties_update(
     std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
     static_assert(
-      std::tuple_size_v<decltype(update.properties.serde_fields())> == 42,
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 43,
       "If you add a property, decide on its default alter config "
       "policy, and handle the update in the loop below");
     static_assert(
@@ -470,6 +470,12 @@ create_topic_properties_update(
                   message_timestamp_after_max_ms_validator,
                   /*clamp_to_duration_max=*/true);
                 continue;
+            }
+            if (cfg.name == topic_property_key_index_enabled) {
+                parse_and_set_optional_bool_alpha(
+                  update.properties.key_index_enabled,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
             }
 
         } catch (const validation_error& e) {

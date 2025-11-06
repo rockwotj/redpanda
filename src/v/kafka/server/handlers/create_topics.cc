@@ -88,7 +88,8 @@ bool is_supported(std::string_view name) {
        topic_property_max_compaction_lag_ms,
        topic_property_remote_allow_gaps,
        topic_property_message_timestamp_before_max_ms,
-       topic_property_message_timestamp_after_max_ms});
+       topic_property_message_timestamp_after_max_ms,
+       topic_property_key_index_enabled});
 
     if (std::any_of(
           supported_configs.begin(),

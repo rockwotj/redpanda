@@ -758,7 +758,8 @@ FIXTURE_TEST(
       "min.compaction.lag.ms",
       "max.compaction.lag.ms",
       "message.timestamp.before.max.ms",
-      "message.timestamp.after.max.ms"};
+      "message.timestamp.after.max.ms",
+      "redpanda.key_index.enabled"};
 
     // All properties_request
     auto all_describe_resp = describe_configs(test_tp);
