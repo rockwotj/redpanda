@@ -1,0 +1,32 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+ 
+
+{
+  "apiKey": 10001,
+  "type": "request",
+  "listeners": ["broker"],
+  "name": "LookupValueForKeyRequest",
+  "validVersions": "0",
+  "flexibleVersions": "0+",
+  "fields": [
+    { "name": "Topics", "type": "[]LookupValueForKeyTopicRequest", "versions": "0+",
+      "about": "The topics to fetch.", "fields": [
+      { "name": "Topic", "type": "string", "versions": "0+", "entityType": "topicName", "ignorable": true,
+        "about": "The name of the topic to fetch." },
+      { "name": "Partitions", "type": "[]LookupValueForKeyPartitionRequest", "versions": "0+",
+        "about": "The partitions to fetch.", "fields": [
+        { "name": "PartitionIndex", "type": "int32", "versions": "0+",
+          "about": "The partition index." },
+        {"name":"Keys", "type":"[]bytes", "versions":"0+", "about": "The keys to lookup"}
+      ]}
+    ]}
+  ]
+}
+// vim: filetype=jsonc

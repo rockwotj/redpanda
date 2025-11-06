@@ -44,6 +44,7 @@
 #include "kafka/protocol/list_offset.h"
 #include "kafka/protocol/list_partition_reassignments.h"
 #include "kafka/protocol/list_transactions.h"
+#include "kafka/protocol/lookup_value_for_key.h"
 #include "kafka/protocol/messages.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/offset_commit.h"

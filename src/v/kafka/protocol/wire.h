@@ -153,6 +153,8 @@ public:
         return _parser.read_bytes(n - 1);
     }
 
+    iobuf read_fragmented_bytes() { return _parser.share(read_int32()); }
+
     // Stronly suggested to use read_nullable_iobuf
     std::optional<iobuf> read_fragmented_nullable_bytes() {
         auto [io, count] = read_nullable_iobuf();
@@ -160,6 +162,15 @@ public:
             return std::nullopt;
         }
         return std::move(io);
+    }
+
+    iobuf read_fragmented_flex_bytes() {
+        auto len = read_unsigned_varint();
+        if (len == 0) [[unlikely]] {
+            throw std::out_of_range("Asked to read a negative byte string");
+        }
+        auto ret = _parser.share(len - 1);
+        return iobuf{std::move(ret)};
     }
 
     std::optional<iobuf> read_fragmented_nullable_flex_bytes() {
@@ -484,13 +495,24 @@ public:
 
     uint32_t write(const model::topic& topic) { return write(topic()); }
 
+    uint32_t write(iobuf&& data) {
+        auto size = serialize_int<int32_t>(data.size_bytes())
+                    + data.size_bytes();
+        _out->append(std::move(data));
+        return size;
+    }
+
     uint32_t write(std::optional<iobuf>&& data) {
         if (!data) {
             return serialize_int<int32_t>(-1);
         }
-        auto size = serialize_int<int32_t>(data->size_bytes())
-                    + data->size_bytes();
-        _out->append(std::move(*data));
+        return write(std::move(*data));
+    }
+
+    uint32_t write_flex(iobuf&& data) {
+        auto size = write_unsigned_varint(data.size_bytes() + 1)
+                    + data.size_bytes();
+        _out->append(std::move(data));
         return size;
     }
 
@@ -498,10 +520,7 @@ public:
         if (!data) {
             return write_unsigned_varint(0);
         }
-        auto size = write_unsigned_varint(data->size_bytes() + 1)
-                    + data->size_bytes();
-        _out->append(std::move(*data));
-        return size;
+        return write_flex(std::move(*data));
     }
 
     uint32_t write(std::optional<batch_reader>&& rdr) {

@@ -52,6 +52,7 @@ MESSAGES = [
     "sasl_handshake",
     "sync_group",
     "txn_offset_commit",
+    "lookup_value_for_key",
 ]
 
 _MESSAGE_REQUESTS = ["//src/v/kafka/protocol/schemata:" + m + "_request" for m in MESSAGES]

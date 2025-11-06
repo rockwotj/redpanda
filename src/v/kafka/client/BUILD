@@ -61,6 +61,7 @@ redpanda_cc_library(
         "//src/v/kafka/protocol:list_offset",
         "//src/v/kafka/protocol:list_partition_reassignments",
         "//src/v/kafka/protocol:list_transactions",
+        "//src/v/kafka/protocol:lookup_value_for_key",
         "//src/v/kafka/protocol:messages",
         "//src/v/kafka/protocol:metadata",
         "//src/v/kafka/protocol:offset_commit",

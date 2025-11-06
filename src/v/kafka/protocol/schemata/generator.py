@@ -448,6 +448,20 @@ path_type_map = {
     "AlterUserScramCredentialsResponseData": {
         "Results": {"User": ("kafka::scram_user_name", "string")},
     },
+    "LookupValueForKeyRequestData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        },
+    },
+    "LookupValueForKeyResponseData": {
+        "Responses": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -487,9 +501,9 @@ basic_type_map = dict(
     uuid=("uuid", "read_uuid()"),
     iobuf=(
         "iobuf",
-        None,
+        "read_fragmented_bytes()",
         "read_fragmented_nullable_bytes()",
-        None,
+        "read_fragmented_flex_bytes()",
         "read_fragmented_nullable_flex_bytes()",
     ),
     records=(
@@ -727,6 +741,11 @@ STRUCT_TYPES = [
     "ScramCredentialUpsertion",
     "AlterUserScramCredentialsResult",
     "Coordinator",
+    "LookupValueForKeyTopicRequest",
+    "LookupValueForKeyPartitionRequest",
+    "LookupValueForKeyTopicResponse",
+    "LookupValueForKeyPartitionResponse",
+    "LookupValueData",
 ]
 
 # A list of StructTypes that are allowed to be not arrays in the schema.
@@ -922,6 +941,13 @@ class ScalarType(FieldType):
             or self.name == "iobuf"
         )
 
+    @property
+    def requires_move(self):
+        """
+        Evals to true if we must move this type
+        """
+        return self.name == "iobuf"
+
 
 class StructType(FieldType):
     def __init__(self, name, fields, path=()):
@@ -1021,6 +1047,11 @@ class ArrayType(FieldType):
     def potentially_flexible_type(self):
         assert isinstance(self._value_type, ScalarType)
         return self._value_type.potentially_flexible_type
+
+    @property
+    def requires_move(self):
+        assert isinstance(self._value_type, ScalarType)
+        return self._value_type.requires_move
 
 
 class Field:
@@ -1158,17 +1189,17 @@ class Field:
             # array fields never contain nullable types. so if this is an array
             # field then choose the non-nullable decoder for its element type.
             if self.potentially_flexible_type and flex:
-                assert plain_decoder[3]
+                assert plain_decoder[3], named_type
                 return plain_decoder[3], named_type
-            assert plain_decoder[1]
+            assert plain_decoder[1], named_type
             return plain_decoder[1], named_type
         if self.potentially_flexible_type:
             if flex is True:
                 if self.nullable():
-                    assert plain_decoder[4]
+                    assert plain_decoder[4], named_type
                     return plain_decoder[4], named_type
                 else:
-                    assert plain_decoder[3]
+                    assert plain_decoder[3], named_type
                     return plain_decoder[3], named_type
         if self.nullable():
             assert plain_decoder[2]
@@ -1206,6 +1237,10 @@ class Field:
     @property
     def potentially_flexible_type(self):
         return self._type.potentially_flexible_type
+
+    @property
+    def requires_move(self):
+        return self._type.requires_move
 
     @property
     def type_name(self):
@@ -1491,12 +1526,16 @@ if ({{ cond }}) {
     (void)version;
 {%- if field.type().value_type().is_struct %}
 {{- struct_serde(field.type().value_type(), methods, "v") | indent }}
+{%- elif flex and field.type().potentially_flexible_type and field.type().requires_move %}
+    {{ writer }}.write_flex(std::move(v));
 {%- elif flex and field.type().value_type().potentially_flexible_type %}
     {{ writer }}.write_flex(v);
 {%- else %}
     {{ writer }}.write(v);
 {%- endif %}
 });
+{%- elif flex and field.type().potentially_flexible_type and field.type().requires_move %}
+{{ writer }}.write_flex(std::move({{ fname }}));
 {%- elif flex and field.type().potentially_flexible_type %}
 {{ writer }}.write_flex({{ fname }});
 {%- else %}
@@ -1928,11 +1967,7 @@ std::ostream& operator<<(std::ostream& o, const {{ struct.name }}&) {
 # in kafka do not seem to have any sort of formalized structure, verification
 # is a check on our assumptions. If verification fails, it should be taken as an
 # indication that the generator may need to be updated.
-#
-# remove scalar type `iobuf` from the set of types used to validate schema. the
-# type is not a native kafka type, but is still represented in the code
-# generator for some scenarios involving overloads / customizing output.
-ALLOWED_SCALAR_TYPES = list(set(SCALAR_TYPES) - set(["iobuf"]))
+ALLOWED_SCALAR_TYPES = list(set(SCALAR_TYPES))
 ALLOWED_TYPES = (
     SINGULAR_STRUCT_TYPES
     + ALLOWED_SINGULAR_STRUCT_TYPES

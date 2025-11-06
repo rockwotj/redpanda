@@ -45,6 +45,7 @@
 #include "kafka/protocol/schemata/list_offset_request.h"
 #include "kafka/protocol/schemata/list_partition_reassignments_request.h"
 #include "kafka/protocol/schemata/list_transactions_request.h"
+#include "kafka/protocol/schemata/lookup_value_for_key_request.h"
 #include "kafka/protocol/schemata/metadata_request.h"
 #include "kafka/protocol/schemata/offset_commit_request.h"
 #include "kafka/protocol/schemata/offset_delete_request.h"
@@ -111,6 +112,7 @@ using request_types = make_request_types<
   describe_client_quotas_api,
   describe_cluster_api,
   describe_user_scram_credentials_api,
-  alter_user_scram_credentials_api>;
+  alter_user_scram_credentials_api,
+  lookup_value_for_key_api>;
 
 } // namespace kafka
