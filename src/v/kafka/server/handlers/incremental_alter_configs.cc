@@ -462,6 +462,12 @@ create_topic_properties_update(
                   /*clamp_to_duration_max=*/true);
                 continue;
             }
+
+            if (cfg.name == topic_property_key_index_enabled) {
+                parse_and_set_optional_bool_alpha(
+                  update.properties.key_index_enabled, cfg.value, op);
+                continue;
+            }
         } catch (const validation_error& e) {
             vlog(
               klog.debug,

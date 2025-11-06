@@ -17,7 +17,7 @@ namespace lsm {
 
 bool key_index_stm_factory::is_applicable_for(
   const storage::ntp_config& cfg) const {
-    return false;
+    return cfg.key_index_enabled();
 }
 
 void key_index_stm_factory::create(

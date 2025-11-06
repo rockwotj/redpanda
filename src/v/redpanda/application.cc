@@ -123,6 +123,7 @@
 #include "kafka/server/snc_quota_manager.h"
 #include "kafka/server/usage_manager.h"
 #include "kafka/server/write_at_offset_stm.h"
+#include "lsm/stm/key_index_stm_factory.h"
 #include "metrics/prometheus_sanitize.h"
 #include "migrations/migrators.h"
 #include "migrations/rbac_migrator.h"
@@ -3185,6 +3186,8 @@ void application::start_runtime_services(
     partition_manager
       .invoke_on_all([this](cluster::partition_manager& pm) {
           pm.register_factory<cluster::tm_stm_factory>();
+          pm.register_factory<lsm::key_index_stm_factory>(
+            config::node().lsm_database_path());
           pm.register_factory<cluster::id_allocator_stm_factory>();
           pm.register_factory<transform::transform_offsets_stm_factory>();
           pm.register_factory<cluster::rm_stm_factory>(

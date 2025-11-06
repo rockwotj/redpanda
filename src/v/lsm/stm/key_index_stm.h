@@ -23,9 +23,7 @@ public:
 
     key_index_stm(raft::consensus* c, std::filesystem::path p)
       : _raft(c)
-      , _path(std::move(p)) {
-        std::ignore = _raft;
-    }
+      , _path(std::move(p)) {}
 
     ss::future<std::optional<iobuf>> lookup_value(std::string_view key);
 

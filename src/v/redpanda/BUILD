@@ -13,6 +13,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/cluster_link",
+        "//src/v/lsm/stm:factory",
     ],
     visibility = ["//visibility:public"],
     deps = [

@@ -11,6 +11,7 @@
 
 #include "lsm/stm/key_index_stm.h"
 
+#include "lsm/core/internal/logger.h"
 #include "lsm/io/disk_persistence.h"
 #include "lsm/lsm.h"
 #include "model/record.h"
@@ -18,12 +19,14 @@
 namespace lsm {
 
 ss::future<> key_index_stm::start() {
+    vlog(log.info, "starting key index stm for {}", _raft->ntp());
     auto p = co_await io::open_disk_persistence(_path);
     _db.emplace(co_await database::open({}, std::move(p)));
     set_next(model::next_offset(_db->max_applied_offset()));
 }
 
 ss::future<> key_index_stm::stop() {
+    vlog(log.info, "stopping key index stm for {}", _raft->ntp());
     if (_db) {
         co_await _db->close().finally([this] { _db.reset(); });
     }

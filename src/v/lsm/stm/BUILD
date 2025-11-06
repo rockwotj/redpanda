@@ -10,6 +10,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/base",
+        "//src/v/lsm/core/internal:logger",
         "//src/v/lsm/io:disk_persistence",
         "//src/v/model",
     ],
