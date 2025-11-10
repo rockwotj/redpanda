@@ -17,6 +17,7 @@
 #include "kafka/server/response.h"
 #include "lsm/stm/key_index_stm.h"
 #include "model/namespace.h"
+#include "model/timeout_clock.h"
 
 #include <exception>
 #include <iterator>
@@ -33,8 +34,12 @@ lookup_value_for_key_response make_top_level_error(error_code ec) {
 
 ss::future<error_code> lookup_values(
   ss::shared_ptr<lsm::key_index_stm> stm,
+  model::offset at_offset,
   const chunked_vector<bytes>& keys,
-  chunked_vector<lookup_value_data>& results) {
+  chunked_vector<lookup_value_data>& results,
+  ss::abort_source& as) {
+    constexpr auto sync_timeout = 5s;
+    co_await stm->wait(at_offset, model::time_from_now(sync_timeout), as);
     try {
         for (auto [key, result] : std::views::zip(keys, results)) {
             result.data = co_await stm->lookup_value(std::string_view(key));
@@ -69,7 +74,7 @@ ss::future<lookup_value_for_key_partition_response> lookup_values(
         resp.values.emplace_back();
     }
     resp.error_code = co_await ctx->partition_manager().invoke_on(
-      *shard, [&ktp, &keys, &resp](cluster::partition_manager& pm) {
+      *shard, [ctx, &ktp, &keys, &resp](cluster::partition_manager& pm) {
           auto partition = pm.get(ktp);
           if (!partition || !partition->is_leader()) {
               return ss::as_ready_future(error_code::not_leader_for_partition);
@@ -79,7 +84,13 @@ ss::future<lookup_value_for_key_partition_response> lookup_values(
           if (!key_index_stm) {
               return ss::as_ready_future(error_code::invalid_topic_exception);
           }
-          return lookup_values(std::move(key_index_stm), keys, resp.values);
+          return lookup_values(
+            std::move(key_index_stm),
+            // TODO: Handle this correctly
+            model::prev_offset(partition->last_stable_offset()),
+            keys,
+            resp.values,
+            ctx->abort_source().local());
       });
     co_return resp;
 }
