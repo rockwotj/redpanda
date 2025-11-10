@@ -71,6 +71,9 @@ struct topic_configuration
     }
     bool is_cloud_topic() const { return properties.cloud_topic_enabled; }
     bool is_compacted() const { return properties.is_compacted(); }
+    bool has_key_index() const {
+        return properties.key_index_enabled.value_or(false);
+    }
 
     const model::topic_namespace& remote_tp_ns() const {
         if (has_remote_topic_namespace_override()) {

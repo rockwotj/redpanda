@@ -45,6 +45,7 @@
 #include "kafka/server/handlers/list_offsets.h"
 #include "kafka/server/handlers/list_partition_reassignments.h"
 #include "kafka/server/handlers/list_transactions.h"
+#include "kafka/server/handlers/lookup_value_for_key.h"
 #include "kafka/server/handlers/metadata.h"
 #include "kafka/server/handlers/offset_commit.h"
 #include "kafka/server/handlers/offset_delete.h"
@@ -116,6 +117,8 @@ using request_types = make_request_types<
   describe_cluster_handler,
   describe_user_scram_credentials_handler,
   alter_user_scram_credentials_handler>;
+
+using custom_request_types = make_request_types<lookup_value_for_key_handler>;
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {

@@ -15,6 +15,7 @@
 #include "kafka/server/response.h"
 
 namespace kafka {
+
 template<typename RequestType>
 static auto make_api() {
     return api_versions_response_key{
@@ -34,11 +35,11 @@ serialize_apis(type_list<RequestTypes...>) {
 static chunked_vector<api_versions_response_key>
 get_supported_apis(bool is_idempotence_enabled, bool are_transactions_enabled) {
     auto all_api = serialize_apis(request_types{});
+    all_api.append_range(serialize_apis(custom_request_types{}));
 
     chunked_vector<api_versions_response_key> filtered;
-    std::copy_if(
-      all_api.begin(),
-      all_api.end(),
+    std::ranges::copy_if(
+      all_api,
       std::back_inserter(filtered),
       [is_idempotence_enabled,
        are_transactions_enabled](api_versions_response_key api) {

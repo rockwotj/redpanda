@@ -15,6 +15,7 @@
 #include "kafka/server/response.h"
 
 #include <optional>
+#include <utility>
 
 namespace kafka {
 
@@ -124,13 +125,14 @@ struct handler_holder {
 
 template<typename... Ts>
 constexpr auto make_lut(type_list<Ts...>) {
-    constexpr int max_index = std::max({Ts::api::key...});
+    constexpr int32_t offset = std::min({Ts::api::key...});
+    constexpr int32_t max_index = std::max({Ts::api::key - offset...});
     static_assert(max_index < sizeof...(Ts) * 10, "LUT is too sparse");
 
     std::array<handler, max_index + 1> lut{};
-    ((lut[Ts::api::key] = &handler_holder<Ts>::instance), ...);
+    ((lut[Ts::api::key - offset] = &handler_holder<Ts>::instance), ...);
 
-    return lut;
+    return std::make_pair(offset, lut);
 }
 
 static const auto& handlers() {
@@ -138,21 +140,38 @@ static const auto& handlers() {
     return lut;
 }
 
+static const auto& custom_handlers() {
+    static constexpr auto lut = make_lut(custom_request_types{});
+    return lut;
+}
+
 std::optional<handler> handler_for_key(kafka::api_key key) noexcept {
-    const auto& lut = handlers();
-    if (key >= (short)0 && key < (short)lut.size()) {
-        // We have already checked the bounds above so it is safe to use []
-        // instead of at()
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-        if (auto handler = lut[key]) {
-            return handler;
+    auto lookup_handler =
+      [key](const auto& handlers) -> std::optional<handler> {
+        const auto& [offset, lut] = handlers;
+        int32_t idx = key() - offset;
+        if (idx >= 0 && idx < static_cast<int32_t>(lut.size())) {
+            // We have already checked the bounds above so it is safe to use []
+            // instead of at()
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+            if (auto handler = lut[idx]) {
+                return handler;
+            }
         }
-    }
-    return std::nullopt;
+        return std::nullopt;
+    };
+    return lookup_handler(handlers()).or_else([lookup_handler] {
+        return lookup_handler(custom_handlers());
+    });
 }
 
 std::optional<api_key> api_name_to_key(std::string_view name) noexcept {
-    for (const auto& handler : handlers()) {
+    for (const auto& handler : handlers().second) {
+        if (handler && name == handler->name()) {
+            return handler->key();
+        }
+    }
+    for (const auto& handler : custom_handlers().second) {
         if (handler && name == handler->name()) {
             return handler->key();
         }
@@ -160,6 +179,9 @@ std::optional<api_key> api_name_to_key(std::string_view name) noexcept {
     return std::nullopt;
 }
 
-size_t max_api_key() noexcept { return max_api_key(request_types{}); }
+size_t max_api_key() noexcept {
+    return std::max(
+      max_api_key(request_types{}), max_api_key(custom_request_types{}));
+}
 
 } // namespace kafka

@@ -9,7 +9,7 @@
  
 
 {
-  "apiKey": 10001,
+  "apiKey": 15000,
   "type": "request",
   "listeners": ["broker"],
   "name": "LookupValueForKeyRequest",

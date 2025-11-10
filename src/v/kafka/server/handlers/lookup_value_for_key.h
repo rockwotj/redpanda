@@ -9,10 +9,13 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+
 #include "kafka/protocol/lookup_value_for_key.h"
+#include "kafka/server/handlers/handler.h"
 
 namespace kafka {
 
-using join_group_handler = two_phase_handler<lookup_value_for_key_api, 0, 6>;
+using lookup_value_for_key_handler
+  = single_stage_handler<lookup_value_for_key_api, 0, 0>;
 
 } // namespace kafka

@@ -93,6 +93,11 @@ public:
     void reserve(size_type size) { data_.reserve(size); }
     void push_back(value_type v) { data_.push_back(v); }
 
+    explicit operator std::string_view() const {
+        // NOLINTNEXTLINE
+        return {reinterpret_cast<const char*>(data()), size()};
+    }
+
     friend bool operator==(const bytes&, const bytes&) = default;
 
     friend bool operator<(const bytes& a, const bytes& b) {
