@@ -67,6 +67,9 @@ public:
     // Create an iterator over the database.
     ss::future<iterator> create_iterator();
 
+    // Return the current size of the database's SST files in bytes.
+    uint64_t database_size() const;
+
 private:
     std::unique_ptr<db::impl> _impl;
 };

@@ -92,6 +92,8 @@ public:
 
     size_t num_files(internal::level level) { return _files[level].size(); }
 
+    uint64_t file_size_sum() const;
+
     fmt::iterator format_to(fmt::iterator) const;
 
 private:

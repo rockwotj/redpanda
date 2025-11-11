@@ -89,6 +89,8 @@ model::offset database::max_applied_offset() const {
     return seqno_cast(_impl->max_applied_seqno());
 }
 
+uint64_t database::database_size() const { return _impl->database_size(); }
+
 ss::future<> database::apply(write_batch batch) {
     auto b = std::move(batch._batch);
     co_await _impl->apply(std::move(*b));

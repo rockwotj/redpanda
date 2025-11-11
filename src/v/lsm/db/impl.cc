@@ -499,4 +499,8 @@ internal::sequence_number impl::max_applied_seqno() const {
       .value_or(max_persisted_seqno());
 }
 
+uint64_t impl::database_size() const {
+    return _versions->current()->file_size_sum();
+}
+
 } // namespace lsm::db

@@ -16,9 +16,16 @@
 #include "lsm/lsm.h"
 #include "model/record.h"
 
+#include <seastar/util/file.hh>
+
+#include <stdexcept>
+
 namespace lsm {
 
 ss::future<> key_index_stm::start() {
+    if (_db) [[unlikely]] {
+        co_return;
+    }
     vlog(log.info, "starting key index stm for {}", _raft->ntp());
     auto p = co_await io::open_disk_persistence(_path);
     _db.emplace(co_await database::open({}, std::move(p)));
@@ -27,23 +34,28 @@ ss::future<> key_index_stm::start() {
 
 ss::future<> key_index_stm::stop() {
     vlog(log.info, "stopping key index stm for {}", _raft->ntp());
-    if (_db) {
-        co_await _db->close().finally([this] { _db.reset(); });
+    if (auto db = std::exchange(_db, std::nullopt)) {
+        co_await db->close();
     }
 }
 
 size_t key_index_stm::get_local_state_size() const {
-    // TODO: Expose this from the LSM tree.
-    return 0;
+    return _db.transform([](auto& db) { return db.database_size(); })
+      .value_or(0);
 }
 
 ss::future<> key_index_stm::remove_local_state() {
-    // TODO: implement me
-    co_return;
+    if (auto db = std::exchange(_db, std::nullopt)) {
+        co_await db->close();
+    }
+    co_await ss::recursive_remove_directory(_path);
 }
 
 ss::future<std::optional<iobuf>>
 key_index_stm::lookup_value(std::string_view key) {
+    if (!_db) [[unlikely]] {
+        throw ss::abort_requested_exception();
+    }
     co_return co_await _db->get(key);
 }
 
@@ -51,6 +63,13 @@ ss::future<> key_index_stm::apply(
   const model::record_batch& batch, const ssx::semaphore_units&) {
     if (batch.header().type != model::record_batch_type::raft_data) {
         co_return;
+    }
+    if (batch.header().attrs.is_control()) {
+        co_return;
+    }
+    if (!_db) [[unlikely]] {
+        throw std::runtime_error(
+          "trying to apply a batch to an LSM database that is closed");
     }
     write_batch writes;
     auto iter = model::record_batch_iterator::create(batch);

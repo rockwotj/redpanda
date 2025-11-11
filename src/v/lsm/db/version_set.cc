@@ -318,6 +318,16 @@ version::get_overlapping_inputs(
     return inputs;
 }
 
+uint64_t version::file_size_sum() const {
+    uint64_t sum = 0;
+    for (const auto& level : _files) {
+        for (const auto& f : level) {
+            sum += f->file_size;
+        }
+    }
+    return sum;
+}
+
 namespace {
 
 struct found_value {

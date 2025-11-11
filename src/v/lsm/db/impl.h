@@ -62,6 +62,9 @@ public:
     // Get a key from the database
     ss::future<lookup_result> get(internal::key_view);
 
+    // Return the sum of SST files in bytes.
+    uint64_t database_size() const;
+
     // Create an iterator over the database. Note that this iterator
     // results in ALL entries from the database, a deduplicating iterator
     // needs to be added on top to give a traditional iterator view.
