@@ -37,6 +37,7 @@ go_library(
         "@com_github_twmb_franz_go//pkg/kbin",
         "@com_github_twmb_franz_go//pkg/kerr",
         "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go//pkg/kversion",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_github_twmb_franz_go_pkg_kmsg//:kmsg",
         "@com_github_twmb_franz_go_pkg_sr//:sr",

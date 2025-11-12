@@ -20,6 +20,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kbin"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -38,7 +39,11 @@ func newLookupCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			values := make([][]byte, len(keys))
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			cl, err := kafka.NewFranzClient(fs, p)
+			cl, err := kafka.NewFranzClient(
+				fs,
+				p,
+				kgo.MaxVersions(nil),
+			)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			adm := kadm.NewClient(cl)
 			md, err := adm.Metadata(cmd.Context(), topic)
@@ -59,7 +64,9 @@ func newLookupCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 						}},
 					}},
 				}
-				rawResp, err := cl.Request(cmd.Context(), req)
+				broker := cl.Broker(int(p.Leader))
+				req.Default()
+				rawResp, err := broker.RetriableRequest(cmd.Context(), req)
 				out.MaybeDie(err, "unable to make request to partition %d: %v", p.Partition, err)
 				resp := rawResp.(*lookupValueResponse)
 				err = kerr.ErrorForCode(resp.ErrorCode)
@@ -151,7 +158,7 @@ func (l *lookupValueRequest) SetVersion(v int16) { l.Version = v }
 func (l *lookupValueRequest) IsFlexible() bool   { return true }
 func (l *lookupValueRequest) Key() int16         { return 15000 }
 func (l *lookupValueRequest) MaxVersion() int16  { return 0 }
-func (l *lookupValueRequest) Default()           {}
+func (l *lookupValueRequest) Default()           { l.Version = l.MaxVersion() }
 func (l *lookupValueRequest) ResponseKind() kmsg.Response {
 	return &lookupValueResponse{Version: l.Version}
 }
@@ -163,21 +170,21 @@ func (l *lookupValueRequest) ReadFrom(src []byte) error {
 	if topicLen > 0 {
 		l.Topics = make([]lookupValueForTopicRequest, topicLen)
 	}
-	for i := int32(0); i < topicLen; i++ {
+	for i := range topicLen {
 		t := &l.Topics[i]
 		t.Topic = b.CompactString()
 		partitionLen := b.CompactArrayLen()
 		if partitionLen > 0 {
 			t.Partitions = make([]lookupValueForPartitionRequest, partitionLen)
 		}
-		for j := int32(0); j < partitionLen; j++ {
+		for j := range partitionLen {
 			p := &t.Partitions[j]
 			p.PartitionIndex = b.Int32()
 			keysLen := b.CompactArrayLen()
 			if keysLen > 0 {
 				p.Keys = make([][]byte, keysLen)
 			}
-			for k := int32(0); k < keysLen; k++ {
+			for k := range keysLen {
 				p.Keys[k] = b.CompactBytes()
 			}
 		}
@@ -202,12 +209,12 @@ func (l *lookupValueRequest) AppendTo(dst []byte) []byte {
 	return dst
 }
 
-func (l *lookupValueResponse) GetVersion() int16  { return 0 }
+func (l *lookupValueResponse) GetVersion() int16  { return l.Version }
 func (l *lookupValueResponse) SetVersion(v int16) { l.Version = v }
 func (l *lookupValueResponse) IsFlexible() bool   { return true }
 func (l *lookupValueResponse) Key() int16         { return 15000 }
 func (l *lookupValueResponse) MaxVersion() int16  { return 0 }
-func (l *lookupValueResponse) Default()           {}
+func (l *lookupValueResponse) Default()           { l.Version = l.MaxVersion() }
 func (l *lookupValueResponse) RequestKind() kmsg.Request {
 	return &lookupValueRequest{Version: l.Version}
 }
@@ -216,6 +223,8 @@ func (l *lookupValueResponse) SetThrottle(v int32)     { l.ThrottleTimeMs = v }
 
 func (l *lookupValueResponse) ReadFrom(src []byte) error {
 	b := kbin.Reader{Src: src}
+	l.ThrottleTimeMs = b.Int32()
+	l.ErrorCode = b.Int16()
 	topicLen := b.CompactArrayLen()
 	if topicLen > 0 {
 		l.Responses = make([]lookupValueForTopicResponse, topicLen)
@@ -236,7 +245,7 @@ func (l *lookupValueResponse) ReadFrom(src []byte) error {
 				p.Values = make([]lookupValueData, valuesLen)
 			}
 			for k := range valuesLen {
-				p.Values[k].Data = b.NullableBytes()
+				p.Values[k].Data = b.CompactNullableBytes()
 			}
 		}
 	}
