@@ -240,16 +240,9 @@ class Prometheus:
 
         self.process = await asyncio.create_subprocess_shell(
             cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
-
-        while True:
-            line = await self.process.stdout.readline()
-            if not line:
-                break
-            line = line.decode("utf8").rstrip()
-            print(f"prometheus: {line}")
 
         await self.process.wait()
 
@@ -334,17 +327,10 @@ class Grafana:
         self.process = await asyncio.create_subprocess_shell(
             cmd,
             env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
             cwd=grafana_home,
         )
-
-        while True:
-            line = await self.process.stdout.readline()
-            if not line:
-                break
-            line = line.decode("utf8").rstrip()
-            print(f"grafana: {line}")
 
         await self.process.wait()
 
