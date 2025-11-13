@@ -22,6 +22,35 @@
 
 namespace lsm {
 
+namespace {
+
+struct lookup_consumer {
+public:
+    explicit lookup_consumer(model::offset target)
+      : _target(target) {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        auto iter = model::record_batch_iterator::create(b);
+        int64_t delta = _target - b.base_offset();
+        while (iter.has_next()) {
+            auto record = iter.next();
+            if (record.offset_delta() == delta) {
+                _result.emplace(record.release_value());
+                break;
+            }
+        }
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
+    }
+    std::optional<iobuf> end_of_stream() { return std::move(_result); }
+
+private:
+    model::offset _target;
+    std::optional<iobuf> _result;
+};
+
+} // namespace
+
 ss::future<> key_index_stm::start() {
     if (_db) [[unlikely]] {
         co_return;
@@ -56,7 +85,21 @@ key_index_stm::lookup_value(std::string_view key) {
     if (!_db) [[unlikely]] {
         throw ss::abort_requested_exception();
     }
-    co_return co_await _db->get(key);
+    auto maybe_offset = co_await _db->get(key);
+    if (!maybe_offset) {
+        co_return std::nullopt;
+    }
+    auto offset = serde::from_iobuf<model::offset>(std::move(*maybe_offset));
+    storage::local_log_reader_config reader_config(
+      /*start_offset=*/offset,
+      /*max_offset=*/offset,
+      /*max_bytes=*/1,
+      /*type_filter=*/std::nullopt,
+      /*time=*/std::nullopt,
+      /*as=*/std::nullopt);
+    auto reader = co_await _raft->make_reader(reader_config);
+    co_return co_await reader.consume(
+      lookup_consumer(offset), model::no_timeout);
 }
 
 ss::future<> key_index_stm::apply(
@@ -85,9 +128,10 @@ ss::future<> key_index_stm::apply(
         if (record.is_tombstone()) {
             writes.remove(key, offset);
         } else {
-            // TODO: instead of writing in the LSM tree, instead write
-            // nothing and get back the offset, then read the offset
-            writes.put(key, record.release_value(), offset);
+            // TODO: instead of writing the offset as the value, we should
+            // support being able to read the offset directly from it being
+            // encoded in the internal::key.
+            writes.put(key, serde::to_iobuf(offset), offset);
         }
     }
     co_await _db->apply(std::move(writes));

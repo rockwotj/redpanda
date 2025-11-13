@@ -151,6 +151,7 @@ ss::future<response_ptr> lookup_value_for_key_handler::handle(
                 model::ktp{resp.topic, partition_req.partition_index},
                 std::move(partition_req.keys)));
         }
+        top_level_resp.data.responses.push_back(std::move(resp));
     }
     co_return co_await ctx.respond(std::move(top_level_resp));
 }

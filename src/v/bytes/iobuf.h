@@ -81,6 +81,13 @@ public:
         return i;
     }
 
+    template<size_t N>
+    static iobuf from(std::array<uint8_t, N> view) {
+        iobuf i;
+        i.append(view);
+        return i;
+    }
+
     iobuf() noexcept = default;
     ~iobuf() noexcept;
     iobuf(iobuf&& x) noexcept
