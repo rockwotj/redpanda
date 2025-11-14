@@ -68,6 +68,13 @@ ss::future<> key_index_stm::stop() {
     }
 }
 
+ss::future<> key_index_stm::apply_raft_snapshot(const iobuf&) {
+    co_await remove_local_state();
+    co_await start();
+}
+
+ss::future<iobuf> key_index_stm::take_raft_snapshot() { co_return iobuf{}; }
+
 size_t key_index_stm::get_local_state_size() const {
     return _db.transform([](auto& db) { return db.database_size(); })
       .value_or(0);

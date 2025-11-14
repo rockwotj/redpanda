@@ -37,8 +37,8 @@ public:
         return raft::stm_initial_recovery_policy::read_everything;
     }
 
-    ss::future<> apply_raft_snapshot(const iobuf&) override { co_return; }
-    ss::future<iobuf> take_raft_snapshot() override { co_return iobuf{}; }
+    ss::future<> apply_raft_snapshot(const iobuf&) override;
+    ss::future<iobuf> take_raft_snapshot() override;
     size_t get_local_state_size() const override;
     ss::future<> remove_local_state() override;
 

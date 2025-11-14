@@ -96,7 +96,7 @@ oci_image(
 oci_load(
     name = "image_load",
     image = ":image",
-    repo_tags = ["redpandadata/redpanda-dev:latest"],
+    repo_tags = ["redpandadata/redpanda-dev:key-index-prototype"],
 )
 
 go_binary(
