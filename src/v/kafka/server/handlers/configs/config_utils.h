@@ -276,6 +276,28 @@ struct iceberg_config_validator {
     }
 };
 
+struct kvstore_config_validator {
+    std::optional<ss::sstring> operator()(
+      model::topic_namespace_view tns,
+      const ss::sstring&,
+      const model::kvstore_type& value) {
+        if (!model::is_user_topic(tns)) {
+            return fmt::format(
+              "kvstore configuration cannot be altered on non user topics");
+        }
+        if (
+          !config::shard_local_cfg().enable_kvstore()
+          && value != model::kvstore_type::none) {
+            return fmt::format(
+              "Key-value store disabled in the cluster configuration, enable "
+              "it by "
+              "setting: {}",
+              config::shard_local_cfg().enable_kvstore.name());
+        }
+        return std::nullopt;
+    }
+};
+
 struct delete_retention_ms_validator {
     std::optional<ss::sstring> operator()(
       const ss::sstring&,

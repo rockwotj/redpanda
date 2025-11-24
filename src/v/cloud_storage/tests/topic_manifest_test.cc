@@ -517,6 +517,7 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
       std::nullopt,
       std::nullopt,
       model::redpanda_storage_mode::tiered,
+      model::kvstore_type::none,
     };
 
     auto random_initial_revision_id

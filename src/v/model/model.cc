@@ -808,6 +808,29 @@ std::istream& operator>>(std::istream& is, iceberg_invalid_record_action& a) {
     return is;
 }
 
+std::ostream& operator<<(std::ostream& os, const kvstore_type& t) {
+    switch (t) {
+    case kvstore_type::none:
+        return os << "none";
+    case kvstore_type::cloud:
+        return os << "cloud";
+    }
+    return os << "unknown";
+}
+
+std::istream& operator>>(std::istream& is, kvstore_type& t) {
+    ss::sstring s;
+    is >> s;
+    try {
+        t = string_switch<kvstore_type>(s)
+              .match("none", kvstore_type::none)
+              .match("cloud", kvstore_type::cloud);
+    } catch (const std::runtime_error&) {
+        is.setstate(std::ios::failbit);
+    }
+    return is;
+}
+
 std::ostream& operator<<(std::ostream& os, const fips_mode_flag& f) {
     return os << to_string_view(f);
 }

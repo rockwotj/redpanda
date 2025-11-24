@@ -4518,6 +4518,14 @@ configuration::configuration()
       "Default timeout for RPC requests between Redpanda nodes.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , enable_kvstore(
+      *this,
+      true,
+      "enable_kvstore",
+      "Enable creating topics with key-value stores attached in order to "
+      "perform key lookups and range scans.",
+      meta{.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , cloud_topics_enabled(
       *this,
       true,

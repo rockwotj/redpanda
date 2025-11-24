@@ -759,7 +759,8 @@ FIXTURE_TEST(
       "max.compaction.lag.ms",
       "message.timestamp.before.max.ms",
       "message.timestamp.after.max.ms",
-      "redpanda.storage.mode"};
+      "redpanda.storage.mode",
+      "redpanda.kvstore"};
 
     // All properties_request
     auto all_describe_resp = describe_configs(test_tp);

@@ -410,7 +410,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "iceberg_invalid_record_action: {}, "
       "iceberg_target_lag_ms: {}, "
       "remote_allow_gaps: {}, "
-      "topic_id: {}}}",
+      "topic_id: {}, kvstore: {}}}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -446,7 +446,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.iceberg_invalid_record_action,
       i.iceberg_target_lag_ms,
       i.remote_allow_gaps,
-      i.topic_id);
+      i.topic_id,
+      i.kvstore);
     return o;
 }
 

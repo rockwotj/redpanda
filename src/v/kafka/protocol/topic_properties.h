@@ -79,4 +79,6 @@ inline constexpr std::string_view topic_property_leaders_preference
 inline constexpr std::string_view topic_property_redpanda_storage_mode
   = "redpanda.storage.mode";
 
+inline constexpr std::string_view topic_property_kvstore = "redpanda.kvstore";
+
 } // namespace kafka

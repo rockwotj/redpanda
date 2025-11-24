@@ -18,6 +18,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/alter_configs_response.h"
+#include "kafka/protocol/topic_properties.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/configs/config_utils.h"
 #include "kafka/server/handlers/configs/storage_mode_properties.h"
@@ -104,7 +105,7 @@ create_topic_properties_update(
     std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
     static_assert(
-      std::tuple_size_v<decltype(update.properties.serde_fields())> == 44,
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 45,
       "If you add a property, decide on its default alter config "
       "policy, and handle the update in the loop below");
     static_assert(
@@ -518,6 +519,16 @@ create_topic_properties_update(
                   cfg.value,
                   kafka::config_resource_operation::set,
                   storage_mode_validator{current_storage_mode});
+                continue;
+            }
+
+            if (cfg.name == topic_property_kvstore) {
+                parse_and_set_property(
+                  tp_ns,
+                  update.properties.kvstore,
+                  cfg.value,
+                  kafka::config_resource_operation::set,
+                  kvstore_config_validator{});
                 continue;
             }
 

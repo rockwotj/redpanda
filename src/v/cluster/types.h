@@ -667,6 +667,9 @@ struct incremental_topic_updates
     // after the logical state of a given topic is restored.
     property_update<std::optional<cloud_storage::remote_label>> remote_label;
 
+    property_update<model::kvstore_type> kvstore;
+
+
     // To allow us to better control use of the deprecated shadow_indexing
     // field, use getters and setters instead.
     const auto& get_shadow_indexing() const { return shadow_indexing; }
@@ -717,7 +720,8 @@ struct incremental_topic_updates
           message_timestamp_before_max_ms,
           message_timestamp_after_max_ms,
           remote_label,
-          storage_mode);
+          storage_mode,
+          kvstore);
     }
 
     friend std::ostream&
