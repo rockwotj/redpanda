@@ -500,4 +500,130 @@ ss::future<result<consume_reply, cluster::errc>> client::consume(
 
     co_return ret_t(std::move(result.value()));
 }
+
+ss::future<kv_write_reply> client::kv_write(kv_write_request req) {
+    auto leader = _leaders->get_leader_node(
+      model::topic_namespace_view(req.ntp.ns, req.ntp.tp.topic),
+      req.ntp.tp.partition);
+    if (!leader) {
+        co_return kv_write_reply(cluster::errc::not_leader);
+    }
+    vlog(log.trace, "kv_write_request(node={}): ntp={}", *leader, req.ntp);
+    auto reply = co_await (
+      *leader == _self ? do_local_kv_write(std::move(req))
+                       : do_remote_kv_write(*leader, std::move(req)));
+    vlog(log.trace, "kv_write_reply(node={}): err={}", *leader, reply.err);
+    co_return reply;
+}
+
+ss::future<kv_get_reply> client::kv_get(kv_get_request req) {
+    auto leader = _leaders->get_leader_node(
+      model::topic_namespace_view(req.ntp.ns, req.ntp.tp.topic),
+      req.ntp.tp.partition);
+    if (!leader) {
+        co_return kv_get_reply(cluster::errc::not_leader);
+    }
+    vlog(log.trace, "kv_get_request(node={}): ntp={}", *leader, req.ntp);
+    auto reply = co_await (
+      *leader == _self ? do_local_kv_get(std::move(req))
+                       : do_remote_kv_get(*leader, std::move(req)));
+    vlog(log.trace, "kv_get_reply(node={}): err={}", *leader, reply.err);
+    co_return reply;
+}
+
+ss::future<kv_scan_reply> client::kv_scan(kv_scan_request req) {
+    auto leader = _leaders->get_leader_node(
+      model::topic_namespace_view(req.ntp.ns, req.ntp.tp.topic),
+      req.ntp.tp.partition);
+    if (!leader) {
+        co_return kv_scan_reply(cluster::errc::not_leader);
+    }
+    vlog(log.trace, "kv_scan_request(node={}): ntp={}", *leader, req.ntp);
+    auto reply = co_await (
+      *leader == _self ? do_local_kv_scan(std::move(req))
+                       : do_remote_kv_scan(*leader, std::move(req)));
+    vlog(log.trace, "kv_scan_reply(node={}): err={}", *leader, reply.err);
+    co_return reply;
+}
+
+ss::future<kv_write_reply> client::do_local_kv_write(kv_write_request req) {
+    co_return co_await _local_service->local().kv_write(std::move(req));
+}
+
+ss::future<kv_write_reply>
+client::do_remote_kv_write(model::node_id node, kv_write_request req) {
+    auto resp = co_await _connections->local()
+                  .with_node_client<
+                    kafka::data::rpc::impl::kafka_data_rpc_client_protocol>(
+                    _self,
+                    ss::this_shard_id(),
+                    node,
+                    timeout,
+                    [req = std::move(req)](
+                      impl::kafka_data_rpc_client_protocol proto) mutable {
+                        return proto.kv_write(
+                          std::move(req),
+                          ::rpc::client_opts(
+                            model::timeout_clock::now() + timeout));
+                    })
+                  .then(&::rpc::get_ctx_data<kv_write_reply>);
+    if (resp.has_error()) {
+        co_return kv_write_reply(map_errc(resp.assume_error()));
+    }
+    co_return std::move(resp).value();
+}
+
+ss::future<kv_get_reply> client::do_local_kv_get(kv_get_request req) {
+    co_return co_await _local_service->local().kv_get(std::move(req));
+}
+
+ss::future<kv_get_reply>
+client::do_remote_kv_get(model::node_id node, kv_get_request req) {
+    auto resp = co_await _connections->local()
+                  .with_node_client<
+                    kafka::data::rpc::impl::kafka_data_rpc_client_protocol>(
+                    _self,
+                    ss::this_shard_id(),
+                    node,
+                    timeout,
+                    [req = std::move(req)](
+                      impl::kafka_data_rpc_client_protocol proto) mutable {
+                        return proto.kv_get(
+                          std::move(req),
+                          ::rpc::client_opts(
+                            model::timeout_clock::now() + timeout));
+                    })
+                  .then(&::rpc::get_ctx_data<kv_get_reply>);
+    if (resp.has_error()) {
+        co_return kv_get_reply(map_errc(resp.assume_error()));
+    }
+    co_return std::move(resp).value();
+}
+
+ss::future<kv_scan_reply> client::do_local_kv_scan(kv_scan_request req) {
+    co_return co_await _local_service->local().kv_scan(std::move(req));
+}
+
+ss::future<kv_scan_reply>
+client::do_remote_kv_scan(model::node_id node, kv_scan_request req) {
+    auto resp = co_await _connections->local()
+                  .with_node_client<
+                    kafka::data::rpc::impl::kafka_data_rpc_client_protocol>(
+                    _self,
+                    ss::this_shard_id(),
+                    node,
+                    timeout,
+                    [req = std::move(req)](
+                      impl::kafka_data_rpc_client_protocol proto) mutable {
+                        return proto.kv_scan(
+                          std::move(req),
+                          ::rpc::client_opts(
+                            model::timeout_clock::now() + timeout));
+                    })
+                  .then(&::rpc::get_ctx_data<kv_scan_reply>);
+    if (resp.has_error()) {
+        co_return kv_scan_reply(map_errc(resp.assume_error()));
+    }
+    co_return std::move(resp).value();
+}
 } // namespace kafka::data::rpc

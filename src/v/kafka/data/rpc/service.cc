@@ -332,4 +332,40 @@ network_service::consume(consume_request req, ::rpc::streaming_context&) {
     co_return co_await _service->local().consume(std::move(req));
 }
 
+ss::future<kv_write_reply>
+local_service::kv_write(kv_write_request) {
+    // TODO: Implement kvstore write logic
+    co_return kv_write_reply(cluster::errc::feature_disabled);
+}
+
+ss::future<kv_get_reply>
+local_service::kv_get(kv_get_request) {
+    // TODO: Implement kvstore get logic
+    co_return kv_get_reply(cluster::errc::feature_disabled);
+}
+
+ss::future<kv_scan_reply>
+local_service::kv_scan(kv_scan_request) {
+    // TODO: Implement kvstore scan logic
+    co_return kv_scan_reply(cluster::errc::feature_disabled);
+}
+
+ss::future<kv_write_reply>
+network_service::kv_write(kv_write_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    co_return co_await _service->local().kv_write(std::move(req));
+}
+
+ss::future<kv_get_reply>
+network_service::kv_get(kv_get_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    co_return co_await _service->local().kv_get(std::move(req));
+}
+
+ss::future<kv_scan_reply>
+network_service::kv_scan(kv_scan_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    co_return co_await _service->local().kv_scan(std::move(req));
+}
+
 } // namespace kafka::data::rpc

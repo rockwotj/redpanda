@@ -42,6 +42,10 @@ public:
 
     ss::future<consume_reply> consume(consume_request req);
 
+    ss::future<kv_write_reply> kv_write(kv_write_request);
+    ss::future<kv_get_reply> kv_get(kv_get_request);
+    ss::future<kv_scan_reply> kv_scan(kv_scan_request);
+
     ss::future<> stop();
 
 private:
@@ -93,6 +97,15 @@ public:
 
     ss::future<consume_reply>
     consume(consume_request, ::rpc::streaming_context&) override;
+
+    ss::future<kv_write_reply>
+    kv_write(kv_write_request, ::rpc::streaming_context&) override;
+
+    ss::future<kv_get_reply>
+    kv_get(kv_get_request, ::rpc::streaming_context&) override;
+
+    ss::future<kv_scan_reply>
+    kv_scan(kv_scan_request, ::rpc::streaming_context&) override;
 
 private:
     ss::sharded<local_service>* _service;

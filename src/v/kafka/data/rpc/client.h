@@ -87,6 +87,10 @@ public:
       size_t max_bytes,
       model::timeout_clock::duration timeout);
 
+    ss::future<kv_write_reply> kv_write(kv_write_request);
+    ss::future<kv_get_reply> kv_get(kv_get_request);
+    ss::future<kv_scan_reply> kv_scan(kv_scan_request);
+
 private:
     ss::future<cluster::errc> do_produce_once(produce_request);
     ss::future<produce_reply> do_local_produce(produce_request);
@@ -96,6 +100,15 @@ private:
     ss::future<result<partition_offsets_map, cluster::errc>>
     get_remote_partition_offsets(
       model::node_id, chunked_vector<topic_partitions> topics);
+
+    ss::future<kv_write_reply> do_local_kv_write(kv_write_request);
+    ss::future<kv_write_reply> do_remote_kv_write(model::node_id, kv_write_request);
+
+    ss::future<kv_get_reply> do_local_kv_get(kv_get_request);
+    ss::future<kv_get_reply> do_remote_kv_get(model::node_id, kv_get_request);
+
+    ss::future<kv_scan_reply> do_local_kv_scan(kv_scan_request);
+    ss::future<kv_scan_reply> do_remote_kv_scan(model::node_id, kv_scan_request);
 
     template<typename Func>
     std::invoke_result_t<Func> retry(Func&&);

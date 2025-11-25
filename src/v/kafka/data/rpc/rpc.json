@@ -19,6 +19,21 @@
             "name": "consume",
             "input_type": "consume_request",
             "output_type": "consume_reply"
+        },
+        {
+            "name": "kv_write",
+            "input_type": "kv_write_request",
+            "output_type": "kv_write_reply"
+        },
+        {
+            "name": "kv_get",
+            "input_type": "kv_get_request",
+            "output_type": "kv_get_reply"
+        },
+        {
+            "name": "kv_scan",
+            "input_type": "kv_scan_request",
+            "output_type": "kv_scan_reply"
         }
     ]
 }

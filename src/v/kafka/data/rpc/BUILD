@@ -38,6 +38,7 @@ redpanda_cc_library(
         "//src/v/rpc",
         "//src/v/serde",
         "//src/v/serde:map",
+        "//src/v/serde:variant",
         "//src/v/serde:vector",
         "//src/v/ssx:async_algorithm",
         "//src/v/storage",

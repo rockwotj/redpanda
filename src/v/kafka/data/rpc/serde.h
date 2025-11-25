@@ -18,10 +18,9 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "serde/envelope.h"
+#include "serde/rw/variant.h"
 
 #include <seastar/core/chunked_fifo.hh>
-
-#include <iosfwd>
 
 namespace kafka::data::rpc {
 
@@ -228,4 +227,204 @@ struct consume_reply
 
     fmt::iterator format_to(fmt::iterator it) const;
 };
+
+// KVStore types
+
+struct kv_entry
+  : serde::envelope<kv_entry, serde::version<0>, serde::compat_version<0>> {
+    kv_entry() = default;
+    kv_entry(ss::sstring key, iobuf value)
+      : key(std::move(key))
+      , value(std::move(value)) {}
+
+    auto serde_fields() { return std::tie(key, value); }
+
+    ss::sstring key;
+    iobuf value;
+};
+
+struct kv_precondition_if_exists
+  : serde::envelope<
+      kv_precondition_if_exists,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    kv_precondition_if_exists() = default;
+    explicit kv_precondition_if_exists(bool exists)
+      : exists(exists) {}
+
+    auto serde_fields() { return std::tie(exists); }
+
+    bool exists{false};
+};
+
+struct kv_precondition_if_matches
+  : serde::envelope<
+      kv_precondition_if_matches,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    kv_precondition_if_matches() = default;
+    explicit kv_precondition_if_matches(ss::sstring sha256_hash)
+      : sha256_hash(std::move(sha256_hash)) {}
+
+    auto serde_fields() { return std::tie(sha256_hash); }
+
+    ss::sstring sha256_hash;
+};
+
+struct kv_no_precondition
+  : serde::envelope<
+      kv_no_precondition,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(); }
+};
+
+using kv_precondition = serde::variant<
+  kv_no_precondition,
+  kv_precondition_if_exists,
+  kv_precondition_if_matches>;
+
+struct kv_put
+  : serde::envelope<kv_put, serde::version<0>, serde::compat_version<0>> {
+    kv_put() = default;
+    kv_put(kv_entry entry, kv_precondition precondition)
+      : entry(std::move(entry))
+      , precondition(std::move(precondition)) {}
+
+    auto serde_fields() { return std::tie(entry, precondition); }
+
+    kv_entry entry;
+    kv_precondition precondition;
+};
+
+struct kv_remove
+  : serde::envelope<kv_remove, serde::version<0>, serde::compat_version<0>> {
+    kv_remove() = default;
+    kv_remove(ss::sstring key, kv_precondition precondition)
+      : key(std::move(key))
+      , precondition(std::move(precondition)) {}
+
+    auto serde_fields() { return std::tie(key, precondition); }
+
+    ss::sstring key;
+    kv_precondition precondition;
+};
+
+struct kv_write_request
+  : serde::
+      envelope<kv_write_request, serde::version<0>, serde::compat_version<0>> {
+    kv_write_request() = default;
+    kv_write_request(
+      model::ntp ntp,
+      chunked_vector<kv_put> puts,
+      chunked_vector<kv_remove> removals)
+      : ntp(std::move(ntp))
+      , puts(std::move(puts))
+      , removals(std::move(removals)) {}
+
+    auto serde_fields() { return std::tie(ntp, puts, removals); }
+
+    model::ntp ntp;
+    chunked_vector<kv_put> puts;
+    chunked_vector<kv_remove> removals;
+};
+
+struct kv_write_reply
+  : serde::
+      envelope<kv_write_reply, serde::version<0>, serde::compat_version<0>> {
+    kv_write_reply() = default;
+
+    explicit kv_write_reply(cluster::errc err)
+      : err(err) {}
+
+    auto serde_fields() { return std::tie(err); }
+
+    cluster::errc err{cluster::errc::success};
+};
+
+struct kv_get_request
+  : serde::
+      envelope<kv_get_request, serde::version<0>, serde::compat_version<0>> {
+    kv_get_request() = default;
+    kv_get_request(model::ntp ntp, chunked_vector<ss::sstring> keys)
+      : ntp(std::move(ntp))
+      , keys(std::move(keys)) {}
+
+    auto serde_fields() { return std::tie(ntp, keys); }
+
+    model::ntp ntp;
+    chunked_vector<ss::sstring> keys;
+};
+
+struct kv_get_result
+  : serde::
+      envelope<kv_get_result, serde::version<0>, serde::compat_version<0>> {
+    kv_get_result() = default;
+    explicit kv_get_result(ss::sstring key)
+      : key(std::move(key)) {}
+
+    kv_get_result(ss::sstring key, std::optional<iobuf> value)
+      : key(std::move(key))
+      , value(std::move(value)) {}
+
+    auto serde_fields() { return std::tie(key, value); }
+
+    ss::sstring key;
+    std::optional<iobuf> value;
+};
+
+struct kv_get_reply
+  : serde::envelope<kv_get_reply, serde::version<0>, serde::compat_version<0>> {
+    kv_get_reply() = default;
+    explicit kv_get_reply(chunked_vector<kv_get_result> results)
+      : results(std::move(results)) {}
+
+    explicit kv_get_reply(cluster::errc err)
+      : err(err) {}
+
+    auto serde_fields() { return std::tie(results, err); }
+
+    chunked_vector<kv_get_result> results;
+    cluster::errc err{cluster::errc::success};
+};
+
+struct kv_scan_request
+  : serde::
+      envelope<kv_scan_request, serde::version<0>, serde::compat_version<0>> {
+    kv_scan_request() = default;
+    kv_scan_request(
+      model::ntp ntp,
+      std::optional<ss::sstring> start_key,
+      std::optional<ss::sstring> end_key,
+      uint32_t limit)
+      : ntp(std::move(ntp))
+      , start_key(std::move(start_key))
+      , end_key(std::move(end_key))
+      , limit(limit) {}
+
+    auto serde_fields() { return std::tie(ntp, start_key, end_key, limit); }
+
+    model::ntp ntp;
+    std::optional<ss::sstring> start_key;
+    std::optional<ss::sstring> end_key;
+    uint32_t limit{0};
+};
+
+struct kv_scan_reply
+  : serde::
+      envelope<kv_scan_reply, serde::version<0>, serde::compat_version<0>> {
+    kv_scan_reply() = default;
+    kv_scan_reply(cluster::errc err, chunked_vector<kv_entry> entries)
+      : err(err)
+      , entries(std::move(entries)) {}
+
+    explicit kv_scan_reply(cluster::errc err)
+      : err(err) {}
+
+    auto serde_fields() { return std::tie(err, entries); }
+
+    cluster::errc err{cluster::errc::success};
+    chunked_vector<kv_entry> entries;
+};
+
 } // namespace kafka::data::rpc
