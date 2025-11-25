@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "kvstore/db.h"
+#include "kvstore/db_impl.h"
 
 #include "kvstore/logger.h"
 
@@ -95,7 +95,21 @@ ss::sstring decode_key(std::string_view s) {
 
 } // namespace
 
-ss::future<> db::start() {
+std::unique_ptr<db> db::make(
+  ss::lw_shared_ptr<cluster::partition> partition,
+  cloud_io::remote* remote,
+  cloud_storage_clients::bucket_name bucket,
+  cloud_storage_clients::object_key prefix,
+  std::filesystem::path staging_dir) {
+    return std::make_unique<db_impl>(
+      std::move(partition),
+      remote,
+      std::move(bucket),
+      std::move(prefix),
+      std::move(staging_dir));
+}
+
+ss::future<> db_impl::start() {
     if (!_partition->is_leader()) {
         co_return;
     }
@@ -116,7 +130,7 @@ ss::future<> db::start() {
     ssx::spawn_with_gate(_gate, [this] { return apply_loop(); });
 }
 
-ss::future<> db::stop() {
+ss::future<> db_impl::stop() {
     _as.request_abort();
     co_await _gate.close();
     if (auto lsm = std::exchange(_lsm, std::nullopt)) {
@@ -154,7 +168,7 @@ ss::future<> db::destroy(
     }
 }
 
-ss::future<std::optional<iobuf>> db::get(std::string_view key) {
+ss::future<std::optional<iobuf>> db_impl::get(std::string_view key) {
     auto _ = _gate.hold();
     co_await sync();
     if (!_lsm) {
@@ -163,7 +177,7 @@ ss::future<std::optional<iobuf>> db::get(std::string_view key) {
     co_return co_await _lsm->get(encode_key(key));
 }
 
-ss::future<chunked_vector<entry>> db::scan(scan_parameters params) {
+ss::future<chunked_vector<entry>> db_impl::scan(scan_parameters params) {
     auto _ = _gate.hold();
     if (!_lsm) {
         throw ss::abort_requested_exception();
@@ -194,7 +208,7 @@ ss::future<chunked_vector<entry>> db::scan(scan_parameters params) {
     co_return result;
 }
 
-ss::future<write_success> db::write(write_batch wb) {
+ss::future<write_success> db_impl::write(write_batch wb) {
     auto h = _gate.hold();
     if (!_lsm) {
         throw ss::abort_requested_exception();
@@ -239,7 +253,7 @@ ss::future<write_success> db::write(write_batch wb) {
 }
 
 ss::future<write_success>
-db::check_precondition(std::string_view key, const precondition& p) {
+db_impl::check_precondition(std::string_view key, const precondition& p) {
     bool ok = co_await ss::visit(
       p,
       [](const std::nullopt_t&) -> ss::future<bool> {
@@ -258,7 +272,7 @@ db::check_precondition(std::string_view key, const precondition& p) {
     co_return write_success(ok);
 }
 
-ss::future<> db::sync() {
+ss::future<> db_impl::sync() {
     auto proxy = kafka::make_partition_proxy(_partition);
     auto lso = proxy.last_stable_offset();
     if (!lso) {
@@ -268,7 +282,7 @@ ss::future<> db::sync() {
       _as, [this, lso = lso.value()] { return _last_applied_offset < lso; });
 }
 
-ss::future<> db::replicate(model::record_batch b) {
+ss::future<> db_impl::replicate(model::record_batch b) {
     // TODO: Check the actual max batch size
     if (b.size_bytes() > max_batch_size) {
         throw std::invalid_argument(
@@ -290,7 +304,7 @@ ss::future<> db::replicate(model::record_batch b) {
     }
 }
 
-ss::future<> db::apply_loop() {
+ss::future<> db_impl::apply_loop() {
     auto& monitor = _partition->raft()->visible_offset_monitor();
     while (!_as.abort_requested()) {
         // grab the hwm because we don't want to re-apply until this has
@@ -310,7 +324,7 @@ ss::future<> db::apply_loop() {
     }
 }
 
-ss::future<> db::do_apply_chunk() {
+ss::future<> db_impl::do_apply_chunk() {
     auto proxy = kafka::make_partition_proxy(_partition);
     // TODO: Add an STM to ensure the log isn't deleted until the offset is
     // applied.

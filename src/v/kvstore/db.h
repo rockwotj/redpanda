@@ -12,17 +12,22 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "cluster/partition.h"
+#include "cloud_storage_clients/types.h"
 #include "container/chunked_vector.h"
-#include "lsm/lsm.h"
-#include "model/record.h"
-#include "utils/mutex.h"
+#include "model/fundamental.h"
 
 #include <seastar/core/future.hh>
 
+#include <filesystem>
+#include <memory>
+
 namespace cloud_io {
 class remote;
-}
+} // namespace cloud_io
+
+namespace cluster {
+class partition;
+} // namespace cluster
 
 namespace kvstore {
 
@@ -38,11 +43,13 @@ struct entry {
 struct if_exists {
     bool exists;
 };
+
 // Only write this entry if the value is this specific sha256 hash.
 struct if_matches {
     // Hex encoding of a sha256
     ss::sstring sha256_hash;
 };
+
 // A precondition that must hold for the write to succeed.
 using precondition = std::variant<std::nullopt_t, if_exists, if_matches>;
 
@@ -70,22 +77,25 @@ struct write_batch {
 // a precondition does not hold.
 using write_success = ss::bool_class<struct write_success_tag>;
 
-// A wrapper around the LSM tree that translates kafka semantics into KV store
-// ones.
+// Interface for a kvstore database.
 //
-// Additionally, we also apply the raft log in a background fiber, and service
-// reads and writes directly.
+// This is an abstract interface that can be implemented by the real database
+// or mocked for testing.
 class db {
 public:
-    db(
+    db(const db&) = delete;
+    db(db&&) = delete;
+    db& operator=(const db&) = delete;
+    db& operator=(db&&) = delete;
+    virtual ~db() = default;
+
+    // Factory method to create a database implementation.
+    static std::unique_ptr<db> make(
+      ss::lw_shared_ptr<cluster::partition> partition,
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key prefix,
-      std::filesystem::path staging_dir)
-      : _remote(remote)
-      , _bucket(std::move(bucket))
-      , _prefix(std::move(prefix))
-      , _staging_dir(std::move(staging_dir)) {}
+      std::filesystem::path staging_dir);
 
     // Destroy the database contents
     static ss::future<> destroy(
@@ -95,13 +105,13 @@ public:
       ss::abort_source& as);
 
     // Start the database
-    ss::future<> start();
+    virtual ss::future<> start() = 0;
 
     // Stop the database
-    ss::future<> stop();
+    virtual ss::future<> stop() = 0;
 
     // Lookup a single value from the database that corresponds to the key.
-    ss::future<std::optional<iobuf>> get(std::string_view key);
+    virtual ss::future<std::optional<iobuf>> get(std::string_view key) = 0;
 
     // The parameters for scanning the database.
     struct scan_parameters {
@@ -112,40 +122,17 @@ public:
         // The limit of keys to fetch.
         uint32_t limit = 0;
     };
+
     // Scan for a chunk of entries from the database.
     //
     // The scan performed on a snapshot of the database.
-    ss::future<chunked_vector<entry>> scan(scan_parameters);
+    virtual ss::future<chunked_vector<entry>> scan(scan_parameters) = 0;
 
     // Apply a write batch against the database atomically.
-    ss::future<write_success> write(write_batch);
+    virtual ss::future<write_success> write(write_batch) = 0;
 
-private:
-    // REQUIRES: holds _write_mu
-    ss::future<write_success>
-    check_precondition(std::string_view key, const precondition&);
-
-    // Apply the WAL to the database in a loop.
-    ss::future<> apply_loop();
-    // Apply a chunk of the WAL to the database.
-    ss::future<> do_apply_chunk();
-    // Wait for the latest record to be applied to the database.
-    ss::future<> sync();
-    // Replicate the record to the WAL and wait for it to be applied.
-    ss::future<> replicate(model::record_batch);
-
-    cloud_io::remote* _remote;
-    cloud_storage_clients::bucket_name _bucket;
-    cloud_storage_clients::object_key _prefix;
-    std::filesystem::path _staging_dir;
-    ss::gate _gate;
-    ss::abort_source _as;
-    mutex _write_mu{"kvstore/db"};
-    model::term_id _term;
-    model::offset _last_applied_offset;
-    ssx::condition_variable _cond_var;
-    std::optional<lsm::database> _lsm;
-    ss::lw_shared_ptr<cluster::partition> _partition;
+protected:
+    db() = default;
 };
 
 } // namespace kvstore

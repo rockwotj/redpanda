@@ -154,6 +154,10 @@ public:
         return data_directory().path / "l1_staging";
     }
 
+    std::filesystem::path kvstore_path() const {
+        return data_directory().path / "kvstore";
+    }
+
     std::vector<model::broker_endpoint> advertised_kafka_api() const {
         if (_advertised_kafka_api().empty()) {
             std::vector<model::broker_endpoint> eps;

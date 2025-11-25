@@ -7,109 +7,91 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+
 #include "kvstore/manager.h"
 
-#include "cluster/partition_manager.h"
-#include "cluster/topic_configuration.h"
-#include "cluster/topic_table.h"
-#include "cluster/utils/partition_change_notifier_impl.h"
+#include "cloud_storage_clients/types.h"
+#include "cluster/partition.h"
+#include "config/node_config.h"
+#include "kvstore/db.h"
+#include "kvstore/logger.h"
 #include "model/fundamental.h"
-
-#include <seastar/core/coroutine.hh>
-
-#include <utility>
 
 namespace kvstore {
 
+namespace {
+
+std::filesystem::path local_path(model::topic_id_partition tidp) {
+    return config::node().kvstore_path()
+           / fmt::format("{}/{}", tidp.topic_id(), tidp.partition());
+}
+
+cloud_storage_clients::object_key remote_path(model::topic_id_partition tidp) {
+    // TODO: Do we want to prefix with cluster ID?
+    return cloud_storage_clients::object_key{std::filesystem::path{
+      fmt::format("kvstores/{}/{}", tidp.topic_id(), tidp.partition())}};
+}
+
+} // namespace
+
 kvstore_manager::kvstore_manager(
-  ss::sharded<cluster::partition_manager>* pm,
-  ss::sharded<raft::group_manager>* gm,
-  ss::sharded<cluster::topic_table>* tt)
-  : partition_manager_(pm)
-  , topic_table_(tt)
-  , notifier_(
-      cluster::partition_change_notifier_impl::make_default(*gm, *pm, *tt)) {}
+  cloud_io::remote* r, cloud_storage_clients::bucket_name b)
+  : _remote(r)
+  , _bucket(std::move(b))
+  , _queue([](const std::exception_ptr& ex) {
+      vlog(kvlog.error, "error in kvstore manager: {}", ex);
+  }) {}
 
-void kvstore_manager::on_partition_leader(notification_cb_t cb) noexcept {
-    callback_ = std::move(cb);
-}
-
-ss::future<> kvstore_manager::start() {
-    using notify_current_state
-      = cluster::partition_change_notifier::notify_current_state;
-    using notif_type = cluster::partition_change_notifier::notification_type;
-    using partition_state = cluster::partition_change_notifier::partition_state;
-    notification_ = notifier_->register_partition_notifications(
-      [this](
-        notif_type,
-        const model::ntp& ntp,
-        std::optional<partition_state> state) noexcept {
-          auto is_leader = state
-                             .transform([](const partition_state& state) {
-                                 return state.is_leader;
-                             })
-                             .value_or(false);
-          std::optional<cluster::topic_configuration> config
-            = state
-                .and_then([](partition_state state) {
-                    return std::move(state.topic_cfg);
-                })
-                .or_else([this, &ntp] {
-                    return topic_table_->local().get_topic_cfg(
-                      {ntp.ns, ntp.tp.topic});
-                });
-          if (!config || !config->tp_id) {
-              auto it = topic_id_mapping_.find(ntp);
-              if (it == topic_id_mapping_.end()) {
-                  // This can happen if a topic is deleted and it wasn't a
-                  // kvstore topic.
-                  return;
-              }
-              // Always emit these even if they are not kvstore topics (we can't
-              // know), because it means the topic was deleted.
-              model::topic_id_partition tidp{it->second, ntp.tp.partition};
-              topic_id_mapping_.erase(it);
-              on_leadership_change(ntp, tidp, /*is_leader=*/false);
-              return;
-          }
-          if (config->properties.kvstore == model::kvstore_type::none) {
-              return;
-          }
-          if (is_leader) {
-              // Always ensure that if there is a leadership notification
-              // emitted, that we also emit a no leader notification, even if
-              // the topic is deleted and we no longer have the topic ID.
-              topic_id_mapping_.try_emplace(ntp, config->tp_id.value());
-          } else {
-              topic_id_mapping_.erase(ntp);
-          }
-          model::topic_id_partition tidp{
-            config->tp_id.value(), ntp.tp.partition};
-          on_leadership_change(ntp, tidp, is_leader);
-      },
-      notify_current_state::yes);
-    co_return;
-}
-
+ss::future<> kvstore_manager::start() { co_return; }
 ss::future<> kvstore_manager::stop() {
-    if (notification_) {
-        auto id = std::exchange(notification_, std::nullopt).value();
-        notifier_->unregister_partition_notifications(id);
+    co_await _queue.shutdown();
+    for (auto& db : _dbs) {
+        co_await db.second->stop();
     }
-    co_return;
 }
 
-void kvstore_manager::on_leadership_change(
-  const model::ntp& ntp,
-  const model::topic_id_partition& tidp,
-  bool is_leader) noexcept {
-    ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition;
-    if (is_leader) {
-        partition = partition_manager_->local().get(ntp);
+void kvstore_manager::schedule_partition(
+  model::ntp ntp,
+  model::topic_id_partition tidp,
+  ss::lw_shared_ptr<cluster::partition> p) {
+    _queue.submit([this, ntp = std::move(ntp), tidp, p = std::move(p)] mutable {
+        return do_schedule_partition(std::move(ntp), tidp, std::move(p));
+    });
+}
+
+void kvstore_manager::unschedule_partition(
+  model::ntp ntp, model::topic_id_partition tidp) {
+    _queue.submit([this, ntp = std::move(ntp), tidp] mutable {
+        return do_unschedule_partition(std::move(ntp), tidp);
+    });
+}
+
+ss::future<> kvstore_manager::do_schedule_partition(
+  model::ntp ntp,
+  model::topic_id_partition tidp,
+  ss::lw_shared_ptr<cluster::partition> partition) {
+    auto it = _dbs.find(ntp);
+    if (it != _dbs.end()) {
+        co_return;
     }
-    if (callback_) {
-        callback_(ntp, tidp, partition);
+    auto database = db::make(
+      std::move(partition),
+      _remote,
+      _bucket,
+      remote_path(tidp),
+      local_path(tidp));
+    _dbs.emplace(std::move(ntp), std::move(database));
+}
+
+ss::future<> kvstore_manager::do_unschedule_partition(
+  model::ntp ntp, model::topic_id_partition tidp) {
+    std::ignore = tidp; // Right now we key off ntp
+    auto it = _dbs.find(ntp);
+    if (it == _dbs.end()) {
+        co_return;
     }
+    co_await it->second->stop();
+    _dbs.erase(it);
 }
 
 } // namespace kvstore
