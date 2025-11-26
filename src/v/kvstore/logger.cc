@@ -12,6 +12,6 @@
 
 namespace kvstore {
 
-ss::logger kvlog{"kvstore"}; // NOLINT
+ss::logger kvlog{"kvdb"}; // NOLINT
 
 } // namespace kvstore

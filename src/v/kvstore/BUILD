@@ -28,6 +28,7 @@ redpanda_cc_library(
         "//src/v/cluster/utils:partition_change_notifier_impl",
         "//src/v/raft",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster/utils:partition_change_notifier_api",
         "//src/v/model",
@@ -40,6 +41,7 @@ redpanda_cc_library(
     hdrs = [
         "db.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
@@ -60,12 +62,12 @@ redpanda_cc_library(
         "db_impl.h",
     ],
     implementation_deps = [
+        ":logger",
         "//src/v/base",
         "//src/v/cloud_storage_clients",
         "//src/v/crypto",
         "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/utils:txn_reader",
-        ":logger",
         "//src/v/lsm/io:cloud_persistence",
         "//src/v/lsm/io:persistence",
         "//src/v/model:batch_builder",
@@ -96,6 +98,7 @@ redpanda_cc_library(
         "//src/v/cloud_storage_clients",
         "//src/v/config",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":db",
         "//src/v/cluster",
@@ -115,10 +118,11 @@ redpanda_cc_library(
         "app.h",
     ],
     implementation_deps = [
-        "//src/v/cluster",
         ":manager",
         ":scheduler",
+        "//src/v/cluster",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/model",
         "//src/v/raft",

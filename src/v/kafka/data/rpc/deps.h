@@ -27,6 +27,11 @@
  * testing without spinning up a full Redpanda cluster.
  */
 
+namespace kvstore {
+class app;
+class db;
+} // namespace kvstore
+
 namespace kafka::data::rpc {
 
 /**
@@ -147,7 +152,8 @@ public:
     static std::unique_ptr<partition_manager> make_default(
       ss::sharded<cluster::shard_table>*,
       ss::sharded<cluster::partition_manager>*,
-      ss::smp_service_group smp_group);
+      ss::smp_service_group smp_group,
+      kvstore::app* kvstore_app);
 
     /**
      * Lookup which shard owns a particular ntp.
@@ -206,6 +212,23 @@ public:
       consume_fn,
       require_leader req_leader = require_leader::yes)
       = 0;
+
+    /**
+     * Invoke a function on the ntp's shard with access to the kvstore database.
+     *
+     * Will return cluster::errc::not_leader if the shard_id is incorrect for
+     * that ntp or if there is no kvstore database for that ntp.
+     */
+    virtual ss::future<cluster::errc> invoke_on_shard_kvstore(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>)
+      = 0;
+    virtual ss::future<cluster::errc> invoke_on_shard_kvstore(
+      ss::shard_id,
+      const model::ntp&,
+      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>)
+      = 0;
 };
 
 class partition_manager_proxy {
@@ -213,7 +236,8 @@ public:
     partition_manager_proxy(
       ss::sharded<cluster::shard_table>* table,
       ss::sharded<cluster::partition_manager>* manager,
-      ss::smp_service_group smp_group);
+      ss::smp_service_group smp_group,
+      kvstore::app* kvstore_app);
     ~partition_manager_proxy() = default;
 
     partition_manager_proxy(const partition_manager_proxy&) = delete;
@@ -265,10 +289,17 @@ public:
     std::optional<model::term_id> get_term(const model::ktp& ntp);
     std::optional<model::term_id> get_term(const model::ntp& ntp);
 
+    template<typename NTP>
+    ss::future<cluster::errc> invoke_on_shard_kvstore_impl(
+      ss::shard_id shard,
+      const NTP& ntp,
+      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)> func);
+
 private:
     ss::sharded<cluster::shard_table>* _table;
     ss::sharded<cluster::partition_manager>* _manager;
     ss::smp_service_group _smp_group;
+    kvstore::app* _kvstore_app;
 };
 
 /**

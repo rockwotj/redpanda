@@ -24,6 +24,9 @@ redpanda_cc_library(
         "service.h",
     ],
     visibility = ["//visibility:public"],
+    implementation_deps = [
+        "//src/v/kvstore:manager",
+    ],
     deps = [
         ":kafka_data_rpc",
         "//src/v/base",
@@ -33,6 +36,8 @@ redpanda_cc_library(
         "//src/v/container:chunked_vector",
         "//src/v/kafka/data:log_reader_config",
         "//src/v/kafka/data:partition_proxy",
+        "//src/v/kvstore:app",
+        "//src/v/kvstore:db",
         "//src/v/model",
         "//src/v/raft",
         "//src/v/rpc",

@@ -21,6 +21,9 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/data/partition_proxy.h"
+#include "kvstore/app.h"
+#include "kvstore/db.h"
+#include "kvstore/manager.h"
 #include "logger.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -131,6 +134,24 @@ public:
       require_leader require_leader) final {
         return _proxy->invoke_on_shard_impl(
           shard_id, ktp, std::move(fn), require_leader);
+    }
+
+    ss::future<cluster::errc> invoke_on_shard_kvstore(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)> fn)
+      final {
+        return _proxy->invoke_on_shard_kvstore_impl(
+          shard_id, ktp, std::move(fn));
+    }
+
+    ss::future<cluster::errc> invoke_on_shard_kvstore(
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)> fn)
+      final {
+        return _proxy->invoke_on_shard_kvstore_impl(
+          shard_id, ntp, std::move(fn));
     }
 
 private:
@@ -254,18 +275,21 @@ std::unique_ptr<partition_manager>
 kafka::data::rpc::partition_manager::make_default(
   ss::sharded<cluster::shard_table>* table,
   ss::sharded<cluster::partition_manager>* manager,
-  ss::smp_service_group smp_group) {
+  ss::smp_service_group smp_group,
+  kvstore::app* kvstore_app) {
     return std::make_unique<partition_manager_impl>(
-      std::make_unique<partition_manager_proxy>(table, manager, smp_group));
+      std::make_unique<partition_manager_proxy>(table, manager, smp_group, kvstore_app));
 }
 
 partition_manager_proxy::partition_manager_proxy(
   ss::sharded<cluster::shard_table>* table,
   ss::sharded<cluster::partition_manager>* manager,
-  ss::smp_service_group smp_group)
+  ss::smp_service_group smp_group,
+  kvstore::app* kvstore_app)
   : _table(table)
   , _manager(manager)
-  , _smp_group(smp_group) {}
+  , _smp_group(smp_group)
+  , _kvstore_app(kvstore_app) {}
 
 std::optional<ss::shard_id>
 partition_manager_proxy::shard_owner(const model::ktp& ntp) {
@@ -328,5 +352,52 @@ std::unique_ptr<shadow_link_registry> shadow_link_registry::make_default(
   ss::sharded<cluster::cluster_link::frontend>* fe) {
     return std::make_unique<shadow_link_registry_impl>(fe);
 }
+
+template<typename NTP>
+ss::future<cluster::errc> partition_manager_proxy::invoke_on_shard_kvstore_impl(
+  ss::shard_id shard,
+  const NTP& ntp_or_ktp,
+  ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)> func) {
+    model::ntp ntp = [&]() {
+        if constexpr (std::is_same_v<NTP, model::ktp>) {
+            return ntp_or_ktp.to_ntp();
+        } else {
+            return ntp_or_ktp;
+        }
+    }();
+
+    return _manager->invoke_on(
+      shard,
+      {_smp_group},
+      [ntp = std::move(ntp), func = std::move(func), kvstore_app = _kvstore_app](
+        cluster::partition_manager&) mutable {
+          auto* kvstore_mgr = kvstore_app->get_local_manager();
+          if (!kvstore_mgr) {
+              return ss::make_ready_future<cluster::errc>(
+                cluster::errc::not_leader);
+          }
+
+          auto* db = kvstore_mgr->lookup_db(ntp);
+          if (!db) {
+              return ss::make_ready_future<cluster::errc>(
+                cluster::errc::not_leader);
+          }
+
+          return func(db);
+      });
+}
+
+// Explicit template instantiations
+template ss::future<cluster::errc>
+partition_manager_proxy::invoke_on_shard_kvstore_impl<model::ktp>(
+  ss::shard_id,
+  const model::ktp&,
+  ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>);
+
+template ss::future<cluster::errc>
+partition_manager_proxy::invoke_on_shard_kvstore_impl<model::ntp>(
+  ss::shard_id,
+  const model::ntp&,
+  ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>);
 
 } // namespace kafka::data::rpc
