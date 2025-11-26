@@ -10,12 +10,11 @@
 
 #include "kvstore/db_impl.h"
 
-#include "kvstore/logger.h"
-
 #include "cloud_storage_clients/types.h"
 #include "crypto/crypto.h"
 #include "kafka/data/partition_proxy.h"
 #include "kafka/utils/txn_reader.h"
+#include "kvstore/logger.h"
 #include "lsm/io/cloud_persistence.h"
 #include "lsm/io/persistence.h"
 #include "lsm/lsm.h"
@@ -168,13 +167,18 @@ ss::future<> db::destroy(
     }
 }
 
-ss::future<std::optional<iobuf>> db_impl::get(std::string_view key) {
+ss::future<chunked_vector<std::optional<iobuf>>>
+db_impl::batch_get(const chunked_vector<ss::sstring>& keys) {
     auto _ = _gate.hold();
     co_await sync();
     if (!_lsm) {
         throw ss::abort_requested_exception();
     }
-    co_return co_await _lsm->get(encode_key(key));
+    chunked_vector<std::optional<iobuf>> values;
+    for (const auto& key : keys) {
+        values.push_back(co_await _lsm->get(encode_key(key)));
+    }
+    co_return values;
 }
 
 ss::future<chunked_vector<entry>> db_impl::scan(scan_parameters params) {

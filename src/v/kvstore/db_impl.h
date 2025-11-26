@@ -46,7 +46,8 @@ public:
     ss::future<> stop() override;
 
     // Lookup a single value from the database that corresponds to the key.
-    ss::future<std::optional<iobuf>> get(std::string_view key) override;
+    ss::future<chunked_vector<std::optional<iobuf>>>
+    batch_get(const chunked_vector<ss::sstring>&) override;
 
     // Scan for a chunk of entries from the database.
     //

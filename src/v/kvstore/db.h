@@ -111,7 +111,8 @@ public:
     virtual ss::future<> stop() = 0;
 
     // Lookup a single value from the database that corresponds to the key.
-    virtual ss::future<std::optional<iobuf>> get(std::string_view key) = 0;
+    virtual ss::future<chunked_vector<std::optional<iobuf>>>
+    batch_get(const chunked_vector<ss::sstring>& keys) = 0;
 
     // The parameters for scanning the database.
     struct scan_parameters {

@@ -13,6 +13,8 @@
 
 #include "kafka/data/log_reader_config.h"
 #include "kafka/data/partition_proxy.h"
+#include "kafka/data/rpc/serde.h"
+#include "kvstore/db.h"
 #include "logger.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
@@ -20,6 +22,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
+#include "storage/kvstore.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -309,6 +312,144 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
       });
 }
 
+namespace {
+
+kvstore::write_batch convert_write_request(kv_write_request* req) {
+    kvstore::write_batch wb;
+    for (auto& put : req->puts) {
+        auto pc = ss::visit(
+          put.precondition,
+          [](kv_no_precondition&) -> kvstore::precondition {
+              return std::nullopt;
+          },
+          [](kv_precondition_if_exists& p) -> kvstore::precondition {
+              return kvstore::if_exists(p.exists);
+          },
+          [](kv_precondition_if_matches& p) -> kvstore::precondition {
+              return kvstore::if_matches(std::move(p.sha256_hash));
+          });
+        wb.puts.emplace_back(
+          kvstore::entry{
+            .key = std::move(put.entry.key),
+            .value = std::move(put.entry.value),
+          },
+          std::move(pc));
+    }
+    for (auto& removal : req->removals) {
+        auto pc = ss::visit(
+          removal.precondition,
+          [](kv_no_precondition&) -> kvstore::precondition {
+              return std::nullopt;
+          },
+          [](kv_precondition_if_exists& p) -> kvstore::precondition {
+              return kvstore::if_exists(p.exists);
+          },
+          [](kv_precondition_if_matches& p) -> kvstore::precondition {
+              return kvstore::if_matches(std::move(p.sha256_hash));
+          });
+        wb.removals.emplace_back(std::move(removal.key), std::move(pc));
+    }
+    return wb;
+}
+
+} // namespace
+
+ss::future<kv_write_reply> local_service::kv_write(kv_write_request req) {
+    auto shard = _partition_manager->shard_owner(req.ntp);
+    if (!shard) {
+        co_return cluster::errc::not_leader;
+    }
+    auto topic_cfg = _metadata_cache->find_topic_cfg(
+      model::topic_namespace_view(req.ntp));
+    if (!topic_cfg) {
+        co_return cluster::errc::topic_not_exists;
+    }
+    if (topic_cfg->properties.kvstore == model::kvstore_type::none) {
+        co_return cluster::errc::invalid_request;
+    }
+    if (!_shadow_link_registry->is_topic_mutable(req.ntp.tp.topic)) {
+        co_return cluster::errc::partition_operation_failed;
+    }
+    auto wb = convert_write_request(&req);
+    auto ec = co_await _partition_manager->invoke_on_shard_kvstore(
+      *shard, req.ntp, [&wb](kvstore::db* db) {
+          return db->write(std::move(wb)).then([](kvstore::write_success ok) {
+              return ok ? cluster::errc::success
+                        : cluster::errc::generic_tx_error;
+          });
+      });
+    co_return kv_write_reply(ec);
+}
+
+ss::future<kv_get_reply> local_service::kv_get(kv_get_request req) {
+    auto shard = _partition_manager->shard_owner(req.ntp);
+    if (!shard) {
+        co_return cluster::errc::not_leader;
+    }
+    auto topic_cfg = _metadata_cache->find_topic_cfg(
+      model::topic_namespace_view(req.ntp));
+    if (!topic_cfg) {
+        co_return cluster::errc::topic_not_exists;
+    }
+    if (topic_cfg->properties.kvstore == model::kvstore_type::none) {
+        co_return cluster::errc::invalid_request;
+    }
+    if (!_shadow_link_registry->is_topic_mutable(req.ntp.tp.topic)) {
+        co_return cluster::errc::partition_operation_failed;
+    }
+    kv_get_reply reply;
+    reply.err = co_await _partition_manager->invoke_on_shard_kvstore(
+      *shard, req.ntp, [&req, &reply](this auto, kvstore::db* db) {
+          return db->batch_get(req.keys).then(
+            [&req, &reply](chunked_vector<std::optional<iobuf>> values) {
+                for (auto [k, v] : std::views::zip(req.keys, values)) {
+                    reply.results.emplace_back(std::move(k), std::move(v));
+                }
+                return cluster::errc::success;
+            });
+      });
+    co_return reply;
+}
+
+ss::future<kv_scan_reply> local_service::kv_scan(kv_scan_request req) {
+    auto shard = _partition_manager->shard_owner(req.ntp);
+    if (!shard) {
+        co_return cluster::errc::not_leader;
+    }
+    auto topic_cfg = _metadata_cache->find_topic_cfg(
+      model::topic_namespace_view(req.ntp));
+    if (!topic_cfg) {
+        co_return cluster::errc::topic_not_exists;
+    }
+    if (topic_cfg->properties.kvstore == model::kvstore_type::none) {
+        co_return cluster::errc::invalid_request;
+    }
+    if (!_shadow_link_registry->is_topic_mutable(req.ntp.tp.topic)) {
+        co_return cluster::errc::partition_operation_failed;
+    }
+    kvstore::db::scan_parameters params{
+      .start_key = std::move(req.start_key),
+      .end_key = std::move(req.end_key),
+      .limit = req.limit,
+    };
+    kv_scan_reply reply;
+    reply.err = co_await _partition_manager->invoke_on_shard_kvstore(
+      *shard,
+      req.ntp,
+      [&params,
+       &reply](this auto, kvstore::db* db) -> ss::future<cluster::errc> {
+          return db->scan(std::move(params))
+            .then([&reply](chunked_vector<kvstore::entry> entries) {
+                for (auto& entry : entries) {
+                    reply.entries.emplace_back(
+                      std::move(entry.key), std::move(entry.value));
+                }
+                return cluster::errc::success;
+            });
+      });
+    co_return reply;
+}
+
 ss::future<produce_reply>
 network_service::produce(produce_request req, ::rpc::streaming_context&) {
     co_await ss::coroutine::switch_to(get_scheduling_group());
@@ -330,24 +471,6 @@ ss::future<consume_reply>
 network_service::consume(consume_request req, ::rpc::streaming_context&) {
     co_await ss::coroutine::switch_to(get_scheduling_group());
     co_return co_await _service->local().consume(std::move(req));
-}
-
-ss::future<kv_write_reply>
-local_service::kv_write(kv_write_request) {
-    // TODO: Implement kvstore write logic
-    co_return kv_write_reply(cluster::errc::feature_disabled);
-}
-
-ss::future<kv_get_reply>
-local_service::kv_get(kv_get_request) {
-    // TODO: Implement kvstore get logic
-    co_return kv_get_reply(cluster::errc::feature_disabled);
-}
-
-ss::future<kv_scan_reply>
-local_service::kv_scan(kv_scan_request) {
-    // TODO: Implement kvstore scan logic
-    co_return kv_scan_reply(cluster::errc::feature_disabled);
 }
 
 ss::future<kv_write_reply>

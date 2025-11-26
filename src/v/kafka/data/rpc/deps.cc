@@ -278,7 +278,8 @@ kafka::data::rpc::partition_manager::make_default(
   ss::smp_service_group smp_group,
   kvstore::app* kvstore_app) {
     return std::make_unique<partition_manager_impl>(
-      std::make_unique<partition_manager_proxy>(table, manager, smp_group, kvstore_app));
+      std::make_unique<partition_manager_proxy>(
+        table, manager, smp_group, kvstore_app));
 }
 
 partition_manager_proxy::partition_manager_proxy(
@@ -365,24 +366,20 @@ ss::future<cluster::errc> partition_manager_proxy::invoke_on_shard_kvstore_impl(
             return ntp_or_ktp;
         }
     }();
-
-    return _manager->invoke_on(
+    return ss::smp::submit_to(
       shard,
       {_smp_group},
-      [ntp = std::move(ntp), func = std::move(func), kvstore_app = _kvstore_app](
-        cluster::partition_manager&) mutable {
-          auto* kvstore_mgr = kvstore_app->get_local_manager();
+      [this, ntp = std::move(ntp), func = std::move(func)] {
+          auto* kvstore_mgr = _kvstore_app->get_local_manager();
           if (!kvstore_mgr) {
               return ss::make_ready_future<cluster::errc>(
                 cluster::errc::not_leader);
           }
-
           auto* db = kvstore_mgr->lookup_db(ntp);
           if (!db) {
               return ss::make_ready_future<cluster::errc>(
                 cluster::errc::not_leader);
           }
-
           return func(db);
       });
 }
