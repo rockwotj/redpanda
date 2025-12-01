@@ -548,6 +548,280 @@
         }
       }
     },
+    "/kvstore/{topic_name}/partition/{partition_id}/write": {
+      "post": {
+        "summary": "Atomically write a batch of puts and deletes to a kvstore partition.",
+        "operationId": "kvstore_write",
+        "consumes": ["application/json"],
+        "parameters": [
+          {
+            "name": "topic_name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "partition_id",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "description": "Proto JSON format of redpanda.core.rest.v1.KVStoreWriteRequest. All puts and deletes are applied atomically.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "puts": {
+                  "type": "array",
+                  "description": "List of put operations to execute atomically",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "description": "Base64-encoded key (max 16KiB)"
+                      },
+                      "value": {
+                        "type": "string",
+                        "description": "Base64-encoded value"
+                      },
+                      "precondition": {
+                        "type": "object",
+                        "description": "Optional precondition that must be satisfied",
+                        "properties": {
+                          "ifExists": {
+                            "type": "object",
+                            "properties": {
+                              "exists": {
+                                "type": "boolean",
+                                "description": "If true, operation succeeds only if key exists; if false, only if key does not exist"
+                              }
+                            }
+                          },
+                          "ifMatches": {
+                            "type": "object",
+                            "properties": {
+                              "sha256Hash": {
+                                "type": "string",
+                                "description": "Hex-encoded SHA-256 hash that the current value must match"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "deletes": {
+                  "type": "array",
+                  "description": "List of delete operations to execute atomically",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "description": "Base64-encoded key to delete"
+                      },
+                      "precondition": {
+                        "type": "object",
+                        "description": "Optional precondition that must be satisfied"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+          "200": {
+            "description": "Write successful",
+            "schema": {
+              "type": "object",
+              "description": "Proto JSON format of redpanda.core.rest.v1.KVStoreWriteResponse (empty on success)"
+            }
+          },
+          "400": {
+            "description": "Invalid request or precondition failed",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "404": {
+            "description": "Topic or partition not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/kvstore/{topic_name}/partition/{partition_id}/batch_get": {
+      "post": {
+        "summary": "Retrieve specific keys from a kvstore partition.",
+        "operationId": "kvstore_batch_get",
+        "consumes": ["application/json"],
+        "parameters": [
+          {
+            "name": "topic_name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "partition_id",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "description": "Proto JSON format of redpanda.core.rest.v1.KVStoreGetRequest",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "keys": {
+                  "type": "array",
+                  "description": "List of base64-encoded keys to retrieve. Keys not found are omitted from response.",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+          "200": {
+            "description": "Batch get successful",
+            "schema": {
+              "type": "object",
+              "description": "Proto JSON format of redpanda.core.rest.v1.KVStoreGetResponse",
+              "properties": {
+                "results": {
+                  "type": "array",
+                  "description": "List of lookup results for requested keys",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "description": "Base64-encoded key that was looked up"
+                      },
+                      "value": {
+                        "type": "string",
+                        "description": "Base64-encoded value if found, omitted if not present"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "404": {
+            "description": "Topic or partition not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/kvstore/{topic_name}/partition/{partition_id}/scan": {
+      "post": {
+        "summary": "Perform a range scan over keys in a kvstore partition.",
+        "operationId": "kvstore_scan",
+        "consumes": ["application/json"],
+        "parameters": [
+          {
+            "name": "topic_name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "partition_id",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "description": "Proto JSON format of redpanda.core.rest.v1.KVStoreScanRequest. Keys are scanned in lexicographical byte order.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "startKey": {
+                  "type": "string",
+                  "description": "Base64-encoded starting key (inclusive). If not specified, starts from first key."
+                },
+                "endKey": {
+                  "type": "string",
+                  "description": "Base64-encoded ending key (exclusive). If not specified, scans through last key."
+                },
+                "limit": {
+                  "type": "integer",
+                  "description": "Maximum entries to return. Defaults to 500, max 1000."
+                }
+              }
+            }
+          }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+          "200": {
+            "description": "Scan successful",
+            "schema": {
+              "type": "object",
+              "description": "Proto JSON format of redpanda.core.rest.v1.KVStoreScanResponse",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "description": "List of entries in scanned range, ordered by key lexicographically",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "description": "Base64-encoded key (max 16KiB)"
+                      },
+                      "value": {
+                        "type": "string",
+                        "description": "Base64-encoded value"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "404": {
+            "description": "Topic or partition not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
     "/status/ready": {
       "get": {
         "summary": "Health check",

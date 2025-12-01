@@ -6,6 +6,7 @@ redpanda_cc_library(
         "api.cc",
         "configuration.cc",
         "handlers.cc",
+        "kvstore_handlers.cc",
         "proxy.cc",
     ],
     hdrs = [
@@ -13,13 +14,16 @@ redpanda_cc_library(
         "configuration.h",
         "fwd.h",
         "handlers.h",
+        "kvstore_handlers.h",
         "proxy.h",
     ],
     implementation_deps = [
+        "//src/v/bytes:iostream",
         "//src/v/kafka/client:utils",
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//proto/redpanda/core/rest/v1:kvstore_redpanda_proto",
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/config",
@@ -27,6 +31,7 @@ redpanda_cc_library(
         "//src/v/kafka/client:config_utils",
         "//src/v/kafka/client:configuration",
         "//src/v/kafka/client:exceptions",
+        "//src/v/kafka/data/rpc",
         "//src/v/kafka/protocol:fetch",
         "//src/v/kafka/protocol/schemata:offset_commit_request",
         "//src/v/model",

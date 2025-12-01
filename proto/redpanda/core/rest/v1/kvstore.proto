@@ -1,0 +1,140 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+// KVStore provides a key-value storage API backed by Kafka topic partitions.
+// Each topic partition acts as an independent key-value store, allowing clients
+// to perform atomic writes, conditional updates, and range scans.
+//
+// All operations are strongly consistent within a partition and benefit from
+// Kafka's durability guarantees. Keys are limited to 16KiB and entries must fit
+// within the topic's max.message.bytes configuration.
+package redpanda.core.rest.v1;
+
+import "proto/redpanda/core/pbgen/options.proto";
+
+option (pbgen.cpp_namespace) = "proto::pandaproxy";
+
+// KVStoreWriteRequest is a request to atomically write a batch of data.
+//
+// The entire batch when serialized must be less than the topic's
+// `max.message.bytes`. All puts and deletes in a single request are
+// applied atomically - either all succeed or all fail.
+message KVStoreWriteRequest {
+    // Precondition specifies conditions that must be satisfied for a write
+    // operation to succeed. If the precondition is not met, the entire batch
+    // write fails.
+    message Precondition {
+        // IfExists checks whether a key exists or not.
+        message IfExists {
+            // If true, the operation succeeds only if the key exists.
+            // If false, the operation succeeds only if the key does not exist.
+            bool exists = 1;
+        }
+        // IfMatches checks whether a key's value matches a specific hash.
+        message IfMatches {
+            // The SHA-256 hash (hex-encoded) that the existing value must
+            // match. The operation succeeds only if the current value's hash
+            // equals this.
+            string sha256_hash = 1;
+        }
+        // The kind of this precondition. If not set, then no precondition
+        // checks are performed.
+        oneof kind {
+            // if_exists checks if a key exists or not before performing the
+            // write.
+            IfExists if_exists = 1;
+            // if_matches checks if a key's value batches a given sha256 hash.
+            // before performing the write.
+            IfMatches if_matches = 2;
+        }
+    }
+    // Put inserts or updates a key-value pair.
+    message Put {
+        // A key in the KVStore. Must be less than 16KiB.
+        bytes key = 1;
+        // The value in the KVStore.
+        bytes value = 2;
+        // Optional precondition that must be satisfied for this put to succeed.
+        Precondition precondition = 3;
+    }
+    // Delete removes a key-value pair.
+    message Delete {
+        // The key to delete.
+        bytes key = 1;
+        // Optional precondition that must be satisfied for this delete to
+        // succeed.
+        Precondition precondition = 2;
+    }
+
+    // List of put operations to execute atomically.
+    repeated Put puts = 1;
+    // List of delete operations to execute atomically.
+    repeated Delete deletes = 2;
+}
+
+// KVStoreWriteResponse is returned when a write operation completes
+// successfully. An empty response indicates all operations in the batch
+// succeeded.
+message KVStoreWriteResponse {}
+
+// KVStoreGetRequest retrieves specific keys from a KVStore partition.
+message KVStoreGetRequest {
+    // List of keys to retrieve. Keys not found in the store are omitted from
+    // the response.
+    repeated bytes keys = 1;
+}
+
+// KVStoreGetResponse contains the requested key-value entries.
+message KVStoreGetResponse {
+    // A lookup result for a key in the KVStore.
+    message LookupResult {
+        // A key that was looked up.
+        bytes key = 1;
+        // The resulting value in the KVStore. Not set if the value was not
+        // present in the KVStore.
+        optional bytes value = 2;
+    }
+    // List of entries found for the requested keys.
+    repeated LookupResult results = 1;
+}
+
+// KVStoreScanRequest performs a range scan over keys in a KVStore partition.
+// Keys are scanned in lexicographical byte order.
+message KVStoreScanRequest {
+    // The starting key (inclusive) for the scan. If not specified, starts from
+    // the first key in the store.
+    optional bytes start_key = 1;
+    // The ending key (exclusive) for the scan. If not specified, scans through
+    // the last key in the store.
+    optional bytes end_key = 2;
+    // Maximum number of entries to return. If not set defaults to 500 entries.
+    // May not be greater than 1000.
+    int32 limit = 3;
+}
+
+// KVStoreScanResponse contains the entries found during a scan operation.
+message KVStoreScanResponse {
+    // Entry is a key/value pair stored in the topic partition's KVStore.
+    message Entry {
+        // A key in the KVStore. Must be less than 16KiB.
+        bytes key = 1;
+        // The value in the KVStore.
+        bytes value = 2;
+    }
+    // List of entries found in the scanned range, ordered by key in
+    // lexicographical byte order.
+    repeated Entry entries = 1;
+}

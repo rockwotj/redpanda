@@ -13,12 +13,14 @@
 #include "cloud_storage_clients/types.h"
 #include "crypto/crypto.h"
 #include "kafka/data/partition_proxy.h"
+#include "kafka/protocol/types.h"
 #include "kafka/utils/txn_reader.h"
 #include "kvstore/logger.h"
 #include "lsm/io/cloud_persistence.h"
 #include "lsm/io/persistence.h"
 #include "lsm/lsm.h"
 #include "model/batch_builder.h"
+#include "model/batch_compression.h"
 #include "model/record.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
@@ -170,7 +172,7 @@ ss::future<> db::destroy(
 ss::future<chunked_vector<std::optional<iobuf>>>
 db_impl::batch_get(const chunked_vector<ss::sstring>& keys) {
     auto _ = _gate.hold();
-    co_await sync();
+    co_await sync_previous_term();
     if (!_lsm) {
         throw ss::abort_requested_exception();
     }
@@ -186,7 +188,7 @@ ss::future<chunked_vector<entry>> db_impl::scan(scan_parameters params) {
     if (!_lsm) {
         throw ss::abort_requested_exception();
     }
-    co_await sync();
+    co_await sync_previous_term();
     chunked_vector<entry> result;
     auto iter = co_await _lsm->create_iterator();
     if (const auto& start = params.start_key) {
@@ -218,7 +220,7 @@ ss::future<write_success> db_impl::write(write_batch wb) {
         throw ss::abort_requested_exception();
     }
     auto _ = co_await _write_mu.get_units();
-    co_await sync();
+    co_await sync_latest();
     model::batch_builder bb;
     for (auto& op : wb.puts) {
         _as.check();
@@ -253,6 +255,7 @@ ss::future<write_success> db_impl::write(write_batch wb) {
     }
     auto batch = co_await std::move(bb).build();
     co_await replicate(std::move(batch));
+    co_await sync_latest();
     co_return write_success::yes;
 }
 
@@ -276,7 +279,7 @@ db_impl::check_precondition(std::string_view key, const precondition& p) {
     co_return write_success(ok);
 }
 
-ss::future<> db_impl::sync() {
+ss::future<> db_impl::sync_latest() {
     auto proxy = kafka::make_partition_proxy(_partition);
     auto lso = proxy.last_stable_offset();
     if (!lso) {
@@ -284,6 +287,24 @@ ss::future<> db_impl::sync() {
     }
     co_await _cond_var.wait(
       _as, [this, lso = lso.value()] { return _last_applied_offset < lso; });
+}
+
+ss::future<> db_impl::sync_previous_term() {
+    auto proxy = kafka::make_partition_proxy(_partition);
+    if (!proxy.is_leader()) {
+        co_return;
+    }
+    auto epoch = proxy.leader_epoch();
+    if (epoch == kafka::invalid_leader_epoch) {
+        co_return;
+    }
+    auto last_term_offset = co_await proxy.get_leader_epoch_last_offset(epoch);
+    if (!last_term_offset) {
+        co_return;
+    }
+    co_await _cond_var.wait(_as, [this, o = last_term_offset.value()] {
+        return _last_applied_offset < o;
+    });
 }
 
 ss::future<> db_impl::replicate(model::record_batch b) {
@@ -349,6 +370,9 @@ ss::future<> db_impl::do_apply_chunk() {
           std::move(tracker), std::move(translator.reader))
           .generator(model::no_timeout);
     while (auto batch = co_await generator()) {
+        if (batch->compressed()) {
+            batch = co_await model::decompress_batch(*batch);
+        }
         lsm::write_batch wb;
         auto it = model::record_batch_iterator::create(*batch);
         while (it.has_next()) {

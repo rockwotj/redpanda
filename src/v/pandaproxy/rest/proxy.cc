@@ -17,6 +17,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/handlers.h"
+#include "pandaproxy/rest/kvstore_handlers.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
@@ -104,6 +105,15 @@ server::routes_t get_proxy_routes(ss::gate& gate, one_shot& es) {
         ss::httpd::rest_json::http_rest_status_ready,
         wrap(gate, es, status_ready)});
 
+    routes.routes.push_back(
+      {ss::httpd::rest_json::kvstore_batch_get, wrap(gate, es, kv_get)});
+
+    routes.routes.push_back(
+      {ss::httpd::rest_json::kvstore_write, wrap(gate, es, kv_write)});
+
+    routes.routes.push_back(
+      {ss::httpd::rest_json::kvstore_scan, wrap(gate, es, kv_scan)});
+
     return routes;
 }
 
@@ -114,7 +124,8 @@ proxy::proxy(
   size_t max_memory,
   ss::sharded<kafka::client::client>& client,
   ss::sharded<kafka_client_cache>& client_cache,
-  cluster::controller* controller)
+  cluster::controller* controller,
+  kafka::data::rpc::client* rpc_client)
   : _config(config)
   , _client_cfg(client_cfg)
   , _mem_sem(max_memory, "pproxy/mem")
@@ -124,7 +135,7 @@ proxy::proxy(
   , _client_cache(client_cache)
   , _ctx{{{{}, max_memory, _mem_sem, _inflight_config_binding(), _inflight_sem, {}, smp_sg}, *this},
         {config::always_true(), config::shard_local_cfg().superusers.bind(), controller},
-        _config.pandaproxy_api.value()}
+        _config.pandaproxy_api.value(), rpc_client}
   , _server(
       "pandaproxy",
       "rest_proxy",

@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "kafka/client/fwd.h"
+#include "kafka/data/rpc/fwd.h"
 #include "pandaproxy/fwd.h"
 #include "pandaproxy/rest/fwd.h"
 
@@ -33,7 +34,8 @@ public:
       size_t max_memory,
       kafka::client::configuration& client_cfg,
       configuration& cfg,
-      cluster::controller*) noexcept;
+      cluster::controller*,
+      ss::sharded<kafka::data::rpc::client>*) noexcept;
     ~api() noexcept;
 
     ss::future<> start();
@@ -56,6 +58,7 @@ private:
     ss::sharded<kafka::client::client> _client;
     ss::sharded<kafka_client_cache> _client_cache;
     ss::sharded<pandaproxy::rest::proxy> _proxy;
+    ss::sharded<kafka::data::rpc::client>* _rpc_client;
 };
 
 } // namespace pandaproxy::rest

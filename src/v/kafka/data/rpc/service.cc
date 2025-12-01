@@ -394,9 +394,6 @@ ss::future<kv_get_reply> local_service::kv_get(kv_get_request req) {
     if (topic_cfg->properties.kvstore == model::kvstore_type::none) {
         co_return cluster::errc::invalid_request;
     }
-    if (!_shadow_link_registry->is_topic_mutable(req.ntp.tp.topic)) {
-        co_return cluster::errc::partition_operation_failed;
-    }
     kv_get_reply reply;
     reply.err = co_await _partition_manager->invoke_on_shard_kvstore(
       *shard, req.ntp, [&req, &reply](this auto, kvstore::db* db) {
@@ -423,9 +420,6 @@ ss::future<kv_scan_reply> local_service::kv_scan(kv_scan_request req) {
     }
     if (topic_cfg->properties.kvstore == model::kvstore_type::none) {
         co_return cluster::errc::invalid_request;
-    }
-    if (!_shadow_link_registry->is_topic_mutable(req.ntp.tp.topic)) {
-        co_return cluster::errc::partition_operation_failed;
     }
     kvstore::db::scan_parameters params{
       .start_key = std::move(req.start_key),

@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
+#include "kafka/data/rpc/fwd.h"
 #include "pandaproxy/fwd.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
@@ -36,7 +37,8 @@ public:
       size_t max_memory,
       ss::sharded<kafka::client::client>& client,
       ss::sharded<kafka_client_cache>& client_cache,
-      cluster::controller* controller);
+      cluster::controller* controller,
+      kafka::data::rpc::client* rpc_client);
 
     ss::future<> start();
     ss::future<> stop();

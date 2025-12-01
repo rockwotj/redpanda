@@ -67,7 +67,9 @@ private:
     // Apply a chunk of the WAL to the database.
     ss::future<> do_apply_chunk();
     // Wait for the latest record to be applied to the database.
-    ss::future<> sync();
+    ss::future<> sync_latest();
+    // Wait for the previous term data to be applied to the database.
+    ss::future<> sync_previous_term();
     // Replicate the record to the WAL and wait for it to be applied.
     ss::future<> replicate(model::record_batch);
 

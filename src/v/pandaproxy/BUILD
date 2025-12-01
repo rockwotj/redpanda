@@ -143,6 +143,7 @@ redpanda_cc_library(
         "//src/v/hashing:xx",
         "//src/v/kafka/client",
         "//src/v/kafka/client:exceptions",
+        "//src/v/kafka/data/rpc",
         "//src/v/kafka/protocol",
         "//src/v/metrics",
         "//src/v/model",
