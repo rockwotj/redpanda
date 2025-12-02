@@ -28,6 +28,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/group"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/kvstore"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/plugin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/profile"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/registry"
@@ -122,6 +123,7 @@ func Execute() {
 		debug.NewCommand(fs, p),
 		generate.NewCommand(fs, p),
 		group.NewCommand(fs, p),
+		kvstore.NewCommand(fs, p),
 		plugincmd.NewCommand(fs),
 		registry.NewCommand(fs, p),
 		security.NewCommand(fs, p),

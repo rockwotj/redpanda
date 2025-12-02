@@ -13,7 +13,6 @@
 #include "cloud_storage_clients/types.h"
 #include "crypto/crypto.h"
 #include "kafka/data/partition_proxy.h"
-#include "kafka/protocol/types.h"
 #include "kafka/utils/txn_reader.h"
 #include "kvstore/logger.h"
 #include "lsm/io/cloud_persistence.h"
