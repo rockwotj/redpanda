@@ -53,7 +53,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "max_compaction_lag_ms: {}, "
       "message_timestamp_before_max_ms: {}, "
       "message_timestamp_after_max_ms: {}, "
-      "redpanda_storage_mode: {}",
+      "redpanda_storage_mode: {}, "
+      "kvstore: {}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -100,7 +101,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.max_compaction_lag_ms,
       properties.message_timestamp_before_max_ms,
       properties.message_timestamp_after_max_ms,
-      properties.storage_mode);
+      properties.storage_mode,
+      properties.kvstore);
 
     o << "}";
 

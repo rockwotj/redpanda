@@ -21,6 +21,7 @@ go_library(
         "//src/go/rpk/pkg/cli/debug",
         "//src/go/rpk/pkg/cli/generate",
         "//src/go/rpk/pkg/cli/group",
+        "//src/go/rpk/pkg/cli/kvstore",
         "//src/go/rpk/pkg/cli/plugin",
         "//src/go/rpk/pkg/cli/profile",
         "//src/go/rpk/pkg/cli/registry",

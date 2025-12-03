@@ -23,10 +23,10 @@ redpanda_cc_library(
         "serde.h",
         "service.h",
     ],
-    visibility = ["//visibility:public"],
     implementation_deps = [
         "//src/v/kvstore:manager",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":kafka_data_rpc",
         "//src/v/base",

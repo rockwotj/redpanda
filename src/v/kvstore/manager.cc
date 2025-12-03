@@ -80,6 +80,7 @@ ss::future<> kvstore_manager::do_schedule_partition(
       _bucket,
       remote_path(tidp),
       local_path(tidp));
+    co_await database->start();
     _dbs.emplace(std::move(ntp), std::move(database));
 }
 
@@ -90,8 +91,8 @@ ss::future<> kvstore_manager::do_unschedule_partition(
     if (it == _dbs.end()) {
         co_return;
     }
-    co_await it->second->stop();
-    _dbs.erase(it);
+    auto [_, db] = _dbs.extract(it);
+    co_await db->stop();
 }
 
 } // namespace kvstore

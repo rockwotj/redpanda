@@ -355,6 +355,13 @@ cluster::topic_configuration to_topic_config(
           config_entries, topic_property_redpanda_storage_mode)
           .value_or(config::shard_local_cfg().default_redpanda_storage_mode());
 
+    if (config::shard_local_cfg().enable_kvstore) {
+        cfg.properties.kvstore = get_config_value<model::kvstore_type>(
+                                   config_entries, topic_property_kvstore)
+                                   .value_or(model::kvstore_type::none);
+    }
+
+
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
 

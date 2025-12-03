@@ -290,8 +290,7 @@ struct kvstore_config_validator {
           && value != model::kvstore_type::none) {
             return fmt::format(
               "Key-value store disabled in the cluster configuration, enable "
-              "it by "
-              "setting: {}",
+              "it by setting: {}",
               config::shard_local_cfg().enable_kvstore.name());
         }
         return std::nullopt;

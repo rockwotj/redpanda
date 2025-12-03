@@ -110,6 +110,7 @@ std::unique_ptr<db> db::make(
 }
 
 ss::future<> db_impl::start() {
+    vlog(kvlog.info, "starting kvstore db for {}", _partition->ntp());
     if (!_partition->is_leader()) {
         co_return;
     }
@@ -128,14 +129,17 @@ ss::future<> db_impl::start() {
       });
     _last_applied_offset = _lsm->max_applied_offset();
     ssx::spawn_with_gate(_gate, [this] { return apply_loop(); });
+    vlog(kvlog.info, "started kvstore db for {}", _partition->ntp());
 }
 
 ss::future<> db_impl::stop() {
+    vlog(kvlog.info, "stopping kvstore db for {}", _partition->ntp());
     _as.request_abort();
     co_await _gate.close();
     if (auto lsm = std::exchange(_lsm, std::nullopt)) {
         co_await lsm->close();
     }
+    vlog(kvlog.info, "stopped kvstore db for {}", _partition->ntp());
 }
 
 ss::future<> db::destroy(
