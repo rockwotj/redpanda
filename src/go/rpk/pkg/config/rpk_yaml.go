@@ -143,6 +143,7 @@ type (
 		KafkaAPI     RpkKafkaAPI          `json:"kafka_api" yaml:"kafka_api"`
 		AdminAPI     RpkAdminAPI          `json:"admin_api" yaml:"admin_api"`
 		SR           RpkSchemaRegistryAPI `json:"schema_registry" yaml:"schema_registry"`
+		HTTPProxy    RpkHTTPProxy         `json:"http_proxy,omitempty" yaml:"http_proxy,omitempty"`
 		LicenseCheck *LicenseStatusCache  `json:"license_check,omitempty" yaml:"license_check,omitempty"`
 
 		// This is an internal configuration, not to be documented nor set

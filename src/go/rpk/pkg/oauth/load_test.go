@@ -137,7 +137,7 @@ func TestLoadFlow(t *testing.T) {
 				hasClientID = true
 			}
 
-			expFile := fmt.Sprintf(`version: 7
+			expFile := fmt.Sprintf(`version: 8
 globals:
     prompt: ""
     no_default_cluster: false

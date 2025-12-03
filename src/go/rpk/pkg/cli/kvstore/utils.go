@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
 )
 
 // decodeInput decodes a string input based on the specified format.
@@ -144,17 +145,43 @@ type KVStoreClient struct {
 	baseURL    string
 }
 
-// newKVStoreClient creates a new kvstore client.
-// In the future, this will use the profile to configure TLS, auth, etc.
-func newKVStoreClient(p *config.RpkProfile) *KVStoreClient {
-	// For now, use hardcoded defaults
-	// TODO: Use profile to configure TLS, authentication, base URL, etc.
-	return &KVStoreClient{
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		baseURL: "http://localhost:8082",
+// newKVStoreClient creates a new kvstore client configured from the profile.
+func newKVStoreClient(p *config.RpkProfile, fs afero.Fs) (*KVStoreClient, error) {
+	// Determine base URL from profile configuration
+	baseURL := "http://127.0.0.1:8082"
+	if len(p.HTTPProxy.Addresses) > 0 {
+		baseURL = p.HTTPProxy.Addresses[0]
 	}
+
+	// Add scheme if missing
+	if !strings.Contains(baseURL, "://") {
+		if p.HTTPProxy.TLS != nil {
+			baseURL = "https://" + baseURL
+		} else {
+			baseURL = "http://" + baseURL
+		}
+	}
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	// Configure TLS if present in profile
+	if p.HTTPProxy.TLS != nil {
+		tlsConfig, err := p.HTTPProxy.TLS.Config(fs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure TLS: %v", err)
+		}
+		client.Transport = &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+	}
+
+	return &KVStoreClient{
+		httpClient: client,
+		baseURL:    baseURL,
+	}, nil
 }
 
 // Get retrieves keys from a topic partition's kvstore.

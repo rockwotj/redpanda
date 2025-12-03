@@ -94,13 +94,16 @@ type GetResult struct {
 
 // ScanEntry represents a single scan entry for formatted output.
 type ScanEntry struct {
-	Key   string `json:"key" yaml:"key"`
-	Value string `json:"value" yaml:"value"`
+	Key       string `json:"key" yaml:"key"`
+	Value     string `json:"value" yaml:"value"`
+	Partition int32  `json:"partition" yaml:"partition"`
 }
 
 // WriteResult represents the result of a put or delete operation.
 type WriteResult struct {
 	Operation string `json:"operation" yaml:"operation"`
+	Topic     string `json:"topic" yaml:"topic"`
+	Partition int32  `json:"partition" yaml:"partition"`
 	KeyCount  int    `json:"key_count" yaml:"key_count"`
 	Success   bool   `json:"success" yaml:"success"`
 }

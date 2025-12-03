@@ -78,6 +78,12 @@ const (
 	xSchemaRegistryCACert      = "registry.tls.ca"
 	xSchemaRegistryClientCert  = "registry.tls.cert"
 	xSchemaRegistryClientKey   = "registry.tls.key"
+	xHTTPProxyHosts            = "httpproxy.hosts"
+	xHTTPProxyTLSEnabled       = "httpproxy.tls.enabled"
+	xHTTPProxyTLSInsecure      = "httpproxy.tls.insecure_skip_verify"
+	xHTTPProxyCACert           = "httpproxy.tls.ca"
+	xHTTPProxyClientCert       = "httpproxy.tls.cert"
+	xHTTPProxyClientKey        = "httpproxy.tls.key"
 )
 
 const (
@@ -86,7 +92,7 @@ const (
 	xkindGlobal           // configuration for rpk.yaml globals
 )
 
-const currentRpkYAMLVersion = 7
+const currentRpkYAMLVersion = 8
 
 // ProfileEnvVar is the environment variable used to set the current profile.
 // This can't be a dev override as it is loaded before overrides are applied.
@@ -134,6 +140,13 @@ func mkAdminTLS(a *RpkAdminAPI) *TLS {
 }
 
 func mkSchemaRegistryTLS(a *RpkSchemaRegistryAPI) *TLS {
+	if a.TLS == nil {
+		a.TLS = new(TLS)
+	}
+	return a.TLS
+}
+
+func mkHTTPProxyTLS(a *RpkHTTPProxy) *TLS {
 	if a.TLS == nil {
 		a.TLS = new(TLS)
 	}
@@ -392,6 +405,80 @@ var xflags = map[string]xflag{
 		func(v string, y *RpkYaml) error {
 			p := y.Profile(y.CurrentProfile)
 			mkSchemaRegistryTLS(&p.SR).KeyFile = v
+			return nil
+		},
+	},
+	xHTTPProxyHosts: {
+		"http_proxy.addresses",
+		"127.8.8.4,126.1.3.4:8082,localhost,example.com",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			return splitCommaIntoStrings(v, &p.HTTPProxy.Addresses)
+		},
+	},
+	xHTTPProxyTLSEnabled: {
+		"http_proxy.tls.enabled",
+		"false",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			if v == "" {
+				v = "true"
+			}
+			enabled, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			if enabled {
+				mkHTTPProxyTLS(&p.HTTPProxy)
+			} else {
+				p.HTTPProxy.TLS = nil
+			}
+			return nil
+		},
+	},
+	xHTTPProxyTLSInsecure: {
+		"http_proxy.tls.insecure_skip_verify",
+		"false",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			mkHTTPProxyTLS(&p.HTTPProxy).InsecureSkipVerify = b
+			return nil
+		},
+	},
+	xHTTPProxyCACert: {
+		"http_proxy.tls.ca_file",
+		"noextension",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkHTTPProxyTLS(&p.HTTPProxy).TruststoreFile = v
+			return nil
+		},
+	},
+	xHTTPProxyClientCert: {
+		"http_proxy.tls.cert_file",
+		"cert.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkHTTPProxyTLS(&p.HTTPProxy).CertFile = v
+			return nil
+		},
+	},
+	xHTTPProxyClientKey: {
+		"http_proxy.tls.key_file",
+		"key.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkHTTPProxyTLS(&p.HTTPProxy).KeyFile = v
 			return nil
 		},
 	},
@@ -755,6 +842,33 @@ registry.tls.key=/path/to/key.pem
   A filepath to a PEM encoded client key file to talk to your broker's schema
   registry API listeners with mTLS.
 
+httpproxy.hosts=localhost:8082,rp.example.com:8082
+  A comma separated list of host:ports that rpk talks to for the HTTP Proxy
+  (pandaproxy) API. By default, this is 127.0.0.1:8082.
+
+httpproxy.tls.enabled=false
+  A boolean that enables rpk to speak TLS to your broker's HTTP Proxy API
+  listeners. You can use this if you have well known certificates setup on your
+  HTTP Proxy API. If you use mTLS, specifying mTLS certificate filepaths
+  automatically opts into TLS enabled.
+
+httpproxy.tls.insecure_skip_verify=false
+  A boolean that disables rpk from verifying the broker's certificate chain.
+
+httpproxy.tls.ca=/path/to/ca.pem
+  A filepath to a PEM encoded CA certificate file to talk to your broker's
+  HTTP Proxy API listeners with mTLS. You may also need this if your
+  listeners are using a certificate by a well known authority that is not yet
+  bundled on your operating system.
+
+httpproxy.tls.cert=/path/to/cert.pem
+  A filepath to a PEM encoded client certificate file to talk to your broker's
+  HTTP Proxy API listeners with mTLS.
+
+httpproxy.tls.key=/path/to/key.pem
+  A filepath to a PEM encoded client key file to talk to your broker's HTTP
+  Proxy API listeners with mTLS.
+
 cloud.client_id=somestring
   An oauth client ID to use for authenticating with the Redpanda Cloud API.
   Overrides the client ID in the current profile if it is for a cloud cluster,
@@ -829,6 +943,12 @@ registry.tls.insecure_skip_verify=boolean
 registry.tls.ca=/path/to/ca.pem
 registry.tls.cert=/path/to/cert.pem
 registry.tls.key=/path/to/key.pem
+httpproxy.hosts=comma,delimited,host:ports
+httpproxy.tls.enabled=boolean
+httpproxy.tls.insecure_skip_verify=boolean
+httpproxy.tls.ca=/path/to/ca.pem
+httpproxy.tls.cert=/path/to/cert.pem
+httpproxy.tls.key=/path/to/key.pem
 cloud.client_id=somestring
 cloud.client_secret=somelongerstring
 globals.prompt="%n"
@@ -1497,6 +1617,9 @@ func (c *Config) mergeRpkIntoRedpanda(actual bool) {
 	if !reflect.DeepEqual(p.SR, RpkSchemaRegistryAPI{}) {
 		dst.SR = p.SR
 	}
+	if !reflect.DeepEqual(p.HTTPProxy, RpkHTTPProxy{}) {
+		dst.HTTPProxy = p.HTTPProxy
+	}
 }
 
 // This function ensures a current profile exists in the Virtual rpk.yaml.
@@ -1581,6 +1704,9 @@ func (c *Config) mergeRedpandaIntoRpk() {
 	}
 	if reflect.DeepEqual(p.SR, RpkSchemaRegistryAPI{}) {
 		p.SR = src.SR
+	}
+	if reflect.DeepEqual(p.HTTPProxy, RpkHTTPProxy{}) {
+		p.HTTPProxy = src.HTTPProxy
 	}
 }
 
@@ -1678,6 +1804,13 @@ func (c *Config) addUnsetRedpandaDefaults(actual bool) {
 			&dst.Rpk.SR.Addresses,
 		)
 	}
+	if src.Pandaproxy != nil {
+		defaultFromRedpanda(
+			namedAuthnToNamed(src.Pandaproxy.PandaproxyAPI),
+			src.Pandaproxy.PandaproxyAPITLS,
+			&dst.Rpk.HTTPProxy.Addresses,
+		)
+	}
 
 	// If only one listener is set, infer the others using its address, TLS
 	// config, and default ports. This isn't perfect, but it's a reasonable
@@ -1702,6 +1835,7 @@ func (c *Config) addUnsetRedpandaDefaults(actual bool) {
 			setters: []setter{
 				{&dst.Rpk.AdminAPI.Addresses, &dst.Rpk.AdminAPI.TLS, DefaultAdminPort},
 				{&dst.Rpk.SR.Addresses, &dst.Rpk.SR.TLS, DefaultSchemaRegPort},
+				{&dst.Rpk.HTTPProxy.Addresses, &dst.Rpk.HTTPProxy.TLS, DefaultProxyPort},
 			},
 		},
 		{
@@ -1710,6 +1844,7 @@ func (c *Config) addUnsetRedpandaDefaults(actual bool) {
 			setters: []setter{
 				{&dst.Rpk.KafkaAPI.Brokers, &dst.Rpk.KafkaAPI.TLS, DefaultKafkaPort},
 				{&dst.Rpk.SR.Addresses, &dst.Rpk.SR.TLS, DefaultSchemaRegPort},
+				{&dst.Rpk.HTTPProxy.Addresses, &dst.Rpk.HTTPProxy.TLS, DefaultProxyPort},
 			},
 		},
 		{
@@ -1718,6 +1853,16 @@ func (c *Config) addUnsetRedpandaDefaults(actual bool) {
 			setters: []setter{
 				{&dst.Rpk.KafkaAPI.Brokers, &dst.Rpk.KafkaAPI.TLS, DefaultKafkaPort},
 				{&dst.Rpk.AdminAPI.Addresses, &dst.Rpk.AdminAPI.TLS, DefaultAdminPort},
+				{&dst.Rpk.HTTPProxy.Addresses, &dst.Rpk.HTTPProxy.TLS, DefaultProxyPort},
+			},
+		},
+		{
+			srcAddrs: dst.Rpk.HTTPProxy.Addresses,
+			srcTLS:   dst.Rpk.HTTPProxy.TLS,
+			setters: []setter{
+				{&dst.Rpk.KafkaAPI.Brokers, &dst.Rpk.KafkaAPI.TLS, DefaultKafkaPort},
+				{&dst.Rpk.AdminAPI.Addresses, &dst.Rpk.AdminAPI.TLS, DefaultAdminPort},
+				{&dst.Rpk.SR.Addresses, &dst.Rpk.SR.TLS, DefaultSchemaRegPort},
 			},
 		},
 	}
@@ -1803,6 +1948,24 @@ func (c *Config) fixSchemePorts() error {
 			return fmt.Errorf("unable to fix schema registry address %v: unsupported scheme %q", a, scheme)
 		}
 	}
+	for i, a := range c.redpandaYaml.Rpk.HTTPProxy.Addresses {
+		scheme, host, port, err := rpknet.SplitSchemeHostPort(a)
+		if err != nil {
+			return fmt.Errorf("unable to fix rest api address %v: %w", a, err)
+		}
+		host = normalizeHost(host)
+		switch scheme {
+		case "":
+			if port == "" {
+				port = strconv.Itoa(DefaultProxyPort)
+			}
+			c.redpandaYaml.Rpk.HTTPProxy.Addresses[i] = net.JoinHostPort(host, port)
+		case "http", "https":
+			continue // keep whatever port exists; empty ports will default to 80 or 443
+		default:
+			return fmt.Errorf("unable to fix rest api address %v: unsupported scheme %q", a, scheme)
+		}
+	}
 
 	p := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
 	if p != nil {
@@ -1851,6 +2014,24 @@ func (c *Config) fixSchemePorts() error {
 				continue // keep whatever port exists; empty ports will default to 80 or 443
 			default:
 				return fmt.Errorf("unable to fix schema registry address %v: unsupported scheme %q", a, scheme)
+			}
+		}
+		for i, a := range p.HTTPProxy.Addresses {
+			scheme, host, port, err := rpknet.SplitSchemeHostPort(a)
+			if err != nil {
+				return fmt.Errorf("unable to fix rest api address %v: %w", a, err)
+			}
+			host = normalizeHost(host)
+			switch scheme {
+			case "":
+				if port == "" {
+					port = strconv.Itoa(DefaultProxyPort)
+				}
+				p.HTTPProxy.Addresses[i] = net.JoinHostPort(host, port)
+			case "http", "https":
+				continue // keep whatever port exists; empty ports will default to 80 or 443
+			default:
+				return fmt.Errorf("unable to fix rest api address %v: unsupported scheme %q", a, scheme)
 			}
 		}
 	}

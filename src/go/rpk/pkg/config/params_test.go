@@ -107,6 +107,9 @@ rpk:
     schema_registry:
         addresses:
             - 200.4.2.1:8081
+    http_proxy:
+        addresses:
+            - localhost:8082
 `,
 		},
 		{
@@ -187,6 +190,9 @@ rpk:
     schema_registry:
         addresses:
             - 127.0.0.1:8081
+    http_proxy:
+        addresses:
+            - 127.0.0.1:8082
 `,
 		},
 	}
@@ -378,6 +384,9 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 					SR: RpkSchemaRegistryAPI{
 						Addresses: []string{"baz:8082"},
 					},
+					HTTPProxy: RpkHTTPProxy{
+						Addresses: []string{"foo:8082"},
+					},
 				},
 			},
 		},
@@ -421,6 +430,9 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 					},
 					SR: RpkSchemaRegistryAPI{
 						Addresses: []string{"9.12.10.1:5522"},
+					},
+					HTTPProxy: RpkHTTPProxy{
+						Addresses: []string{"250.12.12.12:8082"},
 					},
 				},
 			},
@@ -534,6 +546,9 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 							"10.1.2.1:8888",
 							"122.61.32.12:8888",
 						},
+					},
+					HTTPProxy: RpkHTTPProxy{
+						Addresses: []string{"localhost:8082"},
 					},
 				},
 			},
@@ -660,6 +675,9 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 							"122.61.33.12:8888",
 						},
 					},
+					HTTPProxy: RpkHTTPProxy{
+						Addresses: []string{"localhost:8082"},
+					},
 				},
 			},
 		},
@@ -743,6 +761,9 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 							"122.61.33.12:7777",
 						},
 					},
+					HTTPProxy: RpkHTTPProxy{
+						Addresses: []string{"localhost:8082"},
+					},
 				},
 			},
 		},
@@ -778,6 +799,9 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 						Addresses: []string{
 							"127.1.0.1:8081",
 						},
+					},
+					HTTPProxy: RpkHTTPProxy{
+						Addresses: []string{"127.1.0.1:8082"},
 					},
 				},
 			},
@@ -818,6 +842,9 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 							"127.0.0.1:8888",
 						},
 					},
+					HTTPProxy: RpkHTTPProxy{
+						Addresses: []string{"localhost:8082"},
+					},
 				},
 			},
 		},
@@ -843,6 +870,10 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 					},
 					SR: RpkSchemaRegistryAPI{
 						Addresses: []string{"127.1.0.1:8081"},
+						TLS:       new(TLS),
+					},
+					HTTPProxy: RpkHTTPProxy{
+						Addresses: []string{"127.1.0.1:8082"},
 						TLS:       new(TLS),
 					},
 				},
@@ -909,7 +940,7 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `,
-			expVirtualRpk: `version: 7
+			expVirtualRpk: `version: 8
 globals:
     prompt: ""
     no_default_cluster: false
@@ -1000,6 +1031,9 @@ rpk:
     schema_registry:
         addresses:
             - 127.0.0.1:3232
+    http_proxy:
+        addresses:
+            - 0.0.0.3:8082
     enable_memory_locking: true
     tune_network: true
     tune_disk_scheduler: true
@@ -1007,7 +1041,7 @@ rpk:
     tune_disk_write_cache: true
     tune_disk_irq: true
 `,
-			expVirtualRpk: `version: 7
+			expVirtualRpk: `version: 8
 globals:
     prompt: ""
     no_default_cluster: false
@@ -1034,6 +1068,9 @@ profiles:
       schema_registry:
         addresses:
             - 127.0.0.1:3232
+      http_proxy:
+        addresses:
+            - 0.0.0.3:8082
 cloud_auth:
     - name: default
       organization: Default organization
@@ -1049,7 +1086,7 @@ cloud_auth:
 		// * admin api is defaulted, using kafka broker ip
 		{
 			name: "rpk.yaml exists",
-			rpkYaml: `version: 7
+			rpkYaml: `version: 8
 globals:
     prompt: ""
     no_default_cluster: false
@@ -1074,6 +1111,9 @@ profiles:
       schema_registry:
         addresses:
             - 0.0.0.2
+      http_proxy:
+        addresses:
+            - 0.0.0.3:8082
 cloud_auth:
     - name: fizz
       organization: fizzy
@@ -1104,12 +1144,15 @@ rpk:
     schema_registry:
         addresses:
             - 0.0.0.2:8081
+    http_proxy:
+        addresses:
+            - 0.0.0.3:8082
     overprovisioned: true
     coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
 schema_registry: {}
 `,
-			expVirtualRpk: `version: 7
+			expVirtualRpk: `version: 8
 globals:
     prompt: ""
     no_default_cluster: false
@@ -1136,6 +1179,9 @@ profiles:
       schema_registry:
         addresses:
             - 0.0.0.2:8081
+      http_proxy:
+        addresses:
+            - 0.0.0.3:8082
 cloud_auth:
     - name: fizz
       organization: fizzy
@@ -1173,7 +1219,7 @@ rpk:
     tune_disk_write_cache: true
     tune_disk_irq: true
 `,
-			rpkYaml: `version: 7
+			rpkYaml: `version: 8
 globals:
     prompt: ""
     no_default_cluster: false
@@ -1220,6 +1266,9 @@ rpk:
     schema_registry:
         addresses:
             - 127.0.0.1:3232
+    http_proxy:
+        addresses:
+            - 128.0.0.4:8082
     enable_memory_locking: true
     tune_network: true
     tune_disk_scheduler: true
@@ -1228,7 +1277,7 @@ rpk:
     tune_disk_irq: true
 `,
 
-			expVirtualRpk: `version: 7
+			expVirtualRpk: `version: 8
 globals:
     prompt: ""
     no_default_cluster: false
@@ -1255,6 +1304,9 @@ profiles:
       schema_registry:
         addresses:
             - 127.0.0.1:3232
+      http_proxy:
+        addresses:
+            - 128.0.0.4:8082
 cloud_auth:
     - name: default
       organization: Default organization

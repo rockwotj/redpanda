@@ -595,6 +595,13 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceGro
 			isMTLS = mtls.Enabled
 		}
 	}
+	if c.HttpProxy != nil {
+		p.HTTPProxy.Addresses = []string{c.HttpProxy.Url}
+		p.HTTPProxy.TLS = new(config.TLS)
+		if mtls := c.HttpProxy.Mtls; !isMTLS && mtls != nil {
+			isMTLS = mtls.Enabled
+		}
+	}
 	return CloudClusterOutputs{
 		Profile:           p,
 		ResourceGroupName: rg.Name,

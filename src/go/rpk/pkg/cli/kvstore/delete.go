@@ -11,8 +11,6 @@ package kvstore
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -92,7 +90,8 @@ Examples:
 			}
 
 			// Create kvstore client and make request
-			client := newKVStoreClient(p)
+			client, err := newKVStoreClient(p, fs)
+			out.MaybeDie(err, "failed to create kvstore client: %v", err)
 			ctx := context.Background()
 			_, err = client.Write(ctx, topic, partition, reqBody)
 			out.MaybeDie(err, "failed to delete keys: %v", err)

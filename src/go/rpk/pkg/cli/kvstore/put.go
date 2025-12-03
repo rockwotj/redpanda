@@ -96,7 +96,8 @@ Examples:
 			}
 
 			// Create kvstore client and make request
-			client := newKVStoreClient(p)
+			client, err := newKVStoreClient(p, fs)
+			out.MaybeDie(err, "failed to create kvstore client: %v", err)
 			ctx := context.Background()
 			_, err = client.Write(ctx, topic, partition, reqBody)
 			out.MaybeDie(err, "failed to put key: %v", err)
