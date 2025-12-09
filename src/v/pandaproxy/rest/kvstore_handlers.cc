@@ -11,6 +11,7 @@
 #include "pandaproxy/rest/kvstore_handlers.h"
 
 #include "bytes/iostream.h"
+#include "config/broker_authn_endpoint.h"
 #include "kafka/data/rpc/client.h"
 #include "kafka/data/rpc/serde.h"
 #include "model/namespace.h"
@@ -18,6 +19,8 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "proto/redpanda/core/rest/v1/kvstore.proto.h"
+#include "security/acl.h"
+#include "security/authorizer.h"
 
 #include <type_traits>
 
@@ -209,13 +212,38 @@ ss::future<> write_reply(
       });
 }
 
+[[nodiscard]]
+security::auth_result check_authz(
+  proxy::server::request_t& rq,
+  const model::topic& topic,
+  security::acl_operation op) {
+    security::auth_result authz_result;
+    if (config::kafka_authz_enabled()) {
+        authz_result = rq.context().authorizer->authorized(
+          topic,
+          op,
+          security::acl_principal{security::principal_type::user, rq.user.name},
+          security::acl_host{rq.req->get_client_address().addr()},
+          security::superuser_required::no);
+    } else {
+        authz_result = security::auth_result::authz_disabled(
+          security::acl_principal{security::principal_type::user, rq.user.name},
+          security::acl_host{rq.req->get_client_address().addr()},
+          op,
+          topic);
+    }
+    // TODO: Audit! We also need to audit failures during authn
+    return authz_result;
+}
+
 } // namespace
 
 ss::future<proxy::server::reply_t>
 kv_write(proxy::server::request_t rq, proxy::server::reply_t rp) {
     auto req
       = co_await parse_request<proto::pandaproxy::kv_store_write_request>(&rq);
-    // TODO: Authorize + audit log
+    auto result = check_authz(
+      rq, req.ntp.tp.topic, security::acl_operation::write);
     kafka::data::rpc::client* rpc_client = rq.context().rpc_client;
     auto reply = co_await rpc_client->kv_write(std::move(req));
     co_await write_reply(&rq, &rp, reply);
@@ -226,7 +254,8 @@ ss::future<proxy::server::reply_t>
 kv_get(proxy::server::request_t rq, proxy::server::reply_t rp) {
     auto req = co_await parse_request<proto::pandaproxy::kv_store_get_request>(
       &rq);
-    // TODO: Authorize + audit log
+    auto result = check_authz(
+      rq, req.ntp.tp.topic, security::acl_operation::read);
     kafka::data::rpc::client* rpc_client = rq.context().rpc_client;
     auto reply = co_await rpc_client->kv_get(std::move(req));
     co_await write_reply(&rq, &rp, std::move(reply));
@@ -237,7 +266,8 @@ ss::future<proxy::server::reply_t>
 kv_scan(proxy::server::request_t rq, proxy::server::reply_t rp) {
     auto req = co_await parse_request<proto::pandaproxy::kv_store_scan_request>(
       &rq);
-    // TODO: Authorize + audit log
+    auto result = check_authz(
+      rq, req.ntp.tp.topic, security::acl_operation::read);
     kafka::data::rpc::client* rpc_client = rq.context().rpc_client;
     auto reply = co_await rpc_client->kv_scan(std::move(req));
     co_await write_reply(&rq, &rp, std::move(reply));

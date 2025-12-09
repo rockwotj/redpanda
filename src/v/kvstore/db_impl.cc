@@ -376,11 +376,11 @@ ss::future<> db_impl::do_apply_chunk() {
         if (batch->compressed()) {
             batch = co_await model::decompress_batch(*batch);
         }
-        lsm::write_batch wb;
+        auto wb = _lsm->create_write_batch();
         auto it = model::record_batch_iterator::create(*batch);
         while (it.has_next()) {
             auto record = it.next();
-            if (record.key_size() > max_key_size) {
+            if (!record.has_key() || record.key_size() > max_key_size) {
                 continue;
             }
             auto offset = batch->base_offset()

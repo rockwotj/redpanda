@@ -133,9 +133,28 @@ proxy::proxy(
   , _inflight_config_binding(config::shard_local_cfg().max_in_flight_pandaproxy_requests_per_shard.bind())
   , _client(client)
   , _client_cache(client_cache)
-  , _ctx{{{{}, max_memory, _mem_sem, _inflight_config_binding(), _inflight_sem, {}, smp_sg}, *this},
-        {config::always_true(), config::shard_local_cfg().superusers.bind(), controller},
-        _config.pandaproxy_api.value(), rpc_client}
+  , _ctx{
+        {
+          {
+            .advertised_listeners={}, 
+            .max_memory=max_memory,
+            .mem_sem=_mem_sem,
+            .max_inflight=_inflight_config_binding(),
+            .inflight_sem=_inflight_sem,
+            .as={},
+            .smp_sg=smp_sg,
+          }, 
+          *this,
+        },
+        {
+          config::always_true(),
+          config::shard_local_cfg().superusers.bind(),
+          controller,
+        },
+        _config.pandaproxy_api.value(),
+        rpc_client,
+        &controller->get_authorizer().local(),
+        }
   , _server(
       "pandaproxy",
       "rest_proxy",

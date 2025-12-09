@@ -150,6 +150,7 @@ redpanda_cc_library(
         "//src/v/net",
         "//src/v/pandaproxy/schema_registry:exceptions",
         "//src/v/rpc",
+        "//src/v/security",
         "//src/v/security:request_auth",
         "//src/v/ssx:future_util",
         "//src/v/ssx:mutex",

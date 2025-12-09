@@ -20,6 +20,7 @@
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/kafka_client_cache.h"
 #include "pandaproxy/types.h"
+#include "security/authorizer.h"
 #include "security/request_auth.h"
 #include "utils/adjustable_semaphore.h"
 #include "utils/truncating_logger.h"
@@ -187,6 +188,7 @@ public:
         request_authenticator authenticator;
         std::vector<config::rest_authn_endpoint> listeners;
         kafka::data::rpc::client* rpc_client;
+        security::authorizer* authorizer;
     };
 
     using base::ctx_server;

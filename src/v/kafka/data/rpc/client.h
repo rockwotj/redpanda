@@ -102,13 +102,15 @@ private:
       model::node_id, chunked_vector<topic_partitions> topics);
 
     ss::future<kv_write_reply> do_local_kv_write(kv_write_request);
-    ss::future<kv_write_reply> do_remote_kv_write(model::node_id, kv_write_request);
+    ss::future<kv_write_reply>
+      do_remote_kv_write(model::node_id, kv_write_request);
 
     ss::future<kv_get_reply> do_local_kv_get(kv_get_request);
     ss::future<kv_get_reply> do_remote_kv_get(model::node_id, kv_get_request);
 
     ss::future<kv_scan_reply> do_local_kv_scan(kv_scan_request);
-    ss::future<kv_scan_reply> do_remote_kv_scan(model::node_id, kv_scan_request);
+    ss::future<kv_scan_reply>
+      do_remote_kv_scan(model::node_id, kv_scan_request);
 
     template<typename Func>
     std::invoke_result_t<Func> retry(Func&&);
