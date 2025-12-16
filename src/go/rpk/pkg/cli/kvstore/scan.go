@@ -119,7 +119,7 @@ Examples:
 				partitionCount, err := getTopicPartitionCount(ctx, fs, p, topic)
 				out.MaybeDie(err, "failed to get partition count: %v", err)
 				partitions = make([]int32, partitionCount)
-				for i := int32(0); i < partitionCount; i++ {
+				for i := range partitionCount {
 					partitions[i] = i
 				}
 			} else {

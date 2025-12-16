@@ -129,7 +129,11 @@ ss::future<> db_impl::start() {
       });
     _last_applied_offset = _lsm->max_applied_offset();
     ssx::spawn_with_gate(_gate, [this] { return apply_loop(); });
-    vlog(kvlog.info, "started kvstore db for {}", _partition->ntp());
+    vlog(
+      kvlog.info,
+      "started kvstore db for {} with last applied offset {}",
+      _partition->ntp(),
+      _last_applied_offset);
 }
 
 ss::future<> db_impl::stop() {
@@ -198,6 +202,13 @@ ss::future<chunked_vector<entry>> db_impl::scan(scan_parameters params) {
         co_await iter.seek(encode_key(*start));
     } else {
         co_await iter.seek_to_first();
+        vlog(
+          kvlog.debug,
+          "scanning at most {} results starting valid after seek to first {}, "
+          "last applied: {}",
+          params.limit,
+          iter.valid(),
+          _lsm->max_applied_offset());
     }
     if (const auto& end = params.end_key) {
         auto stop = encode_key(*end);
@@ -214,6 +225,7 @@ ss::future<chunked_vector<entry>> db_impl::scan(scan_parameters params) {
             result.emplace_back(decode_key(iter.key()), iter.value());
         }
     }
+    vlog(kvlog.debug, "scan returned {} results", result.size());
     co_return result;
 }
 
@@ -338,13 +350,13 @@ ss::future<> db_impl::apply_loop() {
         // grab the hwm because we don't want to re-apply until this has
         // advanced. However we only actually apply up to the LSO.
         auto hwm = _partition->high_watermark();
-        try {
-            co_await do_apply_chunk();
-        } catch (...) {
-            vlog(
-              kvlog.error,
-              "unable to apply records to database: {}",
-              std::current_exception());
+        auto fut = co_await ss::coroutine::as_future(do_apply_chunk());
+        if (fut.failed()) {
+            auto ex = fut.get_exception();
+            vlog(kvlog.error, "unable to apply records to database: {}", ex);
+            co_await ss::sleep_abortable(1s, _as).handle_exception(
+              [](const std::exception_ptr&) {});
+            continue;
         }
         // Wait for the next offset to be available before re-attempting
         // to apply writes to the database
@@ -362,8 +374,21 @@ ss::future<> db_impl::do_apply_chunk() {
     if (!maybe_lso) {
         throw std::runtime_error("unable to determine lso");
     }
+
     kafka::offset max_offset = model::offset_cast(
       model::prev_offset(maybe_lso.value()));
+    vlog(
+      kvlog.trace,
+      "creating reader to apply to kvstore, start_offset={}, max_offset={}, "
+      "lso={}, hwm={}, last_applied={}",
+      start_offset,
+      max_offset,
+      maybe_lso.value(),
+      proxy.high_watermark(),
+      _last_applied_offset);
+    if (start_offset > max_offset) {
+        co_return;
+    }
     auto translator = co_await proxy.make_reader(
       {start_offset, max_offset, _as});
     auto tracker = kafka::aborted_transaction_tracker::create_default(
@@ -378,22 +403,29 @@ ss::future<> db_impl::do_apply_chunk() {
         }
         auto wb = _lsm->create_write_batch();
         auto it = model::record_batch_iterator::create(*batch);
+        int applied_count = 0;
         while (it.has_next()) {
             auto record = it.next();
             if (!record.has_key() || record.key_size() > max_key_size) {
                 continue;
             }
+            ++applied_count;
             auto offset = batch->base_offset()
                           + model::offset_delta(record.offset_delta());
             if (record.is_tombstone()) {
+                wb.remove(encode_key(record.key()), offset);
+            } else {
                 wb.put(
                   encode_key(record.key()), record.release_value(), offset);
-            } else {
-                wb.remove(encode_key(record.key()), offset);
             }
         }
         co_await _lsm->apply(std::move(wb));
         _last_applied_offset = batch->last_offset();
+        vlog(
+          kvlog.trace,
+          "applied {} records to the kvstore, last applied: {}",
+          applied_count,
+          _last_applied_offset);
         _cond_var.broadcast();
     }
 }
