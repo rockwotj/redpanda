@@ -107,26 +107,45 @@ Examples:
 				reqBody.EndKey = &decodedEnd
 			}
 
-			// Create kvstore client and make request
+			// Create kvstore client
 			client, err := newKVStoreClient(p, fs)
 			out.MaybeDie(err, "failed to create kvstore client: %v", err)
 			ctx := context.Background()
-			respBody, err := client.Scan(ctx, topic, partition, reqBody)
-			out.MaybeDie(err, "failed to scan keys: %v", err)
 
-			// Convert response to output format
-			entries := make([]ScanEntry, 0, len(respBody.Entries))
-			for _, entry := range respBody.Entries {
-				keyStr, err := encodeOutput(entry.Key, keyFormat)
-				out.MaybeDie(err, "failed to encode key: %v", err)
-				valStr, err := encodeOutput(entry.Value, valueFormat)
-				out.MaybeDie(err, "failed to encode value: %v", err)
+			// Determine which partitions to query
+			var partitions []int32
+			if partition == -1 {
+				// Query all partitions
+				partitionCount, err := getTopicPartitionCount(ctx, fs, p, topic)
+				out.MaybeDie(err, "failed to get partition count: %v", err)
+				partitions = make([]int32, partitionCount)
+				for i := int32(0); i < partitionCount; i++ {
+					partitions[i] = i
+				}
+			} else {
+				// Query specific partition
+				partitions = []int32{partition}
+			}
 
-				entries = append(entries, ScanEntry{
-					Key:       keyStr,
-					Value:     valStr,
-					Partition: partition,
-				})
+			// Make requests to all target partitions and aggregate results
+			entries := make([]ScanEntry, 0)
+			for _, p := range partitions {
+				respBody, err := client.Scan(ctx, topic, p, reqBody)
+				out.MaybeDie(err, "failed to scan keys from partition %d: %v", p, err)
+
+				// Convert response to output format
+				for _, entry := range respBody.Entries {
+					keyStr, err := encodeOutput(entry.Key, keyFormat)
+					out.MaybeDie(err, "failed to encode key: %v", err)
+					valStr, err := encodeOutput(entry.Value, valueFormat)
+					out.MaybeDie(err, "failed to encode value: %v", err)
+
+					entries = append(entries, ScanEntry{
+						Key:       keyStr,
+						Value:     valStr,
+						Partition: p,
+					})
+				}
 			}
 
 			printScanResults(f, entries, os.Stdout)
@@ -155,9 +174,24 @@ func printScanResults(f config.OutFormatter, entries []ScanEntry, w io.Writer) {
 		return
 	}
 
-	tw := out.NewTableTo(w, "KEY", "VALUE")
-	defer tw.Flush()
+	// Check if we have results from multiple partitions
+	partitionSet := make(map[int32]bool)
 	for _, e := range entries {
-		tw.Print(e.Key, e.Value)
+		partitionSet[e.Partition] = true
+	}
+	multiplePartitions := len(partitionSet) > 1
+
+	if multiplePartitions {
+		tw := out.NewTableTo(w, "PARTITION", "KEY", "VALUE")
+		defer tw.Flush()
+		for _, e := range entries {
+			tw.Print(e.Partition, e.Key, e.Value)
+		}
+	} else {
+		tw := out.NewTableTo(w, "KEY", "VALUE")
+		defer tw.Flush()
+		for _, e := range entries {
+			tw.Print(e.Key, e.Value)
+		}
 	}
 }

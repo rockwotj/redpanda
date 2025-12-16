@@ -24,7 +24,10 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/spf13/afero"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // decodeInput decodes a string input based on the specified format.
@@ -263,4 +266,34 @@ func (c *KVStoreClient) makeRequest(ctx context.Context, endpoint string, reqBod
 	}
 
 	return nil
+}
+
+// getTopicPartitionCount retrieves the partition count for a given topic.
+func getTopicPartitionCount(ctx context.Context, fs afero.Fs, p *config.RpkProfile, topic string) (int32, error) {
+	cl, err := kafka.NewFranzClient(fs, p)
+	if err != nil {
+		return 0, fmt.Errorf("unable to initialize kafka client: %v", err)
+	}
+	defer cl.Close()
+
+	req := kmsg.NewPtrMetadataRequest()
+	reqTopic := kmsg.NewMetadataRequestTopic()
+	reqTopic.Topic = kmsg.StringPtr(topic)
+	req.Topics = append(req.Topics, reqTopic)
+
+	resp, err := req.RequestWith(ctx, cl)
+	if err != nil {
+		return 0, fmt.Errorf("unable to request topic metadata: %v", err)
+	}
+
+	if len(resp.Topics) == 0 {
+		return 0, fmt.Errorf("topic %q not found", topic)
+	}
+
+	topicResp := resp.Topics[0]
+	if err := kerr.ErrorForCode(topicResp.ErrorCode); err != nil {
+		return 0, fmt.Errorf("error fetching metadata for topic %q: %v", topic, err)
+	}
+
+	return int32(len(topicResp.Partitions)), nil
 }

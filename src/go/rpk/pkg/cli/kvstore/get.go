@@ -78,43 +78,84 @@ Examples:
 				Keys: decodedKeys,
 			}
 
-			// Create kvstore client and make request
+			// Create kvstore client
 			client, err := newKVStoreClient(p, fs)
 			out.MaybeDie(err, "failed to create kvstore client: %v", err)
 			ctx := context.Background()
-			// TODO: instead lookup all partitions
+
+			// Determine which partitions to query
+			var partitions []int32
 			if partition == -1 {
-				partition = 0
-			}
-			respBody, err := client.Get(ctx, topic, partition, reqBody)
-			out.MaybeDie(err, "failed to get keys: %v", err)
-
-			// Convert response to output format
-			results := make([]GetResult, 0, len(respBody.Results))
-			for _, result := range respBody.Results {
-				keyStr, err := encodeOutput(result.Key, keyFormat)
-				out.MaybeDie(err, "failed to encode key: %v", err)
-
-				var valStr *string
-				found := result.Value != nil
-				if found {
-					encoded, err := encodeOutput(*result.Value, valueFormat)
-					out.MaybeDie(err, "failed to encode value: %v", err)
-					valStr = &encoded
+				// Query all partitions
+				partitionCount, err := getTopicPartitionCount(ctx, fs, p, topic)
+				out.MaybeDie(err, "failed to get partition count: %v", err)
+				partitions = make([]int32, partitionCount)
+				for i := int32(0); i < partitionCount; i++ {
+					partitions[i] = i
 				}
+			} else {
+				// Query specific partition
+				partitions = []int32{partition}
+			}
 
-				results = append(results, GetResult{
+			// Make requests to all target partitions and aggregate results
+			// Use a map to deduplicate results (prioritize found keys)
+			resultMap := make(map[string]GetResult)
+			for _, decodedKey := range decodedKeys {
+				// Initialize all keys as not found
+				keyStr, err := encodeOutput(decodedKey, keyFormat)
+				out.MaybeDie(err, "failed to encode key: %v", err)
+				resultMap[keyStr] = GetResult{
 					Key:   keyStr,
-					Value: valStr,
-					Found: found,
-				})
+					Value: nil,
+					Found: false,
+				}
+			}
+
+			for _, p := range partitions {
+				respBody, err := client.Get(ctx, topic, p, reqBody)
+				out.MaybeDie(err, "failed to get keys from partition %d: %v", p, err)
+
+				// Merge results, prioritizing found values
+				for _, result := range respBody.Results {
+					keyStr, err := encodeOutput(result.Key, keyFormat)
+					out.MaybeDie(err, "failed to encode key: %v", err)
+
+					var valStr *string
+					found := result.Value != nil
+					if found {
+						encoded, err := encodeOutput(*result.Value, valueFormat)
+						out.MaybeDie(err, "failed to encode value: %v", err)
+						valStr = &encoded
+					}
+
+					// Only update if we found the key (or if it was not found before)
+					existingResult := resultMap[keyStr]
+					if found || !existingResult.Found {
+						resultMap[keyStr] = GetResult{
+							Key:   keyStr,
+							Value: valStr,
+							Found: found,
+						}
+					}
+				}
+			}
+
+			// Convert map to ordered slice (matching input order)
+			results := make([]GetResult, 0, len(decodedKeys))
+			for _, decodedKey := range decodedKeys {
+				keyStr, err := encodeOutput(decodedKey, keyFormat)
+				out.MaybeDie(err, "failed to encode key: %v", err)
+				if result, exists := resultMap[keyStr]; exists {
+					results = append(results, result)
+				}
 			}
 
 			printGetResults(f, results, os.Stdout)
 		},
 	}
 	p.InstallFormatFlag(cmd)
-	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "Target partition (default -1 means all partitions or hash-based)")
+	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "Target partition (default -1 means all partitions)")
 	cmd.Flags().StringVar(&keyFormat, "key-format", "utf8", "Key format for input and output (utf8, hex, base64)")
 	cmd.Flags().StringVar(&valueFormat, "value-format", "utf8", "Value format for output (utf8, hex, base64)")
 	return cmd
