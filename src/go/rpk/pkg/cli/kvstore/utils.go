@@ -186,7 +186,7 @@ func newKVStoreClient(p *config.RpkProfile, fs afero.Fs) (*KVStoreClient, error)
 
 // Get retrieves keys from a topic partition's kvstore.
 func (c *KVStoreClient) Get(ctx context.Context, topic string, partition int32, req KVStoreGetRequest) (*KVStoreGetResponse, error) {
-	endpoint := fmt.Sprintf("/kvstore/%s/partition/%d/get", topic, partition)
+	endpoint := fmt.Sprintf("/kvstore/%s/partition/%d/batch_get", topic, partition)
 	var resp KVStoreGetResponse
 	if err := c.makeRequest(ctx, endpoint, req, &resp); err != nil {
 		return nil, err
@@ -215,7 +215,7 @@ func (c *KVStoreClient) Scan(ctx context.Context, topic string, partition int32,
 }
 
 // makeRequest makes an HTTP request to the kvstore API.
-func (c *KVStoreClient) makeRequest(ctx context.Context, endpoint string, reqBody interface{}, respBody interface{}) error {
+func (c *KVStoreClient) makeRequest(ctx context.Context, endpoint string, reqBody any, respBody any) error {
 	// Marshal request body
 	var bodyReader io.Reader
 	if reqBody != nil {

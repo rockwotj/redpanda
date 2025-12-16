@@ -11,8 +11,10 @@
 
 #include "kafka/data/rpc/service.h"
 
+#include "base/vlog.h"
 #include "kafka/data/log_reader_config.h"
 #include "kafka/data/partition_proxy.h"
+#include "kafka/data/rpc/logger.h"
 #include "kafka/data/rpc/serde.h"
 #include "kvstore/db.h"
 #include "logger.h"
@@ -357,17 +359,24 @@ kvstore::write_batch convert_write_request(kv_write_request* req) {
 ss::future<kv_write_reply> local_service::kv_write(kv_write_request req) {
     auto shard = _partition_manager->shard_owner(req.ntp);
     if (!shard) {
+        vlog(log.trace, "no leader for {}", req.ntp);
         co_return cluster::errc::not_leader;
     }
     auto topic_cfg = _metadata_cache->find_topic_cfg(
       model::topic_namespace_view(req.ntp));
     if (!topic_cfg) {
+        vlog(log.trace, "no topic config for {}", req.ntp);
         co_return cluster::errc::topic_not_exists;
     }
     if (topic_cfg->properties.kvstore == model::kvstore_type::none) {
+        vlog(log.trace, "kvstore not enabled for {}", req.ntp);
         co_return cluster::errc::invalid_request;
     }
     if (!_shadow_link_registry->is_topic_mutable(req.ntp.tp.topic)) {
+        vlog(
+          log.trace,
+          "rejecting write as cluster linking enable for {}",
+          req.ntp);
         co_return cluster::errc::partition_operation_failed;
     }
     auto wb = convert_write_request(&req);
@@ -384,14 +393,17 @@ ss::future<kv_write_reply> local_service::kv_write(kv_write_request req) {
 ss::future<kv_get_reply> local_service::kv_get(kv_get_request req) {
     auto shard = _partition_manager->shard_owner(req.ntp);
     if (!shard) {
+        vlog(log.trace, "no leader for {}", req.ntp);
         co_return cluster::errc::not_leader;
     }
     auto topic_cfg = _metadata_cache->find_topic_cfg(
       model::topic_namespace_view(req.ntp));
     if (!topic_cfg) {
+        vlog(log.trace, "no topic config for {}", req.ntp);
         co_return cluster::errc::topic_not_exists;
     }
     if (topic_cfg->properties.kvstore == model::kvstore_type::none) {
+        vlog(log.trace, "kvstore not enabled for {}", req.ntp);
         co_return cluster::errc::invalid_request;
     }
     kv_get_reply reply;
@@ -411,14 +423,17 @@ ss::future<kv_get_reply> local_service::kv_get(kv_get_request req) {
 ss::future<kv_scan_reply> local_service::kv_scan(kv_scan_request req) {
     auto shard = _partition_manager->shard_owner(req.ntp);
     if (!shard) {
+        vlog(log.trace, "no leader for {}", req.ntp);
         co_return cluster::errc::not_leader;
     }
     auto topic_cfg = _metadata_cache->find_topic_cfg(
       model::topic_namespace_view(req.ntp));
     if (!topic_cfg) {
+        vlog(log.trace, "no topic config for {}", req.ntp);
         co_return cluster::errc::topic_not_exists;
     }
     if (topic_cfg->properties.kvstore == model::kvstore_type::none) {
+        vlog(log.trace, "kvstore not enabled for {}", req.ntp);
         co_return cluster::errc::invalid_request;
     }
     kvstore::db::scan_parameters params{

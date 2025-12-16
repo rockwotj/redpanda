@@ -82,6 +82,10 @@ Examples:
 			client, err := newKVStoreClient(p, fs)
 			out.MaybeDie(err, "failed to create kvstore client: %v", err)
 			ctx := context.Background()
+			// TODO: instead lookup all partitions
+			if partition == -1 {
+				partition = 0
+			}
 			respBody, err := client.Get(ctx, topic, partition, reqBody)
 			out.MaybeDie(err, "failed to get keys: %v", err)
 
