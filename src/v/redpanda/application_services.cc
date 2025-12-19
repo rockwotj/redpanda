@@ -10,6 +10,7 @@
 #include "base/vlog.h"
 #include "cloud_io/cache_service.h"
 #include "cloud_io/remote.h"
+#include "kvstore/app.h"
 #include "cloud_storage/configuration.h"
 #include "cloud_storage/inventory/inv_ops.h"
 #include "cloud_storage/inventory/types.h"
@@ -405,6 +406,17 @@ void application::wire_up_redpanda_services(
               .get();
         });
     }
+    if (config::shard_local_cfg().enable_kvstore() && !config::node().recovery_mode_enabled()) {
+        vassert(
+          archival_storage_enabled(),
+          "kvstore requires cloud storage to be enabled");
+        syschecks::systemd_message("Initializing kvstore subsystem")
+          .get();
+        // NOTE: this only instantiates the app; underlying services are
+        // constructed separately once more of the subsystems are available.
+        kvstore_app = std::make_unique<kvstore::app>(
+          fmt::format("{}/kvstore", _log.name()));
+    }
 
     vlog(
       _log.info,
@@ -504,7 +516,7 @@ void application::wire_up_redpanda_services(
             &shard_table,
             &partition_manager,
             smp_service_groups.transform_smp_sg(),
-            std::nullopt);
+            kvstore_app ? std::make_optional(kvstore_app.get()) : std::nullopt);
       }),
       ss::sharded_parameter([this] {
           return kafka::data::rpc::shadow_link_registry::make_default(
@@ -722,6 +734,18 @@ void application::wire_up_redpanda_services(
             &storage,
             ct_test_cfg.skip_flush_loop,
             ct_test_cfg.skip_level_zero_gc)
+          .get();
+    }
+
+    if (kvstore_app) {
+        syschecks::systemd_message("Starting kvstore subsystem").get();
+        kvstore_app
+          ->construct(
+            &partition_manager,
+            &raft_group_manager,
+            &controller->get_topics_state(),
+            &cloud_io,
+            bucket_name.value())
           .get();
     }
 

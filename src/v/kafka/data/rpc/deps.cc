@@ -365,11 +365,13 @@ ss::future<cluster::errc> partition_manager_proxy::invoke_on_shard_kvstore_impl(
                                 ? (*_kvstore_app)->get_local_manager()
                                 : nullptr;
           if (!kvstore_mgr) {
+              vlog(log.trace, "no kvstore manager for request to: {}", ntp);
               return ss::make_ready_future<cluster::errc>(
                 cluster::errc::not_leader);
           }
           auto* db = kvstore_mgr->lookup_db(ntp);
           if (!db) {
+              vlog(log.trace, "no kvstore found for: {}", ntp);
               return ss::make_ready_future<cluster::errc>(
                 cluster::errc::not_leader);
           }

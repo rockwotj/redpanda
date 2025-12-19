@@ -41,6 +41,7 @@
 #include "kafka/server/snc_quota_manager.h"
 #include "kafka/server/usage_manager.h"
 #include "kafka/server/write_at_offset_stm.h"
+#include "kvstore/app.h"
 #include "migrations/migrators.h"
 #include "raft/group_manager.h"
 #include "raft/service.h"
@@ -226,6 +227,9 @@ void application::start_runtime_services(
 
     if (cloud_topics_app) {
         cloud_topics_app->start().get();
+    }
+    if (kvstore_app) {
+        kvstore_app->start().get();
     }
 
     _debug_bundle_service.invoke_on_all(&debug_bundle::service::start).get();

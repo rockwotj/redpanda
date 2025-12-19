@@ -32,6 +32,7 @@
 #include "crypto/ossl_context_service.h"
 #include "datalake/credential_manager.h"
 #include "datalake/fwd.h"
+#include "kvstore/fwd.h"
 #include "debug_bundle/fwd.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
@@ -199,6 +200,7 @@ public:
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     std::unique_ptr<cloud_topics::app> cloud_topics_app;
+    std::unique_ptr<kvstore::app> kvstore_app;
 
     ss::sharded<cluster_link::service> _cluster_link_service;
 

@@ -32,6 +32,7 @@
 #include "datalake/datalake_usage_aggregator.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/rm_group_frontend.h"
+#include "kvstore/app.h"
 #include "metrics/prometheus_sanitize.h"
 #include "migrations/migrators.h"
 #include "pandaproxy/rest/api.h"
@@ -163,6 +164,12 @@ void application::shutdown() {
             &cloud_storage_clients::upstream_registry::prepare_stop)
           .get();
     }
+
+    if (kvstore_app) {
+        shutdown_with_watchdog(
+          kvstore_app, [](auto& app) { return app->stop(); });
+    }
+
 
     // Stop any I/O to object store: this will cause any readers in flight
     // to abort and enables partition shutdown to proceed reliably.

@@ -131,3 +131,11 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "fwd",
+    hdrs = [
+        "fwd.h",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -20,6 +20,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/cluster_link",
+        "//src/v/kvstore:app",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -67,6 +68,7 @@ redpanda_cc_library(
         "//src/v/kafka/server:app",
         "//src/v/kafka/server:qdc_monitor_config",
         "//src/v/kafka/server:write_at_offset_stm",
+        "//src/v/kvstore:fwd",
         "//src/v/metrics",
         "//src/v/migrations",
         "//src/v/net",
