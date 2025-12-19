@@ -110,7 +110,12 @@ std::unique_ptr<db> db::make(
 }
 
 ss::future<> db_impl::start() {
-    vlog(kvlog.info, "starting kvstore db for {}", _partition->ntp());
+    vlog(
+      kvlog.info,
+      "starting kvstore db for {}, is_leader={}, term={}",
+      _partition->ntp(),
+      _partition->is_leader(),
+      _partition->term());
     if (!_partition->is_leader()) {
         co_return;
     }
@@ -121,13 +126,14 @@ ss::future<> db_impl::start() {
       _remote, _bucket, _prefix);
     _lsm = co_await lsm::database::open(
       {
-
+        .database_epoch = static_cast<uint64_t>(_term()),
+        .max_pre_open_fibers = 4,
       },
       lsm::io::persistence{
         .data = std::move(data),
         .metadata = std::move(metadata),
       });
-    _last_applied_offset = _lsm->max_applied_offset()
+    _last_applied_offset = _lsm->max_applied_seqno()
                              .transform([](auto seqno) {
                                  return model::offset(
                                    static_cast<int64_t>(seqno));
@@ -213,7 +219,7 @@ ss::future<chunked_vector<entry>> db_impl::scan(scan_parameters params) {
           "last applied: {}",
           params.limit,
           iter.valid(),
-          _lsm->max_applied_offset());
+          _lsm->max_applied_seqno());
     }
     if (const auto& end = params.end_key) {
         auto stop = encode_key(*end);
@@ -418,10 +424,13 @@ ss::future<> db_impl::do_apply_chunk() {
             auto offset = batch->base_offset()
                           + model::offset_delta(record.offset_delta());
             if (record.is_tombstone()) {
-                wb.remove(encode_key(record.key()), offset);
+                wb.remove(
+                  encode_key(record.key()), lsm::sequence_number(offset));
             } else {
                 wb.put(
-                  encode_key(record.key()), record.release_value(), offset);
+                  encode_key(record.key()),
+                  record.release_value(),
+                  lsm::sequence_number(offset));
             }
         }
         co_await _lsm->apply(std::move(wb));
