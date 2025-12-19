@@ -63,6 +63,7 @@ void encode_key(std::string_view s, std::string* out) {
 
 std::string encode_key(const iobuf& b) {
     std::string o;
+    o.reserve(b.size_bytes());
     for (const auto& frag : b) {
         encode_key(std::string_view{frag}, &o);
     }
@@ -70,6 +71,7 @@ std::string encode_key(const iobuf& b) {
 }
 std::string encode_key(std::string_view s) {
     std::string o;
+    o.reserve(s.size());
     encode_key(s, &o);
     return o;
 }
@@ -81,7 +83,8 @@ std::string encode_key(const ss::sstring& s) {
 ss::sstring decode_key(std::string_view s) {
     ss::sstring decoded{ss::sstring::initialized_later{}, s.size()};
     auto out = decoded.begin();
-    for (auto it = s.begin(); it != s.end(); std::advance(it, 1)) {
+    // NOLINTNEXTLINE(*pointer-arithmetic*)
+    for (auto it = s.begin(); it != s.end(); ++it, ++out) {
         if (*it == '\1') {
             std::advance(it, 1);
             *out = *it == '\1' ? '\0' : '\1';
@@ -237,6 +240,9 @@ ss::future<chunked_vector<entry>> db_impl::scan(scan_parameters params) {
         }
     }
     vlog(kvlog.debug, "scan returned {} results", result.size());
+    for (const auto& entry : result) {
+        vlog(kvlog.debug, "scan result: {}", entry.key);
+    }
     co_return result;
 }
 
