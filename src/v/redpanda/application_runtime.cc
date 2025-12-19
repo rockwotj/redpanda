@@ -52,7 +52,8 @@ void application::wire_up_runtime_services(
           memory_groups().kafka_total_memory(),
           *_proxy_client_config,
           *_proxy_config,
-          controller.get());
+          controller.get(),
+          &_kafka_data_rpc_client);
     }
     if (_schema_reg_config) {
         construct_single_service(

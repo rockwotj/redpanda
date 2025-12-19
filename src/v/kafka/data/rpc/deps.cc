@@ -138,15 +138,6 @@ public:
 
     ss::future<cluster::errc> invoke_on_shard_kvstore(
       ss::shard_id shard_id,
-      const model::ktp& ktp,
-      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)> fn)
-      final {
-        return _proxy->invoke_on_shard_kvstore_impl(
-          shard_id, ktp, std::move(fn));
-    }
-
-    ss::future<cluster::errc> invoke_on_shard_kvstore(
-      ss::shard_id shard_id,
       const model::ntp& ntp,
       ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)> fn)
       final {
@@ -276,7 +267,7 @@ kafka::data::rpc::partition_manager::make_default(
   ss::sharded<cluster::shard_table>* table,
   ss::sharded<cluster::partition_manager>* manager,
   ss::smp_service_group smp_group,
-  kvstore::app* kvstore_app) {
+  std::optional<kvstore::app*> kvstore_app) {
     return std::make_unique<partition_manager_impl>(
       std::make_unique<partition_manager_proxy>(
         table, manager, smp_group, kvstore_app));
@@ -286,7 +277,7 @@ partition_manager_proxy::partition_manager_proxy(
   ss::sharded<cluster::shard_table>* table,
   ss::sharded<cluster::partition_manager>* manager,
   ss::smp_service_group smp_group,
-  kvstore::app* kvstore_app)
+  std::optional<kvstore::app*> kvstore_app)
   : _table(table)
   , _manager(manager)
   , _smp_group(smp_group)
@@ -370,7 +361,9 @@ ss::future<cluster::errc> partition_manager_proxy::invoke_on_shard_kvstore_impl(
       shard,
       {_smp_group},
       [this, ntp = std::move(ntp), func = std::move(func)] {
-          auto* kvstore_mgr = _kvstore_app->get_local_manager();
+          auto* kvstore_mgr = _kvstore_app
+                                ? (*_kvstore_app)->get_local_manager()
+                                : nullptr;
           if (!kvstore_mgr) {
               return ss::make_ready_future<cluster::errc>(
                 cluster::errc::not_leader);
@@ -385,12 +378,6 @@ ss::future<cluster::errc> partition_manager_proxy::invoke_on_shard_kvstore_impl(
 }
 
 // Explicit template instantiations
-template ss::future<cluster::errc>
-partition_manager_proxy::invoke_on_shard_kvstore_impl<model::ktp>(
-  ss::shard_id,
-  const model::ktp&,
-  ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>);
-
 template ss::future<cluster::errc>
 partition_manager_proxy::invoke_on_shard_kvstore_impl<model::ntp>(
   ss::shard_id,

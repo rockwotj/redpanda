@@ -153,7 +153,7 @@ public:
       ss::sharded<cluster::shard_table>*,
       ss::sharded<cluster::partition_manager>*,
       ss::smp_service_group smp_group,
-      kvstore::app* kvstore_app);
+      std::optional<kvstore::app*> kvstore_app);
 
     /**
      * Lookup which shard owns a particular ntp.
@@ -220,11 +220,6 @@ public:
      * that ntp or if there is no kvstore database for that ntp.
      */
     virtual ss::future<cluster::errc> invoke_on_shard_kvstore(
-      ss::shard_id shard_id,
-      const model::ktp& ktp,
-      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>)
-      = 0;
-    virtual ss::future<cluster::errc> invoke_on_shard_kvstore(
       ss::shard_id,
       const model::ntp&,
       ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>)
@@ -237,7 +232,7 @@ public:
       ss::sharded<cluster::shard_table>* table,
       ss::sharded<cluster::partition_manager>* manager,
       ss::smp_service_group smp_group,
-      kvstore::app* kvstore_app);
+      std::optional<kvstore::app*> kvstore_app);
     ~partition_manager_proxy() = default;
 
     partition_manager_proxy(const partition_manager_proxy&) = delete;
@@ -299,7 +294,7 @@ private:
     ss::sharded<cluster::shard_table>* _table;
     ss::sharded<cluster::partition_manager>* _manager;
     ss::smp_service_group _smp_group;
-    kvstore::app* _kvstore_app;
+    std::optional<kvstore::app*> _kvstore_app;
 };
 
 /**

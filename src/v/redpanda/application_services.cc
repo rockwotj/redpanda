@@ -503,7 +503,8 @@ void application::wire_up_redpanda_services(
           return kafka::data::rpc::partition_manager::make_default(
             &shard_table,
             &partition_manager,
-            smp_service_groups.transform_smp_sg());
+            smp_service_groups.transform_smp_sg(),
+            std::nullopt);
       }),
       ss::sharded_parameter([this] {
           return kafka::data::rpc::shadow_link_registry::make_default(

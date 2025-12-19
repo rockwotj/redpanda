@@ -1215,7 +1215,10 @@ ss::future<> service::maybe_start_manager() {
       _self,
       partition_leader_cache::make_default(_partition_leaders_table),
       partition_manager::make_default(
-        _shard_table, _partition_manager, _smp_group),
+        _shard_table,
+        _partition_manager,
+        _smp_group,
+        /*kvstore_app=*/std::nullopt),
       topic_metadata_cache::make_default(_metadata_cache),
       topic_creator::make_default(_controller),
       security_service::make_default(_security_fe),

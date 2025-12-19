@@ -177,6 +177,14 @@ public:
           });
     }
 
+    ss::future<cluster::errc> invoke_on_shard_kvstore(
+      ss::shard_id,
+      const model::ntp&,
+      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>)
+      override {
+        co_return cluster::errc::invalid_request;
+    }
+
 private:
     static constexpr auto coordinator_partition = model::partition_id{0};
 
@@ -314,7 +322,7 @@ transform::rpc::partition_manager::make_default(
   ss::smp_service_group smp_group) {
     return std::make_unique<partition_manager_impl>(
       std::make_unique<kafka::data::rpc::partition_manager_proxy>(
-        table, manager, smp_group));
+        table, manager, smp_group, std::nullopt));
 }
 
 std::optional<ss::shard_id>

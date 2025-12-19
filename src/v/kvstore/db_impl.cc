@@ -127,7 +127,12 @@ ss::future<> db_impl::start() {
         .data = std::move(data),
         .metadata = std::move(metadata),
       });
-    _last_applied_offset = _lsm->max_applied_offset();
+    _last_applied_offset = _lsm->max_applied_offset()
+                             .transform([](auto seqno) {
+                                 return model::offset(
+                                   static_cast<int64_t>(seqno));
+                             })
+                             .value_or(model::offset::min());
     ssx::spawn_with_gate(_gate, [this] { return apply_loop(); });
     vlog(
       kvlog.info,
