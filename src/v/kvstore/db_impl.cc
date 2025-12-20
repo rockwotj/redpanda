@@ -165,7 +165,7 @@ ss::future<> db::destroy(
   cloud_storage_clients::bucket_name bucket,
   cloud_storage_clients::object_key prefix,
   ss::abort_source& as) {
-    retry_chain_node root{as};
+    retry_chain_node root{as, 10s, 100ms};
     auto list_result = co_await remote->list_objects(bucket, root, prefix);
     if (!list_result) {
         throw std::runtime_error(
@@ -238,10 +238,6 @@ ss::future<chunked_vector<entry>> db_impl::scan(scan_parameters params) {
             _as.check();
             result.emplace_back(decode_key(iter.key()), iter.value());
         }
-    }
-    vlog(kvlog.debug, "scan returned {} results", result.size());
-    for (const auto& entry : result) {
-        vlog(kvlog.debug, "scan result: {}", entry.key);
     }
     co_return result;
 }
