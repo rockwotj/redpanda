@@ -131,3 +131,20 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "any",
+    srcs = ["any.cc"],
+    hdrs = ["any.h"],
+    implementation_deps = [
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/synchronization",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":base",
+        "//src/v/bytes:iobuf",
+        "//src/v/strings:static_str",
+        "@seastar",
+    ],
+)

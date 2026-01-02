@@ -69,9 +69,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes protobuf_test_messages.editions.ForeignMessageEdition2023 into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes protobuf_test_messages.editions.ForeignMessageEdition2023 into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes protobuf_test_messages.editions.ForeignMessageEdition2023 from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<foreign_message_edition2023> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -117,9 +117,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes protobuf_test_messages.editions.TestAllTypesEdition2023.GroupLikeType into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes protobuf_test_messages.editions.TestAllTypesEdition2023.GroupLikeType into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes protobuf_test_messages.editions.TestAllTypesEdition2023.GroupLikeType from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<test_all_types_edition2023_group_like_type> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -167,9 +167,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes protobuf_test_messages.editions.TestAllTypesEdition2023.NestedMessage into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes protobuf_test_messages.editions.TestAllTypesEdition2023.NestedMessage into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes protobuf_test_messages.editions.TestAllTypesEdition2023.NestedMessage from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<test_all_types_edition2023_nested_message> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -218,9 +218,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes protobuf_test_messages.editions.TestAllTypesEdition2023 into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes protobuf_test_messages.editions.TestAllTypesEdition2023 into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes protobuf_test_messages.editions.TestAllTypesEdition2023 from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<test_all_types_edition2023> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.

@@ -97,9 +97,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes example.C into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes example.C into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes example.C from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<c> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -141,9 +141,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes example.A into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes example.A into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes example.A from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<a> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -189,9 +189,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes example.B into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes example.B into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes example.B from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<b> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -241,9 +241,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes example.SuperDuperSecret into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes example.SuperDuperSecret into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes example.SuperDuperSecret from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<super_duper_secret> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -289,9 +289,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes example.MaskWrapper into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes example.MaskWrapper into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes example.MaskWrapper from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<mask_wrapper> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -337,9 +337,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes example.WellKnownProtos into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes example.WellKnownProtos into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes example.WellKnownProtos from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<well_known_protos> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -417,9 +417,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes example.SayGreetingRequest into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes example.SayGreetingRequest into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes example.SayGreetingRequest from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<say_greeting_request> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
@@ -467,9 +467,9 @@ public:
   fmt::iterator format_to(fmt::iterator) const;
 
   // Serializes example.SayGreetingResponse into a protocol buffer, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_proto() const;
+  seastar::future<iobuf> to_proto() const final;
   // Serializes example.SayGreetingResponse into proto3 JSON, in a way that will not cause stalls for large messages.
-  seastar::future<iobuf> to_json() const;
+  seastar::future<iobuf> to_json() const final;
   // Deserializes example.SayGreetingResponse from a protocol buffer, in a way that will not cause stalls for large messages.
   static seastar::future<say_greeting_response> from_proto(iobuf);
   // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.

@@ -118,3 +118,14 @@ redpanda_proto_library(
         "@abseil-cpp//absl/time:time",
     ],
 )
+
+redpanda_proto_library(
+    name = "operations_redpanda_proto",
+    protos = [
+        "@googleapis//google/longrunning:operations_proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/time:time",
+    ],
+)

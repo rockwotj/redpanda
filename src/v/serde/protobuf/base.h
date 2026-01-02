@@ -16,6 +16,7 @@
 #include "serde/protobuf/field_mask.h"
 #include "strings/static_str.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
 
 #include <optional>
@@ -157,6 +158,12 @@ public:
     // a field path.
     virtual std::optional<field>
     lookup_field(std::span<const int32_t> field_numbers) = 0;
+
+    // Serialize this type into json.
+    virtual seastar::future<iobuf> to_json() const = 0;
+
+    // Serialize this type into protobuf.
+    virtual seastar::future<iobuf> to_proto() const = 0;
 };
 
 template<typename T>

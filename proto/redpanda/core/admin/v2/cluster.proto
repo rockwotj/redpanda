@@ -34,6 +34,12 @@ service ClusterService {
             authz: SUPERUSER
         };
     }
+
+    rpc RestoreCluster() returns (google.longrunning.Operation) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 // ListKafkaConnectionsRequest return information about the broker's Kafka
