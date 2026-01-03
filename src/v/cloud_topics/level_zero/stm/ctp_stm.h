@@ -14,7 +14,7 @@
 #include "cloud_topics/level_zero/stm/types.h"
 #include "raft/persisted_stm.h"
 
-#include <seastar/core/rwlock.hh>
+#include <seastar/core/semaphore.hh>
 
 namespace cloud_topics {
 
@@ -104,7 +104,7 @@ private:
     /// Lock to protect the state from concurrent access.
     /// When the new epoch is applied we need to acquire a write lock.
     /// Otherwise, we need to acquire a read lock.
-    ss::rwlock _lock;
+    ss::semaphore _lock;
     /// Current in-memory state of the STM
     ctp_stm_state _state;
 

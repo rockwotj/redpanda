@@ -18,6 +18,7 @@
 #include "raft/consensus.h"
 #include "raft/persisted_stm.h"
 #include "ssx/future-util.h"
+#include "ssx/watchdog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sleep.hh>
@@ -61,7 +62,8 @@ private:
 } // namespace
 
 ctp_stm::ctp_stm(ss::logger& logger, raft::consensus* raft)
-  : raft::persisted_stm<>(name, logger, raft) {}
+  : raft::persisted_stm<>(name, logger, raft)
+  , _lock(ss::semaphore::max_counter()) {}
 
 ss::future<> ctp_stm::start() {
     ssx::spawn_with_gate(_gate, [this] { return prefix_truncate_below_lro(); });
@@ -71,7 +73,26 @@ ss::future<> ctp_stm::start() {
 ss::future<> ctp_stm::stop() {
     _lro_advanced.broken();
     _as.request_abort();
+    // We can't break the lock because that could cause UAF
+    // as the units are held outside of this class.
+    // however lock acquisition uses the above abort_source so
+    // we should not be acquiring new waiters.
+    // _lock.broken();
     co_await raft::persisted_stm<>::stop();
+    static constexpr auto epoch_fence_lock_timeout = 60s;
+    ssx::watchdog wd(epoch_fence_lock_timeout, [this] {
+        // This is basically the number of produce requests still in flight
+        auto num_read_locks_held = ss::semaphore::max_counter()
+                                   - _lock.available_units();
+        vlog(
+          _log.debug,
+          "timeout waiting for epoch fencing lock units to be returned: {} "
+          "units outstanding",
+          num_read_locks_held);
+    });
+    // Wait for all the units to be returned otherwise when the units are
+    // destructed we could get a UAF.
+    co_await _lock.wait(ss::semaphore::max_counter());
 }
 
 ss::future<> ctp_stm::prefix_truncate_below_lro() {
@@ -126,7 +147,8 @@ ss::future<> ctp_stm::prefix_truncate_below_lro() {
         // truncating it again so if LRO is making lots of rapid but small
         // progress we aren't snapshotting too much.
         if (_raft->last_snapshot_index() > snapshot_index) {
-            co_await ss::sleep_abortable(min_truncate_period, _as);
+            co_await ss::sleep_abortable<ss::lowres_clock>(
+              min_truncate_period, _as);
         }
     }
 }
@@ -334,7 +356,7 @@ ss::future<iobuf> ctp_stm::take_raft_snapshot(model::offset snapshot_at) {
 
 ss::future<cluster_epoch_fence> ctp_stm::fence_epoch(cluster_epoch e) {
     auto holder = _gate.hold();
-    if (!co_await sync(sync_timeout)) {
+    if (!co_await sync(sync_timeout, _as)) {
         vlog(_log.warn, "ctp_stm::fence_epoch sync timeout");
         throw std::runtime_error(fmt_with_ctx(fmt::format, "Sync timeout"));
     }
@@ -346,7 +368,7 @@ ss::future<cluster_epoch_fence> ctp_stm::fence_epoch(cluster_epoch e) {
     auto fence_epoch = _state.get_max_seen_epoch().or_else(get_applied_epoch);
     if (fence_epoch.has_value() && fence_epoch.value() == e) {
         // Case 1. Same epoch, need to acquire read-lock.
-        auto unit = co_await _lock.hold_read_lock();
+        auto unit = co_await ss::get_units(_lock, 1, _as);
         if (_state.get_max_seen_epoch().or_else(get_applied_epoch) == e) {
             // The max_seen_epoch didn't advance after the scheduling point
             co_return cluster_epoch_fence{
@@ -354,7 +376,8 @@ ss::future<cluster_epoch_fence> ctp_stm::fence_epoch(cluster_epoch e) {
         }
     } else {
         // Case 2. New epoch, need to acquire write-lock.
-        auto unit = co_await _lock.hold_write_lock();
+        auto unit = co_await ss::get_units(
+          _lock, ss::semaphore::max_counter(), _as);
         auto current_epoch = _state.get_max_seen_epoch().or_else(
           get_applied_epoch);
         if (!current_epoch.has_value() || current_epoch.value() <= e) {
