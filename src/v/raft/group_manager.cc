@@ -189,7 +189,7 @@ ss::future<xshard_transfer_state> group_manager::do_shutdown(
         co_await c->remove_persistent_state();
     }
     co_await _heartbeats.deregister_group(group_id);
-    auto it = std::find(_groups.begin(), _groups.end(), c);
+    auto it = std::ranges::find(_groups, c);
     vassert(
       it != _groups.end(),
       "A consensus instance with group id: {} that is requested to be removed "
