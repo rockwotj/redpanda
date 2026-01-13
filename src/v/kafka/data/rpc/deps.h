@@ -192,6 +192,17 @@ public:
         result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)>,
       require_leader req_leader = require_leader::yes)
       = 0;
+
+    virtual ss::future<
+      result<ss::chunked_fifo<model::record_batch>, cluster::errc>>
+    consume_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<
+        result<ss::chunked_fifo<model::record_batch>, cluster::errc>>(
+        kafka::partition_proxy*)>,
+      require_leader req_leader = require_leader::yes)
+      = 0;
 };
 
 class partition_manager_proxy {

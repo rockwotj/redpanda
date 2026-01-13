@@ -40,6 +40,8 @@ public:
     ss::future<partition_offsets_map>
     get_offsets(chunked_vector<topic_partitions> topics);
 
+    ss::future<consume_reply> consume(consume_request req);
+
 private:
     ss::future<kafka_topic_data_result>
       produce(kafka_topic_data, model::timeout_clock::duration);
@@ -51,6 +53,15 @@ private:
 
     ss::future<result<partition_offsets, cluster::errc>>
       get_partition_offsets(model::topic, model::partition_id);
+
+    ss::future<result<ss::chunked_fifo<model::record_batch>, cluster::errc>>
+    consume(
+      const model::ktp& ktp,
+      kafka::offset start_offset,
+      kafka::offset max_offset,
+      size_t min_bytes,
+      size_t max_bytes,
+      model::timeout_clock::duration timeout);
 
     std::unique_ptr<kafka::data::rpc::topic_metadata_cache> _metadata_cache;
     std::unique_ptr<kafka::data::rpc::partition_manager> _partition_manager;
@@ -75,6 +86,9 @@ public:
 
     ss::future<get_offsets_reply>
     get_offsets(get_offsets_request, ::rpc::streaming_context&) override;
+
+    ss::future<consume_reply>
+    consume(consume_request, ::rpc::streaming_context&) override;
 
 private:
     ss::sharded<local_service>* _service;

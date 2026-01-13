@@ -123,6 +123,18 @@ public:
           shard_id, ktp, std::move(fn), require_leader);
     }
 
+    ss::future<result<ss::chunked_fifo<model::record_batch>, cluster::errc>>
+    consume_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<
+        result<ss::chunked_fifo<model::record_batch>, cluster::errc>>(
+        kafka::partition_proxy*)> fn,
+      require_leader require_leader) final {
+        return _proxy->invoke_on_shard_impl(
+          shard_id, ktp, std::move(fn), require_leader);
+    }
+
 private:
     std::unique_ptr<partition_manager_proxy> _proxy;
 };

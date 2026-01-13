@@ -111,4 +111,22 @@ fmt::iterator get_offsets_reply::format_to(fmt::iterator it) const {
     return fmt::format_to(it, "] }}");
 }
 
+fmt::iterator consume_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{ tp: {}, start_offset: {}, max_offset: {}, min_bytes: {}, "
+      "max_bytes: {}, timeout: {} }}",
+      tp,
+      start_offset,
+      max_offset,
+      min_bytes,
+      max_bytes,
+      timeout);
+}
+
+fmt::iterator consume_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ tp: {}, err: {}, batches_size: {} }}", tp, err, batches.size());
+}
+
 } // namespace kafka::data::rpc

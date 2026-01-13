@@ -174,4 +174,58 @@ struct get_offsets_reply
 
     fmt::iterator format_to(fmt::iterator it) const;
 };
+
+struct consume_request
+  : serde::
+      envelope<consume_request, serde::version<0>, serde::compat_version<0>> {
+    consume_request() = default;
+    consume_request(
+      model::topic_partition tp,
+      kafka::offset start_offset,
+      kafka::offset max_offset,
+      size_t min_bytes,
+      size_t max_bytes,
+      model::timeout_clock::duration timeout)
+      : tp(std::move(tp))
+      , start_offset(start_offset)
+      , max_offset(max_offset)
+      , min_bytes(min_bytes)
+      , max_bytes(max_bytes)
+      , timeout(timeout) {}
+
+    auto serde_fields() {
+        return std::tie(
+          tp, start_offset, max_offset, min_bytes, max_bytes, timeout);
+    }
+
+    model::topic_partition tp;
+    kafka::offset start_offset;
+    kafka::offset max_offset;
+    size_t min_bytes;
+    size_t max_bytes;
+    model::timeout_clock::duration timeout{};
+
+    fmt::iterator format_to(fmt::iterator it) const;
+};
+
+struct consume_reply
+  : serde::
+      envelope<consume_reply, serde::version<0>, serde::compat_version<0>> {
+    consume_reply() = default;
+    consume_reply(
+      model::topic_partition tp,
+      cluster::errc err,
+      ss::chunked_fifo<model::record_batch> batches)
+      : tp(std::move(tp))
+      , err(err)
+      , batches(std::move(batches)) {}
+
+    auto serde_fields() { return std::tie(tp, err, batches); }
+
+    model::topic_partition tp;
+    cluster::errc err{cluster::errc::success};
+    ss::chunked_fifo<model::record_batch> batches;
+
+    fmt::iterator format_to(fmt::iterator it) const;
+};
 } // namespace kafka::data::rpc

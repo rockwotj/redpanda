@@ -500,6 +500,17 @@ public:
         return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
     }
 
+    ss::future<result<ss::chunked_fifo<model::record_batch>, cluster::errc>>
+    consume_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<
+        result<ss::chunked_fifo<model::record_batch>, cluster::errc>>(
+        kafka::partition_proxy*)> fn,
+      require_leader) final {
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+
     bool is_current_shard_leader(const model::ntp& ntp) const override {
         return _fake_proxy->is_current_shard_leader(ntp);
     }

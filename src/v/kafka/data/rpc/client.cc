@@ -430,4 +430,64 @@ client::get_remote_partition_offsets(
     }
     co_return ret_t(std::move(result.value().partition_offsets));
 }
+
+ss::future<result<consume_reply, cluster::errc>> client::consume(
+  model::topic_partition tp,
+  kafka::offset start_offset,
+  kafka::offset max_offset,
+  size_t min_bytes,
+  size_t max_bytes,
+  model::timeout_clock::duration timeout) {
+    using ret_t = result<consume_reply, cluster::errc>;
+
+    // Find the leader for this partition
+    auto ktp = model::ktp(tp.topic, tp.partition);
+    auto leader = _leaders->get_leader_node(
+      model::topic_namespace_view(model::kafka_namespace, tp.topic),
+      tp.partition);
+
+    if (!leader) {
+        consume_reply reply;
+        reply.tp = tp;
+        reply.err = cluster::errc::not_leader;
+        co_return ret_t(std::move(reply));
+    }
+
+    consume_request req(
+      tp, start_offset, max_offset, min_bytes, max_bytes, timeout);
+
+    // If leader is local, call local service
+    if (*leader == _self) {
+        auto reply = co_await _local_service->local().consume(std::move(req));
+        co_return ret_t(std::move(reply));
+    }
+
+    // Otherwise call remote service
+    auto result
+      = co_await _connections->local()
+          .with_node_client<
+            kafka::data::rpc::impl::kafka_data_rpc_client_protocol>(
+            _self,
+            ss::this_shard_id(),
+            *leader,
+            timeout,
+            [req = std::move(req), timeout](
+              impl::kafka_data_rpc_client_protocol proto) mutable {
+                return proto.consume(
+                  std::move(req),
+                  ::rpc::client_opts(model::timeout_clock::now() + timeout));
+            })
+          .then([](auto ctx) {
+              return ::rpc::get_ctx_data<consume_reply>(std::move(ctx));
+          });
+
+    if (result.has_error()) {
+        consume_reply reply;
+        reply.tp = tp;
+        reply.err = map_errc(result.assume_error());
+        co_return ret_t(std::move(reply));
+    }
+
+    co_return ret_t(std::move(result.value()));
+}
 } // namespace kafka::data::rpc
