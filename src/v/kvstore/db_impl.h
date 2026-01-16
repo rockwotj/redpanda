@@ -14,7 +14,7 @@
 #include "kvstore/db.h"
 #include "lsm/lsm.h"
 #include "model/record.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/future.hh>
 
@@ -80,7 +80,7 @@ private:
     std::filesystem::path _staging_dir;
     ss::gate _gate;
     ss::abort_source _as;
-    mutex _write_mu{"kvstore/db"};
+    ssx::mutex _write_mu{"kvstore/db"};
     model::term_id _term;
     model::offset _last_applied_offset;
     ssx::condition_variable _cond_var;

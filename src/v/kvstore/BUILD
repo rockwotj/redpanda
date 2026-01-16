@@ -80,7 +80,7 @@ redpanda_cc_library(
         "//src/v/cluster",
         "//src/v/lsm",
         "//src/v/model",
-        "//src/v/utils:mutex",
+        "//src/v/ssx:mutex",
         "@seastar",
     ],
 )
