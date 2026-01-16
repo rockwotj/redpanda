@@ -193,10 +193,11 @@ ss::future<> db::destroy(
 ss::future<chunked_vector<std::optional<iobuf>>>
 db_impl::batch_get(const chunked_vector<ss::sstring>& keys) {
     auto _ = _gate.hold();
-    co_await sync_previous_term();
     if (!_lsm) {
         throw ss::abort_requested_exception();
     }
+    co_await sync_previous_term();
+    // Do we need raft leases here!?
     chunked_vector<std::optional<iobuf>> values;
     for (const auto& key : keys) {
         values.push_back(co_await _lsm->get(encode_key(key)));
@@ -210,6 +211,7 @@ ss::future<chunked_vector<entry>> db_impl::scan(scan_parameters params) {
         throw ss::abort_requested_exception();
     }
     co_await sync_previous_term();
+    // Do we need raft leases here!?
     chunked_vector<entry> result;
     auto iter = co_await _lsm->create_iterator();
     if (const auto& start = params.start_key) {
@@ -410,12 +412,13 @@ ss::future<> db_impl::do_apply_chunk() {
       = model::make_record_batch_reader<kafka::read_committed_reader>(
           std::move(tracker), std::move(translator.reader))
           .generator(model::no_timeout);
-    while (auto batch = co_await generator()) {
-        if (batch->compressed()) {
-            batch = co_await model::decompress_batch(*batch);
+    while (auto batch_ref = co_await generator()) {
+        auto batch = std::move(batch_ref->get());
+        if (batch.compressed()) {
+            batch = co_await model::decompress_batch(batch);
         }
         auto wb = _lsm->create_write_batch();
-        auto it = model::record_batch_iterator::create(*batch);
+        auto it = model::record_batch_iterator::create(batch);
         int applied_count = 0;
         while (it.has_next()) {
             auto record = it.next();
@@ -423,7 +426,7 @@ ss::future<> db_impl::do_apply_chunk() {
                 continue;
             }
             ++applied_count;
-            auto offset = batch->base_offset()
+            auto offset = batch.base_offset()
                           + model::offset_delta(record.offset_delta());
             if (record.is_tombstone()) {
                 wb.remove(
@@ -436,7 +439,7 @@ ss::future<> db_impl::do_apply_chunk() {
             }
         }
         co_await _lsm->apply(std::move(wb));
-        _last_applied_offset = batch->last_offset();
+        _last_applied_offset = batch.last_offset();
         vlog(
           kvlog.trace,
           "applied {} records to the kvstore, last applied: {}",
