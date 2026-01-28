@@ -14,6 +14,7 @@
 #include "cloud_roles/apply_credentials.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
+#include "cloud_storage_clients/multipart_upload.h"
 #include "cloud_storage_clients/types.h"
 #include "http/client.h"
 #include "model/fundamental.h"
@@ -95,6 +96,54 @@ public:
     result<std::tuple<http::client::request_header, ss::input_stream<char>>>
     make_gcs_batch_delete_request(
       const plain_bucket_name& name, const chunked_vector<object_key>& keys);
+
+    /// \brief Create a 'CreateMultipartUpload' request header
+    ///
+    /// \param name is a bucket name
+    /// \param key is an object name
+    /// \return initialized and signed http header or error
+    result<http::client::request_header> make_create_multipart_upload_request(
+      const plain_bucket_name& name, const object_key& key);
+
+    /// \brief Create an 'UploadPart' request header
+    ///
+    /// \param name is a bucket name
+    /// \param key is an object name
+    /// \param part_number is the part number (1-based)
+    /// \param upload_id is the multipart upload ID
+    /// \param payload_size_bytes is the size of the part in bytes
+    /// \return initialized and signed http header or error
+    result<http::client::request_header> make_upload_part_request(
+      const plain_bucket_name& name,
+      const object_key& key,
+      size_t part_number,
+      const ss::sstring& upload_id,
+      size_t payload_size_bytes);
+
+    /// \brief Create a 'CompleteMultipartUpload' request header and body
+    ///
+    /// \param name is a bucket name
+    /// \param key is an object name
+    /// \param upload_id is the multipart upload ID
+    /// \param etags is a vector of ETags from each uploaded part
+    /// \return the header and the body as an input_stream
+    result<std::tuple<http::client::request_header, ss::input_stream<char>>>
+    make_complete_multipart_upload_request(
+      const plain_bucket_name& name,
+      const object_key& key,
+      const ss::sstring& upload_id,
+      const std::vector<ss::sstring>& etags);
+
+    /// \brief Create an 'AbortMultipartUpload' request header
+    ///
+    /// \param name is a bucket name
+    /// \param key is an object name
+    /// \param upload_id is the multipart upload ID
+    /// \return initialized and signed http header or error
+    result<http::client::request_header> make_abort_multipart_upload_request(
+      const plain_bucket_name& name,
+      const object_key& key,
+      const ss::sstring& upload_id);
 
     /// \brief Initialize http header for 'ListObjectsV2' request
     ///
@@ -196,6 +245,19 @@ public:
       ss::lowres_clock::duration timeout,
       bool accept_no_content = false) override;
 
+    /// Initiate a multipart upload to S3
+    /// \param bucket is a bucket name
+    /// \param key is an object key
+    /// \param part_size is the size of each part (must be >= 5 MiB)
+    /// \param timeout is a timeout of the operation
+    /// \return multipart_upload_state that can be wrapped in multipart_upload
+    ss::future<result<ss::shared_ptr<multipart_upload_state>, error_outcome>>
+    initiate_multipart_upload(
+      const plain_bucket_name& bucket,
+      const object_key& key,
+      size_t part_size,
+      ss::lowres_clock::duration timeout) override;
+
     ss::future<result<list_bucket_result, error_outcome>> list_objects(
       const plain_bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
@@ -273,9 +335,40 @@ private:
 
 private:
     friend class gcs_client;
+    friend class s3_multipart_state;
     request_creator _requestor;
     http::client _client;
     ss::shared_ptr<client_probe> _probe;
+};
+
+/// S3-specific multipart upload state
+class s3_multipart_state : public multipart_upload_state {
+public:
+    s3_multipart_state(
+      s3_client* client,
+      plain_bucket_name bucket,
+      object_key key,
+      ss::lowres_clock::duration timeout);
+
+    ss::future<> initialize_multipart() override;
+    ss::future<> upload_part(size_t part_num, iobuf data) override;
+    ss::future<> complete_multipart_upload() override;
+    ss::future<> abort_multipart_upload() override;
+    ss::future<> upload_as_single_object(iobuf data) override;
+
+    bool is_multipart_initialized() const override {
+        return !_upload_id.empty();
+    }
+
+    ss::sstring upload_id() const override { return _upload_id; }
+
+private:
+    s3_client* _client;
+    plain_bucket_name _bucket;
+    object_key _key;
+    ss::lowres_clock::duration _timeout;
+    ss::sstring _upload_id;
+    std::vector<ss::sstring> _etags;
 };
 
 class gcs_client : public s3_client {

@@ -1417,4 +1417,18 @@ ss::future<> abs_client::do_delete_path(
     }
 }
 
+ss::future<result<ss::shared_ptr<multipart_upload_state>, error_outcome>>
+abs_client::initiate_multipart_upload(
+  const plain_bucket_name& bucket,
+  const object_key& key,
+  size_t part_size,
+  ss::lowres_clock::duration timeout) {
+    // TODO: Implement ABS block blob multipart upload
+    // For now, return operation_not_supported
+    vlog(
+      abs_log.warn,
+      "Multipart upload not yet implemented for Azure Blob Storage");
+    co_return error_outcome::operation_not_supported;
+}
+
 } // namespace cloud_storage_clients

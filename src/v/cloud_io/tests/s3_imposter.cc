@@ -297,6 +297,12 @@ struct s3_imposter_fixture::content_handler {
             vlog(fixt_log.trace, "Received PUT request to {}", request._url);
             expectations[request._url] = {
               .url = request._url, .body = request.content};
+            // For multipart UploadPart, return ETag header
+            if (
+              request.has_query_param("uploadId")
+              && request.has_query_param("partNumber")) {
+                repl.add_header("ETag", "\"placeholder-etag\"");
+            }
             return "";
         } else if (request._method == "DELETE") {
             vlog(fixt_log.trace, "Received DELETE request to {}", request._url);
@@ -398,9 +404,7 @@ struct s3_imposter_fixture::content_handler {
                     // Missing objects are assumed to be not an error (e.g.
                     // caused by a delete retry).
                     vlog(
-                      fixt_log.debug,
-                      "Requested DELETE request of {}, not found",
-                      path);
+                      fixt_log.debug, "Requested DELETE request of {}", path);
                 } else {
                     vlog(fixt_log.trace, "Batched DELETE request of {}", path);
                     expect_iter->second.body = std::nullopt;
@@ -433,6 +437,31 @@ struct s3_imposter_fixture::content_handler {
               fmt::format("multipart/mixed; boundary={}", boundary));
 
             return response;
+        } else if (
+          request._method == "POST"
+          && (request.has_query_param("uploads") || request.has_query_param("uploadId"))) {
+            // Multipart upload operations: CreateMultipartUpload or
+            // CompleteMultipartUpload
+            vlog(
+              fixt_log.trace,
+              "Received multipart upload POST request to {}",
+              request._url);
+            if (
+              expect_iter != expectations.end()
+              && expect_iter->second.body.has_value()) {
+                repl.set_status(reply::status_type::ok);
+                // For UploadPart, extract ETag from request and add to response
+                if (request.has_query_param("partNumber")) {
+                    repl.add_header("ETag", "\"placeholder-etag\"");
+                }
+                return expect_iter->second.body.value();
+            }
+            vlog(
+              fixt_log.trace,
+              "Multipart upload POST request expectation not found for URL: {}",
+              request._url);
+            repl.set_status(reply::status_type::not_found);
+            return error_payload;
         } else {
             vunreachable("Unhandled request method {}", request._method);
         }

@@ -198,3 +198,22 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_btest(
+    name = "multipart_upload_test",
+    timeout = "short",
+    srcs = [
+        "multipart_upload_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":client_pool_builder",
+        "//src/v/base",
+        "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_storage_clients",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

@@ -1598,4 +1598,407 @@ auto gcs_client::do_delete_objects(
     }
     co_return std::move(result).value();
 }
+
+// Multipart upload implementations //
+
+result<http::client::request_header>
+request_creator::make_create_multipart_upload_request(
+  const plain_bucket_name& name, const object_key& key) {
+    // POST /{bucket}/{key}?uploads HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    http::client::request_header header{};
+    auto host = make_host(name);
+    auto target = fmt::format("{}?uploads", make_target(name, key));
+    header.method(boost::beast::http::verb::post);
+    header.target(target);
+    header.insert(
+      boost::beast::http::field::user_agent, aws_header_values::user_agent);
+    header.insert(boost::beast::http::field::host, host);
+    header.insert(boost::beast::http::field::content_length, "0");
+    auto ec = _apply_credentials->add_auth(header);
+    if (ec) {
+        return ec;
+    }
+    util::url_encode_target(header);
+    return header;
+}
+
+result<http::client::request_header> request_creator::make_upload_part_request(
+  const plain_bucket_name& name,
+  const object_key& key,
+  size_t part_number,
+  const ss::sstring& upload_id,
+  size_t payload_size_bytes) {
+    // PUT /{bucket}/{key}?partNumber={part_number}&uploadId={upload_id}
+    // HTTP/1.1
+    http::client::request_header header{};
+    auto host = make_host(name);
+    auto target = fmt::format(
+      "{}?partNumber={}&uploadId={}",
+      make_target(name, key),
+      part_number,
+      upload_id);
+    header.method(boost::beast::http::verb::put);
+    header.target(target);
+    header.insert(
+      boost::beast::http::field::user_agent, aws_header_values::user_agent);
+    header.insert(boost::beast::http::field::host, host);
+    header.insert(
+      boost::beast::http::field::content_type, aws_header_values::text_plain);
+    header.insert(
+      boost::beast::http::field::content_length,
+      std::to_string(payload_size_bytes));
+    auto ec = _apply_credentials->add_auth(header);
+    if (ec) {
+        return ec;
+    }
+    util::url_encode_target(header);
+    return header;
+}
+
+result<std::tuple<http::client::request_header, ss::input_stream<char>>>
+request_creator::make_complete_multipart_upload_request(
+  const plain_bucket_name& name,
+  const object_key& key,
+  const ss::sstring& upload_id,
+  const std::vector<ss::sstring>& etags) {
+    // POST /{bucket}/{key}?uploadId={upload_id} HTTP/1.1
+    // Body: XML with list of parts
+    http::client::request_header header{};
+    auto host = make_host(name);
+    auto target = fmt::format(
+      "{}?uploadId={}", make_target(name, key), upload_id);
+
+    // Generate XML body
+    // <CompleteMultipartUpload>
+    //   <Part><PartNumber>1</PartNumber><ETag>"etag1"</ETag></Part>
+    //   <Part><PartNumber>2</PartNumber><ETag>"etag2"</ETag></Part>
+    // </CompleteMultipartUpload>
+    ss::sstring xml_body = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<CompleteMultipartUpload>
+)xml";
+    for (size_t i = 0; i < etags.size(); ++i) {
+        xml_body += fmt::format(
+          "  <Part><PartNumber>{}</PartNumber><ETag>{}</ETag></Part>\n",
+          i + 1,
+          etags[i]);
+    }
+    xml_body += "</CompleteMultipartUpload>\n";
+
+    header.method(boost::beast::http::verb::post);
+    header.target(target);
+    header.insert(
+      boost::beast::http::field::user_agent, aws_header_values::user_agent);
+    header.insert(boost::beast::http::field::host, host);
+    header.insert(boost::beast::http::field::content_type, "application/xml");
+    header.insert(
+      boost::beast::http::field::content_length,
+      std::to_string(xml_body.size()));
+    auto ec = _apply_credentials->add_auth(header);
+    if (ec) {
+        return ec;
+    }
+    util::url_encode_target(header);
+
+    // Create input stream from XML body
+    iobuf body_buf;
+    body_buf.append(xml_body.data(), xml_body.size());
+    auto body = make_iobuf_input_stream(std::move(body_buf));
+
+    return std::make_tuple(std::move(header), std::move(body));
+}
+
+result<http::client::request_header>
+request_creator::make_abort_multipart_upload_request(
+  const plain_bucket_name& name,
+  const object_key& key,
+  const ss::sstring& upload_id) {
+    // DELETE /{bucket}/{key}?uploadId={upload_id} HTTP/1.1
+    http::client::request_header header{};
+    auto host = make_host(name);
+    auto target = fmt::format(
+      "{}?uploadId={}", make_target(name, key), upload_id);
+    header.method(boost::beast::http::verb::delete_);
+    header.target(target);
+    header.insert(
+      boost::beast::http::field::user_agent, aws_header_values::user_agent);
+    header.insert(boost::beast::http::field::host, host);
+    header.insert(boost::beast::http::field::content_length, "0");
+    auto ec = _apply_credentials->add_auth(header);
+    if (ec) {
+        return ec;
+    }
+    util::url_encode_target(header);
+    return header;
+}
+
+ss::future<result<ss::shared_ptr<multipart_upload_state>, error_outcome>>
+s3_client::initiate_multipart_upload(
+  const plain_bucket_name& bucket,
+  const object_key& key,
+  size_t part_size,
+  ss::lowres_clock::duration timeout) {
+    // Validate part size
+    if (part_size < multipart_limits::min_s3_part_size) {
+        vlog(
+          s3_log.error,
+          "S3 part_size {} < minimum {}",
+          part_size,
+          multipart_limits::min_s3_part_size);
+        co_return error_outcome::fail;
+    }
+
+    if (part_size > multipart_limits::max_s3_part_size) {
+        vlog(
+          s3_log.warn,
+          "S3 part_size {} > maximum {} (continuing)",
+          part_size,
+          multipart_limits::max_s3_part_size);
+    }
+
+    // Create and return multipart state
+    // Caller will wrap this in a multipart_upload
+    auto state = ss::make_shared<s3_multipart_state>(
+      this, bucket, key, timeout);
+    co_return state;
+}
+
+// s3_multipart_state implementations //
+
+s3_multipart_state::s3_multipart_state(
+  s3_client* client,
+  plain_bucket_name bucket,
+  object_key key,
+  ss::lowres_clock::duration timeout)
+  : _client(client)
+  , _bucket(std::move(bucket))
+  , _key(std::move(key))
+  , _timeout(timeout) {}
+
+ss::future<> s3_multipart_state::initialize_multipart() {
+    vlog(
+      s3_log.debug,
+      "Initializing S3 multipart upload for {}/{}",
+      _bucket,
+      _key);
+
+    auto header = _client->_requestor.make_create_multipart_upload_request(
+      _bucket, _key);
+    if (!header) {
+        co_return co_await ss::coroutine::exception(
+          std::make_exception_ptr(std::system_error(header.error())));
+    }
+
+    vlog(
+      s3_log.trace, "send CreateMultipartUpload request:\n{}", header.value());
+
+    auto response_stream = co_await _client->_client.request(
+      std::move(header.value()), _timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    if (status != boost::beast::http::status::ok) {
+        const auto content_type = util::get_response_content_type(
+          response_stream->get_headers());
+        auto buf = co_await http::drain(std::move(response_stream));
+        co_return co_await parse_rest_error_response(
+          content_type, status, std::move(buf));
+    }
+
+    // Parse XML response to extract UploadId
+    auto response_buf = co_await http::drain(std::move(response_stream));
+
+    try {
+        auto response_tree = util::iobuf_to_ptree(
+          std::move(response_buf), s3_log);
+        _upload_id = response_tree.get<ss::sstring>(
+          "InitiateMultipartUploadResult.UploadId");
+
+        vlog(
+          s3_log.debug,
+          "Initialized S3 multipart upload with upload_id: {}",
+          _upload_id);
+    } catch (const std::exception& ex) {
+        vlog(
+          s3_log.error,
+          "Failed to parse CreateMultipartUpload response: {}",
+          ex);
+        throw std::runtime_error(
+          fmt::format(
+            "Failed to parse UploadId from CreateMultipartUpload response: {}",
+            ex.what()));
+    }
+}
+
+ss::future<> s3_multipart_state::upload_part(size_t part_num, iobuf data) {
+    vassert(!_upload_id.empty(), "Multipart upload not initialized");
+
+    const size_t data_size = data.size_bytes();
+    vlog(
+      s3_log.debug,
+      "Uploading part {} (size: {}) for upload_id: {}",
+      part_num,
+      data_size,
+      _upload_id);
+
+    auto header = _client->_requestor.make_upload_part_request(
+      _bucket, _key, part_num, _upload_id, data_size);
+    if (!header) {
+        co_return co_await ss::coroutine::exception(
+          std::make_exception_ptr(std::system_error(header.error())));
+    }
+
+    vlog(s3_log.trace, "send UploadPart request:\n{}", header.value());
+
+    // Convert iobuf to input_stream
+    auto body = make_iobuf_input_stream(std::move(data));
+
+    auto response_stream = co_await _client->_client.request(
+      std::move(header.value()), body, _timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    if (status != boost::beast::http::status::ok) {
+        const auto content_type = util::get_response_content_type(
+          response_stream->get_headers());
+        auto buf = co_await http::drain(std::move(response_stream));
+        co_await body.close();
+        co_return co_await parse_rest_error_response(
+          content_type, status, std::move(buf));
+    }
+
+    // Extract ETag from response headers
+    const auto& headers = response_stream->get_headers();
+    auto etag_it = headers.find(boost::beast::http::field::etag);
+    if (etag_it == headers.end()) {
+        co_await http::drain(std::move(response_stream));
+        co_await body.close();
+        throw std::runtime_error("UploadPart response missing ETag header");
+    }
+
+    ss::sstring etag(etag_it->value().data(), etag_it->value().size());
+    _etags.push_back(std::move(etag));
+
+    // Drain response
+    co_await http::drain(std::move(response_stream));
+    co_await body.close();
+
+    vlog(
+      s3_log.debug, "Uploaded part {} with ETag: {}", part_num, _etags.back());
+}
+
+ss::future<> s3_multipart_state::complete_multipart_upload() {
+    vassert(!_upload_id.empty(), "Multipart upload not initialized");
+
+    vlog(
+      s3_log.debug,
+      "Completing S3 multipart upload {} with {} parts",
+      _upload_id,
+      _etags.size());
+
+    auto request = _client->_requestor.make_complete_multipart_upload_request(
+      _bucket, _key, _upload_id, _etags);
+    if (!request) {
+        co_return co_await ss::coroutine::exception(
+          std::make_exception_ptr(std::system_error(request.error())));
+    }
+
+    auto [header, body] = std::move(request.value());
+    vlog(s3_log.trace, "send CompleteMultipartUpload request:\n{}", header);
+
+    auto response_stream = co_await _client->_client.request(
+      std::move(header), body, _timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    if (status != boost::beast::http::status::ok) {
+        const auto content_type = util::get_response_content_type(
+          response_stream->get_headers());
+        auto buf = co_await http::drain(std::move(response_stream));
+        co_await body.close();
+        co_return co_await parse_rest_error_response(
+          content_type, status, std::move(buf));
+    }
+
+    // Drain response
+    co_await http::drain(std::move(response_stream));
+    co_await body.close();
+
+    vlog(s3_log.debug, "Completed multipart upload {}", _upload_id);
+}
+
+ss::future<> s3_multipart_state::abort_multipart_upload() {
+    if (_upload_id.empty()) {
+        // Nothing to abort
+        vlog(s3_log.debug, "Abort called but multipart not initialized");
+        co_return;
+    }
+
+    vlog(s3_log.debug, "Aborting S3 multipart upload {}", _upload_id);
+
+    auto header = _client->_requestor.make_abort_multipart_upload_request(
+      _bucket, _key, _upload_id);
+    if (!header) {
+        // Log error but don't throw - abort should be best effort
+        vlog(
+          s3_log.warn,
+          "Failed to create abort request: {}",
+          header.error().message());
+        co_return;
+    }
+
+    vlog(
+      s3_log.trace, "send AbortMultipartUpload request:\n{}", header.value());
+
+    try {
+        auto response_stream = co_await _client->_client.request(
+          std::move(header.value()), _timeout);
+
+        co_await response_stream->prefetch_headers();
+        vassert(response_stream->is_header_done(), "Header is not received");
+
+        const auto status = response_stream->get_headers().result();
+        if (
+          status != boost::beast::http::status::no_content
+          && status != boost::beast::http::status::ok) {
+            vlog(
+              s3_log.warn,
+              "AbortMultipartUpload returned unexpected status: {}",
+              status);
+        }
+
+        // Drain response
+        co_await http::drain(std::move(response_stream));
+
+        vlog(s3_log.debug, "Aborted multipart upload {}", _upload_id);
+    } catch (const std::exception& ex) {
+        // Log but don't throw - abort failures are non-fatal
+        vlog(
+          s3_log.warn,
+          "Failed to abort multipart upload {}: {}",
+          _upload_id,
+          ex);
+    }
+}
+
+ss::future<> s3_multipart_state::upload_as_single_object(iobuf data) {
+    vlog(
+      s3_log.debug,
+      "Using single put_object for small file (size: {})",
+      data.size_bytes());
+
+    const size_t data_size = data.size_bytes();
+    auto body = make_iobuf_input_stream(std::move(data));
+
+    // Use existing put_object implementation
+    co_await _client->do_put_object(
+      _bucket, _key, data_size, std::move(body), _timeout);
+}
+
 } // namespace cloud_storage_clients

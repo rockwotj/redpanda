@@ -206,6 +206,15 @@ public:
       ss::lowres_clock::duration timeout,
       bool accept_no_content = false) override;
 
+    /// Initiate a multipart upload to ABS (NOT YET IMPLEMENTED)
+    /// \return operation_not_supported error
+    ss::future<result<multipart_upload_ref, error_outcome>>
+    initiate_multipart_upload(
+      const plain_bucket_name& bucket,
+      const object_key& key,
+      size_t part_size,
+      ss::lowres_clock::duration timeout) override;
+
     /// Send List Blobs request
     /// \param name is a container name
     /// \param prefix is an optional blob prefix to match
