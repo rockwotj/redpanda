@@ -17,6 +17,7 @@
 #include "cloud_storage_clients/abs_error.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/logger.h"
+#include "cloud_storage_clients/multipart_upload.h"
 #include "cloud_storage_clients/types.h"
 #include "cloud_storage_clients/upstream.h"
 #include "cloud_storage_clients/util.h"
@@ -26,6 +27,7 @@
 #include "http/utils.h"
 #include "json/document.h"
 #include "json/istreamwrapper.h"
+#include "utils/base64.h"
 #include "utils/uuid.h"
 
 #include <charconv>
@@ -659,12 +661,221 @@ abs_request_creator::make_delete_file_request(
     return header;
 }
 
+result<http::client::request_header>
+abs_request_creator::make_put_block_request(
+  const plain_bucket_name& name,
+  const object_key& key,
+  const ss::sstring& block_id,
+  size_t payload_size_bytes) {
+    // PUT /{container-id}/{blob-id}?comp=block&blockid={BASE64_ID} HTTP/1.1
+    // Host: {storage-account-id}.blob.core.windows.net
+    // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
+    // x-ms-version:"2023-01-23"           # added by 'add_auth'
+    // Authorization:{signature}           # added by 'add_auth'
+    // Content-Length:{payload-size}
+    const auto target = fmt::format(
+      "/{}/{}?comp=block&blockid={}", name(), key().string(), block_id);
+    const boost::beast::string_view host{_ap().data(), _ap().length()};
+
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::put);
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
+    header.insert(
+      boost::beast::http::field::content_length,
+      std::to_string(payload_size_bytes));
+
+    auto error_code = add_auth(header);
+    if (error_code) {
+        return error_code;
+    }
+    util::url_encode_target(header);
+    return header;
+}
+
+result<std::pair<http::client::request_header, ss::input_stream<char>>>
+abs_request_creator::make_put_block_list_request(
+  const plain_bucket_name& name,
+  const object_key& key,
+  const std::vector<ss::sstring>& block_ids) {
+    // PUT /{container-id}/{blob-id}?comp=blocklist HTTP/1.1
+    // Host: {storage-account-id}.blob.core.windows.net
+    // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
+    // x-ms-version:"2023-01-23"           # added by 'add_auth'
+    // Authorization:{signature}           # added by 'add_auth'
+    // Content-Length:{xml-body-size}
+    // Content-Type: application/xml
+
+    // Generate XML body
+    ss::sstring xml_body = R"xml(<?xml version="1.0" encoding="utf-8"?>
+<BlockList>
+)xml";
+    for (const auto& block_id : block_ids) {
+        xml_body += fmt::format("  <Latest>{}</Latest>\n", block_id);
+    }
+    xml_body += "</BlockList>\n";
+
+    const auto target = fmt::format(
+      "/{}/{}?comp=blocklist", name(), key().string());
+    const boost::beast::string_view host{_ap().data(), _ap().length()};
+
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::put);
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
+    header.insert(boost::beast::http::field::content_type, "application/xml");
+    header.insert(
+      boost::beast::http::field::content_length,
+      std::to_string(xml_body.size()));
+
+    auto error_code = add_auth(header);
+    if (error_code) {
+        return error_code;
+    }
+    util::url_encode_target(header);
+
+    // Convert XML body to input stream
+    iobuf body_buf;
+    body_buf.append(xml_body.data(), xml_body.size());
+    auto body_stream = make_iobuf_input_stream(std::move(body_buf));
+
+    return std::make_pair(std::move(header), std::move(body_stream));
+}
+
 std::error_code abs_request_creator::add_auth(
   http::client::request_header& header, bool omit_version) const {
     if (!omit_version) {
         header.set("x-ms-version", cloud_roles::azure_storage_api_version);
     }
     return _apply_credentials->add_auth(header);
+}
+
+// Helper function to generate Base64-encoded block IDs for ABS multipart upload
+// Block IDs must all be the same pre-encoded length, so we use 10-digit
+// zero-padded format
+static ss::sstring generate_block_id(size_t part_number) {
+    auto id = fmt::format("{:010d}", part_number);
+    // Convert to bytes_view for Base64 encoding
+    bytes_view bv{reinterpret_cast<const uint8_t*>(id.data()), id.size()};
+    return bytes_to_base64(bv);
+}
+
+// abs_multipart_state implementation
+
+abs_multipart_state::abs_multipart_state(
+  abs_client* client,
+  plain_bucket_name container,
+  object_key key,
+  ss::lowres_clock::duration timeout)
+  : _client(client)
+  , _container(std::move(container))
+  , _key(std::move(key))
+  , _timeout(timeout) {}
+
+ss::future<> abs_multipart_state::initialize_multipart() {
+    // ABS Block Blobs don't require initialization - blocks can be uploaded
+    // directly
+    vlog(abs_log.debug, "ABS multipart upload initialized (no-op)");
+    _initialized = true;
+    co_return;
+}
+
+ss::future<> abs_multipart_state::upload_part(size_t part_num, iobuf data) {
+    // Generate Base64-encoded block ID
+    auto block_id = generate_block_id(part_num);
+
+    vlog(
+      abs_log.debug,
+      "Uploading ABS block {} (block_id: {}, size: {})",
+      part_num,
+      block_id,
+      data.size_bytes());
+
+    // Create Put Block request
+    auto header = _client->_requestor.make_put_block_request(
+      _container, _key, block_id, data.size_bytes());
+    if (!header) {
+        vlog(
+          abs_log.error,
+          "Failed to create Put Block request: {}",
+          header.error());
+        throw std::system_error(header.error());
+    }
+
+    // Upload the block
+    auto body = make_iobuf_input_stream(std::move(data));
+    auto response_stream = co_await _client->_client
+                             .request(std::move(header.value()), body, _timeout)
+                             .finally([&body] { return body.close(); });
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    if (status != boost::beast::http::status::created) {
+        const auto content_type = util::get_response_content_type(
+          response_stream->get_headers());
+        auto buf = co_await http::drain(std::move(response_stream));
+        co_await body.close();
+        throw parse_rest_error_response(content_type, status, std::move(buf));
+    }
+
+    co_await http::drain(std::move(response_stream));
+    co_await body.close();
+
+    _block_ids.push_back(block_id);
+}
+
+ss::future<> abs_multipart_state::complete_multipart_upload() {
+    vlog(
+      abs_log.debug,
+      "Completing ABS multipart upload ({} blocks)",
+      _block_ids.size());
+
+    // Create Put Block List request
+    auto [header, body] = _client->_requestor
+                            .make_put_block_list_request(
+                              _container, _key, _block_ids)
+                            .value();
+
+    // Commit the blocks
+    auto response_stream = co_await _client->_client
+                             .request(std::move(header), body, _timeout)
+                             .finally([&body] { return body.close(); });
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    if (status != boost::beast::http::status::created) {
+        const auto content_type = util::get_response_content_type(
+          response_stream->get_headers());
+        auto buf = co_await http::drain(std::move(response_stream));
+        co_await body.close();
+        throw parse_rest_error_response(content_type, status, std::move(buf));
+    }
+
+    co_await http::drain(std::move(response_stream));
+    co_await body.close();
+}
+
+ss::future<> abs_multipart_state::abort_multipart_upload() {
+    // ABS uncommitted blocks expire after 7 days - no explicit abort needed
+    vlog(abs_log.debug, "ABS multipart upload aborted (no-op)");
+    co_return;
+}
+
+ss::future<> abs_multipart_state::upload_as_single_object(iobuf data) {
+    auto size = data.size_bytes();
+    vlog(
+      abs_log.debug,
+      "ABS small file optimization: using Put Blob (size: {})",
+      size);
+
+    // Use the regular put_object method for small files
+    auto body = make_iobuf_input_stream(std::move(data));
+    co_await _client->do_put_object(
+      _container, _key, size, std::move(body), _timeout);
 }
 
 abs_client::abs_client(
@@ -1423,12 +1634,29 @@ abs_client::initiate_multipart_upload(
   const object_key& key,
   size_t part_size,
   ss::lowres_clock::duration timeout) {
-    // TODO: Implement ABS block blob multipart upload
-    // For now, return operation_not_supported
+    // Validate part size
+    constexpr size_t max_abs_block_size = multipart_limits::max_abs_block_size;
+    if (part_size > max_abs_block_size) {
+        vlog(
+          abs_log.error,
+          "ABS block_size {} exceeds maximum {}",
+          part_size,
+          max_abs_block_size);
+        co_return error_outcome::fail;
+    }
+
     vlog(
-      abs_log.warn,
-      "Multipart upload not yet implemented for Azure Blob Storage");
-    co_return error_outcome::operation_not_supported;
+      abs_log.debug,
+      "Initiating ABS multipart upload: container={}, key={}, part_size={}",
+      bucket,
+      key,
+      part_size);
+
+    // Create and return ABS multipart state
+    // Caller will wrap this in a multipart_upload
+    auto state = ss::make_shared<abs_multipart_state>(
+      this, bucket, key, timeout);
+    co_return state;
 }
 
 } // namespace cloud_storage_clients

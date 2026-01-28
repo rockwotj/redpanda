@@ -13,6 +13,7 @@
 #include "cloud_roles/apply_credentials.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
+#include "cloud_storage_clients/multipart_upload.h"
 #include "http/client.h"
 
 namespace cloud_storage_clients {
@@ -119,6 +120,33 @@ public:
       const plain_bucket_name& name,
       const object_key& path);
 
+    /// \brief Create a 'Put Block' request header for multipart upload
+    ///
+    /// \param name is container name
+    /// \param key is the blob identifier
+    /// \param block_id is the Base64-encoded block ID
+    /// \param payload_size_bytes is the size of the block in bytes
+    /// \return initialized and signed http header or error
+    result<http::client::request_header> make_put_block_request(
+      const plain_bucket_name& name,
+      const object_key& key,
+      const ss::sstring& block_id,
+      size_t payload_size_bytes);
+
+    /// \brief Create a 'Put Block List' request header and body for multipart
+    /// upload
+    ///
+    /// \param name is container name
+    /// \param key is the blob identifier
+    /// \param block_ids is the list of Base64-encoded block IDs in order
+    /// \return initialized and signed http header and body as input_stream or
+    /// error
+    result<std::pair<http::client::request_header, ss::input_stream<char>>>
+    make_put_block_list_request(
+      const plain_bucket_name& name,
+      const object_key& key,
+      const std::vector<ss::sstring>& block_ids);
+
 private:
     /// \brief Applies credentials to http requests by adding headers and
     /// signing request payload.
@@ -137,8 +165,39 @@ private:
     ss::lw_shared_ptr<const cloud_roles::apply_credentials> _apply_credentials;
 };
 
+// Forward declaration
+class abs_client;
+
+/// Azure Blob Storage multipart upload state
+class abs_multipart_state : public multipart_upload_state {
+public:
+    abs_multipart_state(
+      abs_client* client,
+      plain_bucket_name container,
+      object_key key,
+      ss::lowres_clock::duration timeout);
+
+    ss::future<> initialize_multipart() override;
+    ss::future<> upload_part(size_t part_num, iobuf data) override;
+    ss::future<> complete_multipart_upload() override;
+    ss::future<> abort_multipart_upload() override;
+    ss::future<> upload_as_single_object(iobuf data) override;
+    bool is_multipart_initialized() const override { return _initialized; }
+    ss::sstring upload_id() const override { return ""; }
+
+private:
+    abs_client* _client;
+    plain_bucket_name _container;
+    object_key _key;
+    ss::lowres_clock::duration _timeout;
+    std::vector<ss::sstring> _block_ids;
+    bool _initialized{false};
+};
+
 /// S3 REST-API client
 class abs_client : public client {
+    friend class abs_multipart_state;
+
 public:
     abs_client(
       ss::weak_ptr<upstream> upstream_ptr,
@@ -206,9 +265,13 @@ public:
       ss::lowres_clock::duration timeout,
       bool accept_no_content = false) override;
 
-    /// Initiate a multipart upload to ABS (NOT YET IMPLEMENTED)
-    /// \return operation_not_supported error
-    ss::future<result<multipart_upload_ref, error_outcome>>
+    /// Initiate a multipart upload to ABS using Block Blobs
+    /// \param bucket is container name
+    /// \param key is the blob identifier
+    /// \param part_size is the block size (must be <= 4000 MiB)
+    /// \param timeout is the timeout for operations
+    /// \return multipart_upload_state that can be wrapped in multipart_upload
+    ss::future<result<ss::shared_ptr<multipart_upload_state>, error_outcome>>
     initiate_multipart_upload(
       const plain_bucket_name& bucket,
       const object_key& key,
