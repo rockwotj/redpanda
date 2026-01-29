@@ -101,6 +101,51 @@ ErrT throw_if_not_timeout(const std::exception_ptr& e, ErrT on_timeout) {
     }
 }
 
+/// \brief Multipart upload state wrapper that holds a client lease
+///
+/// This wrapper holds a client lease for the entire duration of the
+/// multipart upload operation, ensuring the client remains available
+/// and is not returned to the pool prematurely.
+class multipart_upload_state_with_lease final
+  : public cloud_storage_clients::multipart_upload_state {
+public:
+    multipart_upload_state_with_lease(
+      cloud_storage_clients::client_pool::client_lease lease,
+      ss::shared_ptr<cloud_storage_clients::multipart_upload_state> inner)
+      : _lease(std::move(lease))
+      , _inner(std::move(inner)) {}
+
+    ss::future<> initialize_multipart() override {
+        return _inner->initialize_multipart();
+    }
+
+    ss::future<> upload_part(size_t part_num, iobuf data) override {
+        return _inner->upload_part(part_num, std::move(data));
+    }
+
+    ss::future<> complete_multipart_upload() override {
+        return _inner->complete_multipart_upload();
+    }
+
+    ss::future<> abort_multipart_upload() override {
+        return _inner->abort_multipart_upload();
+    }
+
+    ss::future<> upload_as_single_object(iobuf data) override {
+        return _inner->upload_as_single_object(std::move(data));
+    }
+
+    bool is_multipart_initialized() const override {
+        return _inner->is_multipart_initialized();
+    }
+
+    ss::sstring upload_id() const override { return _inner->upload_id(); }
+
+private:
+    cloud_storage_clients::client_pool::client_lease _lease;
+    ss::shared_ptr<cloud_storage_clients::multipart_upload_state> _inner;
+};
+
 } // namespace
 
 namespace cloud_io {
@@ -1260,6 +1305,59 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           upload_type);
     }
     co_return *result;
+}
+
+ss::future<result<
+  cloud_storage_clients::multipart_upload_ref,
+  cloud_storage_clients::error_outcome>>
+remote::initiate_multipart_upload(
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::object_key& key,
+  size_t part_size,
+  ss::lowres_clock::duration timeout) {
+    auto guard = _gate.hold();
+
+    const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
+    if (!bucket_parts) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_parts.error());
+        co_return cloud_storage_clients::error_outcome::fail;
+    }
+
+    // Acquire a client lease from the pool
+    auto fut = co_await ss::coroutine::as_future(
+      _pool.local().acquire(*bucket_parts, _as));
+    if (fut.failed()) {
+        vlog(
+          log.warn,
+          "Failed to acquire client for multipart upload: {}",
+          fut.get_exception());
+        co_return cloud_storage_clients::error_outcome::fail;
+    }
+    auto lease = std::move(fut).get();
+
+    // Get the multipart upload state from the client
+    auto state_result = co_await lease.client->initiate_multipart_upload(
+      bucket_parts->name, key, part_size, timeout);
+
+    if (!state_result) {
+        // Failed to initiate - lease will be automatically returned
+        co_return state_result.error();
+    }
+
+    // Wrap the state with the lease to keep the client alive
+    // for the entire duration of the upload operation
+    auto wrapped_state = ss::make_shared<multipart_upload_state_with_lease>(
+      std::move(lease), std::move(state_result.value()));
+
+    // Create the multipart_upload with the wrapped state
+    auto upload = ss::make_shared<cloud_storage_clients::multipart_upload>(
+      std::move(wrapped_state), part_size);
+
+    co_return upload;
 }
 
 } // namespace cloud_io

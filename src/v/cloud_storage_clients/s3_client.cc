@@ -18,6 +18,7 @@
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage_clients/logger.h"
+#include "cloud_storage_clients/multipart_upload.h"
 #include "cloud_storage_clients/s3_error.h"
 #include "cloud_storage_clients/upstream.h"
 #include "cloud_storage_clients/util.h"

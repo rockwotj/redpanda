@@ -112,6 +112,15 @@ public:
       std::optional<cloud_storage_clients::http_byte_range> byte_range
       = std::nullopt)
       = 0;
+    virtual ss::future<result<
+      cloud_storage_clients::multipart_upload_ref,
+      cloud_storage_clients::error_outcome>>
+    initiate_multipart_upload(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& key,
+      size_t part_size,
+      retry_chain_node& parent)
+      = 0;
     virtual ~cloud_storage_api() = default;
 };
 
@@ -408,6 +417,25 @@ public:
     ss::future<upload_result>
     upload_object(upload_request upload_request) override;
 
+    /// \brief Initiate a multipart upload for large objects
+    ///
+    /// Returns a multipart_upload handle that provides put/complete/abort
+    /// methods for uploading data in chunks.
+    ///
+    /// \param bucket Bucket name
+    /// \param key Object key
+    /// \param part_size Size of each part (must be >= 5 MiB for S3/GCS)
+    /// \param parent Retry chain node for timeout/backoff
+    /// \return multipart_upload handle or error
+    ss::future<result<
+      cloud_storage_clients::multipart_upload_ref,
+      cloud_storage_clients::error_outcome>>
+    initiate_multipart_upload(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& key,
+      size_t part_size,
+      retry_chain_node& parent) override;
+
     ss::future<download_result> do_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
       const std::pair<manifest_format, remote_manifest_path>& format_key,
@@ -482,10 +510,11 @@ public:
 
     remote_probe& get_probe() { return _probe; }
 
-private:
+    /// Access to the underlying cloud_io::remote for advanced operations
     cloud_io::remote& io() { return _io.local(); }
     const cloud_io::remote& io() const { return _io.local(); }
 
+private:
     /// Notify all subscribers about segment or manifest upload/download
     void notify_external_subscribers(
       api_activity_notification, const retry_chain_node& caller);

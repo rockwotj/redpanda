@@ -614,6 +614,24 @@ ss::future<upload_result> remote::upload_object(upload_request req) {
       .then([h = std::move(holder)](upload_result r) { return r; });
 }
 
+ss::future<result<
+  cloud_storage_clients::multipart_upload_ref,
+  cloud_storage_clients::error_outcome>>
+remote::initiate_multipart_upload(
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::object_key& key,
+  size_t part_size,
+  retry_chain_node& parent) {
+    _as.check();
+    auto holder = _gate.hold();
+
+    // Delegate to the cloud_io::remote layer which has access to the pool
+    auto upload_result = co_await io().initiate_multipart_upload(
+      bucket, key, part_size, parent.get_timeout());
+
+    co_return upload_result;
+}
+
 ss::future<api_activity_notification>
 remote::subscribe(remote::event_filter& filter) {
     _as.check();

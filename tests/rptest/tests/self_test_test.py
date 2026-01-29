@@ -46,7 +46,7 @@ class SelfTestTest(EndToEndTest):
 
         return wait_until_result(all_idle, timeout_sec=90, backoff_sec=1)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_self_test(self):
         """Assert the self test starts/completes with success."""
         num_nodes = 3
@@ -82,7 +82,7 @@ class SelfTestTest(EndToEndTest):
         cloud_results = [r for r in reports if r["test_type"] == "cloud"]
 
         read_tests = ["List", "Head", "Get"]
-        write_tests = ["Put", "Delete", "Plural Delete"]
+        write_tests = ["Put", "Delete", "Plural Delete", "Multipart Put"]
 
         num_expected_cloud_storage_read_tests = num_nodes * len(read_tests)
         num_expected_cloud_storage_write_tests = num_nodes * len(write_tests)

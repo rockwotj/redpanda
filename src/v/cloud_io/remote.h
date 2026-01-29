@@ -16,6 +16,7 @@
 #include "cloud_io/remote_api.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/multipart_upload.h"
 #include "model/metadata.h"
 #include "utils/lazy_abort_source.h"
 
@@ -161,6 +162,25 @@ public:
     /// upload function.
     ss::future<upload_result>
     upload_object(upload_request upload_request) override;
+
+    /// \brief Initiate a multipart upload for large objects
+    ///
+    /// Returns a multipart_upload handle that provides put/complete/abort
+    /// methods for uploading data in chunks.
+    ///
+    /// \param bucket Bucket name
+    /// \param key Object key
+    /// \param part_size Size of each part (must be >= 5 MiB for S3/GCS)
+    /// \param timeout Operation timeout
+    /// \return multipart_upload handle or error
+    ss::future<result<
+      cloud_storage_clients::multipart_upload_ref,
+      cloud_storage_clients::error_outcome>>
+    initiate_multipart_upload(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& key,
+      size_t part_size,
+      ss::lowres_clock::duration timeout);
 
     // If you need to spawn a background task that relies on
     // this object staying alive, spawn it with this gate.

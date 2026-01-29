@@ -147,6 +147,17 @@ private:
       cloud_storage_clients::bucket_name bucket,
       size_t num_objects = num_default_objects);
 
+    struct verify_multipart_upload_result {
+        self_test_result test_result;
+    };
+
+    // Verify that multipart upload (Multipart Put: write operation) to cloud
+    // storage works.
+    ss::future<verify_multipart_upload_result> verify_multipart_upload(
+      cloud_storage_clients::bucket_name bucket,
+      cloud_storage_clients::object_key key,
+      iobuf payload);
+
 private:
     static constexpr size_t num_default_objects = 5;
     bool _cancelled{false};

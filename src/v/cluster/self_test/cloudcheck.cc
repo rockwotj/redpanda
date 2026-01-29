@@ -11,8 +11,10 @@
 
 #include "cluster/self_test/cloudcheck.h"
 
+#include "base/units.h"
 #include "base/vlog.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/multipart_upload.h"
 #include "cluster/logger.h"
 #include "cluster/self_test/metrics.h"
 #include "config/configuration.h"
@@ -235,6 +237,19 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
       &cloudcheck::verify_deletes, bucket, num_default_objects);
     results.push_back(std::move(deletes_test_result.test_result));
 
+    // Test Multipart Upload
+    const auto multipart_uuid = cloud_storage_clients::object_key{
+      ss::sstring{uuid_t::create()}};
+    const auto multipart_test_key = cloud_storage_clients::object_key{
+      self_test_prefix / multipart_uuid};
+    auto multipart_payload = make_random_payload(6_MiB);
+    auto multipart_test_result = co_await do_run_test(
+      &cloudcheck::verify_multipart_upload,
+      bucket,
+      multipart_test_key,
+      std::move(multipart_payload));
+    results.push_back(std::move(multipart_test_result.test_result));
+
     co_await clear_self_test_folder(bucket);
 
     co_return results;
@@ -242,8 +257,13 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
 
 iobuf cloudcheck::make_random_payload(size_t size) const {
     iobuf payload;
-    const auto random_data = random_generators::gen_alphanum_string(size);
-    payload.append(random_data.data(), size);
+    constexpr size_t chunk_size = 128_KiB;
+    for (size_t amt = 0; amt < size; amt += chunk_size) {
+        size_t remaining = size - amt;
+        const auto random_data = random_generators::gen_alphanum_string(
+          std::min(chunk_size, remaining));
+        payload.append(random_data.data(), size);
+    }
     return payload;
 }
 
@@ -505,6 +525,48 @@ ss::future<cloudcheck::verify_deletes_result> cloudcheck::verify_deletes(
             result.error = "Failed to delete from cloud storage.";
             break;
         }
+    } catch (const std::exception& e) {
+        result.error = e.what();
+    }
+
+    co_return result;
+}
+
+ss::future<cloudcheck::verify_multipart_upload_result>
+cloudcheck::verify_multipart_upload(
+  cloud_storage_clients::bucket_name bucket,
+  cloud_storage_clients::object_key key,
+  iobuf payload) {
+    auto result = self_test_result{
+      .name = _opts.name, .info = "Multipart Put", .test_type = "cloud"};
+
+    if (_cancelled) {
+        result.warning = "Run was manually cancelled.";
+        co_return result;
+    }
+
+    try {
+        auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
+
+        // Initiate multipart upload with 5 MiB part size using the clean API
+        constexpr size_t part_size = 5_MiB;
+        auto upload_result
+          = co_await _cloud_storage_api.local().initiate_multipart_upload(
+            bucket, key, part_size, rtc);
+
+        if (!upload_result) {
+            result.error = "Failed to initiate multipart upload.";
+            co_return result;
+        }
+
+        auto upload = std::move(upload_result.value());
+
+        // Upload payload in chunks
+        co_await upload->put(payload.share());
+
+        // Complete the upload
+        co_await upload->complete();
+
     } catch (const std::exception& e) {
         result.error = e.what();
     }
