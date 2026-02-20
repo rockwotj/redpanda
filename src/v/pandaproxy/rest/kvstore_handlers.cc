@@ -224,7 +224,8 @@ security::auth_result check_authz(
           op,
           security::acl_principal{security::principal_type::user, rq.user.name},
           security::acl_host{rq.req->get_client_address().addr()},
-          security::superuser_required::no);
+          security::superuser_required::no,
+          {});
     } else {
         authz_result = security::auth_result::authz_disabled(
           security::acl_principal{security::principal_type::user, rq.user.name},

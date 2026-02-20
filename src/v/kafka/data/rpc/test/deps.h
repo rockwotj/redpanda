@@ -532,15 +532,6 @@ public:
 
     ss::future<cluster::errc> invoke_on_shard_kvstore(
       ss::shard_id,
-      const model::ktp&,
-      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>)
-      override {
-        return ss::make_ready_future<cluster::errc>(
-          cluster::errc::feature_disabled);
-    }
-
-    ss::future<cluster::errc> invoke_on_shard_kvstore(
-      ss::shard_id,
       const model::ntp&,
       ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>)
       override {

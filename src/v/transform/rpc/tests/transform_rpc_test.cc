@@ -360,6 +360,14 @@ public:
         return std::nullopt;
     }
 
+    ss::future<cluster::errc> invoke_on_shard_kvstore(
+      ss::shard_id,
+      const model::ntp&,
+      ss::noncopyable_function<ss::future<cluster::errc>(kvstore::db*)>)
+      override {
+        co_return cluster::errc::feature_disabled;
+    }
+
 private:
     fake_offset_tracker* _offset_tracker = nullptr;
     fake_partition_manager_proxy* _fake_proxy;
