@@ -72,6 +72,7 @@ redpanda_cc_library(
         "//src/v/lsm/io:persistence",
         "//src/v/model:batch_builder",
         "//src/v/model:batch_compression",
+        "//src/v/random:time_jitter",
         "//src/v/ssx:future_util",
         "//src/v/utils:retry_chain_node",
     ],

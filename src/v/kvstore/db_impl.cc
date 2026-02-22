@@ -21,6 +21,7 @@
 #include "model/batch_builder.h"
 #include "model/batch_compression.h"
 #include "model/record.h"
+#include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
@@ -315,8 +316,33 @@ ss::future<> db_impl::sync_latest() {
     if (!lso) {
         throw std::runtime_error("unable to determine lso");
     }
+    // If the partition has no committed user records (lso hasn't advanced
+    // past start_offset), there's nothing to sync.
+    if (lso.value() <= proxy.start_offset()) {
+        vlog(
+          kvlog.trace,
+          "sync_latest: nothing to sync, lso={}, start={}",
+          lso.value(),
+          proxy.start_offset());
+        co_return;
+    }
+    auto target = model::prev_offset(lso.value());
+    vlog(
+      kvlog.trace,
+      "sync_latest: waiting for apply, lso={}, target={}, "
+      "last_applied={}",
+      lso.value(),
+      target,
+      _last_applied_offset);
+    // Wait until the apply_loop has applied all committed records up to
+    // prev_offset(lso). The LSO is exclusive (one past the last committed
+    // record), and do_apply_chunk reads up to prev_offset(lso).
     co_await _cond_var.wait(
-      _as, [this, lso = lso.value()] { return _last_applied_offset < lso; });
+      _as, [this, target] { return _last_applied_offset >= target; });
+    vlog(
+      kvlog.trace,
+      "sync_latest: done, last_applied={}",
+      _last_applied_offset);
 }
 
 ss::future<> db_impl::sync_previous_term() {
@@ -332,9 +358,16 @@ ss::future<> db_impl::sync_previous_term() {
     if (!last_term_offset) {
         co_return;
     }
-    co_await _cond_var.wait(_as, [this, o = last_term_offset.value()] {
-        return _last_applied_offset < o;
-    });
+    // get_leader_epoch_last_offset returns an exclusive end offset
+    // (LEO-style: "first offset of next leader epoch"). If it hasn't
+    // advanced past start_offset, there are no data records to sync.
+    if (last_term_offset.value() <= proxy.start_offset()) {
+        co_return;
+    }
+    // Convert to inclusive last offset for the wait predicate.
+    auto target = model::prev_offset(last_term_offset.value());
+    co_await _cond_var.wait(
+      _as, [this, target] { return _last_applied_offset >= target; });
 }
 
 ss::future<> db_impl::replicate(model::record_batch b) {
@@ -361,6 +394,8 @@ ss::future<> db_impl::replicate(model::record_batch b) {
 
 ss::future<> db_impl::apply_loop() {
     auto& monitor = _partition->raft()->visible_offset_monitor();
+    simple_time_jitter<model::timeout_clock, std::chrono::milliseconds> jitter(
+      500ms, 500ms);
     while (!_as.abort_requested()) {
         // grab the hwm because we don't want to re-apply until this has
         // advanced. However we only actually apply up to the LSO.
@@ -374,8 +409,15 @@ ss::future<> db_impl::apply_loop() {
             continue;
         }
         // Wait for the next offset to be available before re-attempting
-        // to apply writes to the database
-        co_await monitor.wait(hwm, model::no_timeout, _as);
+        // to apply writes to the database. Use a jittered timeout because
+        // the LSO may advance independently of the HWM (e.g. after the
+        // rm_stm processes transaction state), and the visible offset
+        // monitor only tracks HWM/dirty offset changes.
+        try {
+            co_await monitor.wait(hwm, jitter(), _as);
+        } catch (const ss::timed_out_error&) {
+            // Expected - re-check LSO on next iteration.
+        }
     }
 }
 

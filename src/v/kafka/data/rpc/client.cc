@@ -29,6 +29,10 @@ namespace kafka::data::rpc {
 
 namespace {
 constexpr auto timeout = std::chrono::seconds(1);
+// kvstore operations may need to wait for the apply loop to catch up
+// (sync_latest/sync_previous_term) before returning, so they need a
+// longer timeout than simple produce/fetch operations.
+constexpr auto kv_timeout = std::chrono::seconds(10);
 constexpr int max_client_retries = 5;
 
 template<typename T>
@@ -558,13 +562,13 @@ client::do_remote_kv_write(model::node_id node, kv_write_request req) {
                     _self,
                     ss::this_shard_id(),
                     node,
-                    timeout,
+                    kv_timeout,
                     [req = std::move(req)](
                       impl::kafka_data_rpc_client_protocol proto) mutable {
                         return proto.kv_write(
                           std::move(req),
                           ::rpc::client_opts(
-                            model::timeout_clock::now() + timeout));
+                            model::timeout_clock::now() + kv_timeout));
                     })
                   .then(&::rpc::get_ctx_data<kv_write_reply>);
     if (resp.has_error()) {
@@ -585,13 +589,13 @@ client::do_remote_kv_get(model::node_id node, kv_get_request req) {
                     _self,
                     ss::this_shard_id(),
                     node,
-                    timeout,
+                    kv_timeout,
                     [req = std::move(req)](
                       impl::kafka_data_rpc_client_protocol proto) mutable {
                         return proto.kv_get(
                           std::move(req),
                           ::rpc::client_opts(
-                            model::timeout_clock::now() + timeout));
+                            model::timeout_clock::now() + kv_timeout));
                     })
                   .then(&::rpc::get_ctx_data<kv_get_reply>);
     if (resp.has_error()) {
@@ -612,13 +616,13 @@ client::do_remote_kv_scan(model::node_id node, kv_scan_request req) {
                     _self,
                     ss::this_shard_id(),
                     node,
-                    timeout,
+                    kv_timeout,
                     [req = std::move(req)](
                       impl::kafka_data_rpc_client_protocol proto) mutable {
                         return proto.kv_scan(
                           std::move(req),
                           ::rpc::client_opts(
-                            model::timeout_clock::now() + timeout));
+                            model::timeout_clock::now() + kv_timeout));
                     })
                   .then(&::rpc::get_ctx_data<kv_scan_reply>);
     if (resp.has_error()) {
