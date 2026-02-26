@@ -340,9 +340,7 @@ ss::future<> db_impl::sync_latest() {
     co_await _cond_var.wait(
       _as, [this, target] { return _last_applied_offset >= target; });
     vlog(
-      kvlog.trace,
-      "sync_latest: done, last_applied={}",
-      _last_applied_offset);
+      kvlog.trace, "sync_latest: done, last_applied={}", _last_applied_offset);
 }
 
 ss::future<> db_impl::sync_previous_term() {
@@ -460,7 +458,9 @@ ss::future<> db_impl::do_apply_chunk() {
             batch = co_await model::decompress_batch(batch);
         }
         auto wb = _lsm->create_write_batch();
-        auto it = model::record_batch_iterator::create(batch);
+        auto base_offset = batch.base_offset();
+        auto last_offset = batch.last_offset();
+        auto it = model::record_batch_iterator::create(std::move(batch));
         int applied_count = 0;
         while (it.has_next()) {
             auto record = it.next();
@@ -468,7 +468,7 @@ ss::future<> db_impl::do_apply_chunk() {
                 continue;
             }
             ++applied_count;
-            auto offset = batch.base_offset()
+            auto offset = base_offset
                           + model::offset_delta(record.offset_delta());
             if (record.is_tombstone()) {
                 wb.remove(
@@ -481,7 +481,7 @@ ss::future<> db_impl::do_apply_chunk() {
             }
         }
         co_await _lsm->apply(std::move(wb));
-        _last_applied_offset = batch.last_offset();
+        _last_applied_offset = last_offset;
         vlog(
           kvlog.trace,
           "applied {} records to the kvstore, last applied: {}",
