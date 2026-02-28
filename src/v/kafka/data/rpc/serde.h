@@ -310,23 +310,39 @@ struct kv_remove
     kv_precondition precondition;
 };
 
+struct kv_check
+  : serde::envelope<kv_check, serde::version<0>, serde::compat_version<0>> {
+    kv_check() = default;
+    kv_check(ss::sstring key, kv_precondition precondition)
+      : key(std::move(key))
+      , precondition(std::move(precondition)) {}
+
+    auto serde_fields() { return std::tie(key, precondition); }
+
+    ss::sstring key;
+    kv_precondition precondition;
+};
+
 struct kv_write_request
   : serde::
-      envelope<kv_write_request, serde::version<0>, serde::compat_version<0>> {
+      envelope<kv_write_request, serde::version<1>, serde::compat_version<0>> {
     kv_write_request() = default;
     kv_write_request(
       model::ntp ntp,
       chunked_vector<kv_put> puts,
-      chunked_vector<kv_remove> removals)
+      chunked_vector<kv_remove> removals,
+      chunked_vector<kv_check> checks = {})
       : ntp(std::move(ntp))
       , puts(std::move(puts))
-      , removals(std::move(removals)) {}
+      , removals(std::move(removals))
+      , checks(std::move(checks)) {}
 
-    auto serde_fields() { return std::tie(ntp, puts, removals); }
+    auto serde_fields() { return std::tie(ntp, puts, removals, checks); }
 
     model::ntp ntp;
     chunked_vector<kv_put> puts;
     chunked_vector<kv_remove> removals;
+    chunked_vector<kv_check> checks;
 };
 
 struct kv_write_reply

@@ -78,11 +78,27 @@ message KVStoreWriteRequest {
         // succeed.
         Precondition precondition = 2;
     }
+    // Check verifies a precondition on a key without modifying it.
+    //
+    // Use checks to assert on dependent state that is not part of the write
+    // set. For example, you can verify that a related key has not changed
+    // before applying an unrelated put or delete. If any check fails, the
+    // entire batch is rejected.
+    message Check {
+        // The key to check the precondition against.
+        bytes key = 1;
+        // The precondition that must be satisfied.
+        Precondition precondition = 2;
+    }
 
     // List of put operations to execute atomically.
     repeated Put puts = 1;
     // List of delete operations to execute atomically.
     repeated Delete deletes = 2;
+    // List of precondition checks to verify atomically. Checks are evaluated
+    // before any puts or deletes. They allow asserting on keys that are not
+    // part of the write set.
+    repeated Check checks = 3;
 }
 
 // KVStoreWriteResponse is returned when a write operation completes

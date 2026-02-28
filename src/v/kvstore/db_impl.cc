@@ -252,6 +252,13 @@ ss::future<write_success> db_impl::write(write_batch wb) {
     }
     auto _ = co_await _write_mu.get_units();
     co_await sync_latest();
+    for (auto& op : wb.checks) {
+        _as.check();
+        auto success = co_await check_precondition(op.key, op.precondition);
+        if (!success) {
+            co_return success;
+        }
+    }
     model::batch_builder bb;
     for (auto& op : wb.puts) {
         _as.check();

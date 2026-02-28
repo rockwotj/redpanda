@@ -66,11 +66,19 @@ struct remove {
     precondition precondition;
 };
 
+// A read-only precondition check on a key not in the write set.
+struct check {
+    ss::sstring key;
+    precondition precondition;
+};
+
 // An atomic batch of writes to apply to the database. The total size of this
 // batch must be less than `message.max.bytes` in total.
 struct write_batch {
     chunked_vector<put> puts;
     chunked_vector<remove> removals;
+    // Read-only precondition checks evaluated before any mutations.
+    chunked_vector<check> checks;
 };
 
 // A boolean if the write to the database succeeded. A write only fails if

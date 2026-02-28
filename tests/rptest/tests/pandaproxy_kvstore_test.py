@@ -77,12 +77,19 @@ class PandaproxyKVStoreTest(RedpandaTest):
             data = data.encode()
         return hashlib.sha256(data).hexdigest()
 
-    def _kv_write(self, topic, partition, puts=None, deletes=None):
+    def _kv_write(self,
+                  topic,
+                  partition,
+                  puts=None,
+                  deletes=None,
+                  checks=None):
         body = {}
         if puts is not None:
             body["puts"] = puts
         if deletes is not None:
             body["deletes"] = deletes
+        if checks is not None:
+            body["checks"] = checks
         return requests.post(
             f"{self._base_uri()}/kvstore/{topic}/partition/{partition}/write",
             data=json.dumps(body),
@@ -130,7 +137,16 @@ class PandaproxyKVStoreTest(RedpandaTest):
             entry["precondition"] = precondition
         return entry
 
-    def _write_with_retry(self, topic, partition, puts=None, deletes=None):
+    def _check(self, key, precondition):
+        """Build a check entry for a write request (read-only precondition)."""
+        return {"key": self._b64(key), "precondition": precondition}
+
+    def _write_with_retry(self,
+                          topic,
+                          partition,
+                          puts=None,
+                          deletes=None,
+                          checks=None):
         """Write with retry to handle initial leader election and RPC timeouts."""
 
         def attempt():
@@ -138,7 +154,8 @@ class PandaproxyKVStoreTest(RedpandaTest):
                 res = self._kv_write(topic,
                                      partition,
                                      puts=puts,
-                                     deletes=deletes)
+                                     deletes=deletes,
+                                     checks=checks)
             except requests.ConnectionError:
                 return False
             if res.status_code in (500, 503):
@@ -551,3 +568,74 @@ class PandaproxyKVStoreTest(RedpandaTest):
         assert res.status_code == 200
         assert "value" not in res.json()["results"][0], \
             "key_b should not exist after atomic batch failure"
+
+    @cluster(num_nodes=3, log_allow_list=KV_LOG_ALLOW_LIST)
+    def test_decoupled_checks(self):
+        """Checks assert on keys outside the write set."""
+        # Seed two keys
+        self._write_with_retry(
+            self.KV_TOPIC,
+            0,
+            puts=[self._put("dep", "v1"),
+                  self._put("target", "old")])
+
+        dep_hash = self._sha256_hex("v1")
+
+        # Write target while checking dep hasn't changed -> 200
+        res = self._kv_write(
+            self.KV_TOPIC,
+            0,
+            puts=[self._put("target", "new")],
+            checks=[
+                self._check("dep",
+                             {"ifMatches": {"sha256Hash": dep_hash}})
+            ])
+        assert res.status_code == 200
+
+        # Verify target was updated
+        res = self._kv_batch_get(self.KV_TOPIC, 0, [self._b64("target")])
+        assert res.status_code == 200
+        assert self._b64d(res.json()["results"][0]["value"]) == b"new"
+
+        # Now dep is still "v1", but use a stale hash -> 409
+        stale_hash = self._sha256_hex("wrong")
+        res = self._kv_write(
+            self.KV_TOPIC,
+            0,
+            puts=[self._put("target", "should_fail")],
+            checks=[
+                self._check("dep",
+                             {"ifMatches": {"sha256Hash": stale_hash}})
+            ])
+        assert res.status_code == 409
+
+        # target should be unchanged
+        res = self._kv_batch_get(self.KV_TOPIC, 0, [self._b64("target")])
+        assert res.status_code == 200
+        assert self._b64d(res.json()["results"][0]["value"]) == b"new"
+
+        # Check ifExists on a missing key -> 409
+        res = self._kv_write(
+            self.KV_TOPIC,
+            0,
+            puts=[self._put("target", "should_fail")],
+            checks=[
+                self._check("no_such_key",
+                             {"ifExists": {"exists": True}})
+            ])
+        assert res.status_code == 409
+
+        # Check ifExists:false on a missing key -> 200
+        res = self._kv_write(
+            self.KV_TOPIC,
+            0,
+            puts=[self._put("target", "final")],
+            checks=[
+                self._check("no_such_key",
+                             {"ifExists": {"exists": False}})
+            ])
+        assert res.status_code == 200
+
+        res = self._kv_batch_get(self.KV_TOPIC, 0, [self._b64("target")])
+        assert res.status_code == 200
+        assert self._b64d(res.json()["results"][0]["value"]) == b"final"

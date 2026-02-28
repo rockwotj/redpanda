@@ -83,6 +83,13 @@ kafka::data::rpc::kv_precondition convert_precondition(
 kafka::data::rpc::kv_write_request
 convert(proto::pandaproxy::kv_store_write_request proto_req) {
     kafka::data::rpc::kv_write_request rpc_req;
+    // Convert checks
+    for (auto& proto_check : proto_req.get_checks()) {
+        kafka::data::rpc::kv_check rpc_check{
+          linearize_key(proto_check.get_key()),
+          convert_precondition(proto_check.get_precondition())};
+        rpc_req.checks.push_back(std::move(rpc_check));
+    }
     // Convert puts
     for (auto& proto_put : proto_req.get_puts()) {
         kafka::data::rpc::kv_entry entry{

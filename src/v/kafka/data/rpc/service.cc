@@ -315,40 +315,38 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
 
 namespace {
 
+kvstore::precondition convert_precondition(kv_precondition& p) {
+    return ss::visit(
+      p,
+      [](kv_no_precondition&) -> kvstore::precondition {
+          return std::nullopt;
+      },
+      [](kv_precondition_if_exists& e) -> kvstore::precondition {
+          return kvstore::if_exists(e.exists);
+      },
+      [](kv_precondition_if_matches& m) -> kvstore::precondition {
+          return kvstore::if_matches(std::move(m.sha256_hash));
+      });
+}
+
 kvstore::write_batch convert_write_request(kv_write_request* req) {
     kvstore::write_batch wb;
+    for (auto& check : req->checks) {
+        wb.checks.emplace_back(
+          std::move(check.key), convert_precondition(check.precondition));
+    }
     for (auto& put : req->puts) {
-        auto pc = ss::visit(
-          put.precondition,
-          [](kv_no_precondition&) -> kvstore::precondition {
-              return std::nullopt;
-          },
-          [](kv_precondition_if_exists& p) -> kvstore::precondition {
-              return kvstore::if_exists(p.exists);
-          },
-          [](kv_precondition_if_matches& p) -> kvstore::precondition {
-              return kvstore::if_matches(std::move(p.sha256_hash));
-          });
         wb.puts.emplace_back(
           kvstore::entry{
             .key = std::move(put.entry.key),
             .value = std::move(put.entry.value),
           },
-          std::move(pc));
+          convert_precondition(put.precondition));
     }
     for (auto& removal : req->removals) {
-        auto pc = ss::visit(
-          removal.precondition,
-          [](kv_no_precondition&) -> kvstore::precondition {
-              return std::nullopt;
-          },
-          [](kv_precondition_if_exists& p) -> kvstore::precondition {
-              return kvstore::if_exists(p.exists);
-          },
-          [](kv_precondition_if_matches& p) -> kvstore::precondition {
-              return kvstore::if_matches(std::move(p.sha256_hash));
-          });
-        wb.removals.emplace_back(std::move(removal.key), std::move(pc));
+        wb.removals.emplace_back(
+          std::move(removal.key),
+          convert_precondition(removal.precondition));
     }
     return wb;
 }
