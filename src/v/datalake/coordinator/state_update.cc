@@ -14,18 +14,6 @@
 
 namespace datalake::coordinator {
 
-std::ostream& operator<<(std::ostream& o, const update_key& u) {
-    switch (u) {
-    case update_key::add_files:
-        return o << "update_key::add_files";
-    case update_key::mark_files_committed:
-        return o << "update_key::mark_files_committed";
-    case update_key::topic_lifecycle_update:
-        return o << "update_key::topic_lifecycle_update";
-    case update_key::reset_topic_state:
-        return o << "update_key::reset_topic_state";
-    }
-}
 
 checked<add_files_update, stm_update_error> add_files_update::build(
   const topics_state& state,
@@ -334,54 +322,54 @@ reset_topic_state_update::apply(topics_state& state) {
     return outcome::success();
 }
 
-std::ostream& operator<<(std::ostream& o, const add_files_update& u) {
-    fmt::print(o, "{{tp: {}, revision: {}, entries: [", u.tp, u.topic_revision);
+fmt::iterator add_files_update::format_to(fmt::iterator it) const {
+    it = fmt::format_to(it, "{{tp: {}, revision: {}, entries: [", tp, topic_revision);
     static constexpr size_t max_to_log = 6;
     static constexpr size_t halved = max_to_log / 2;
-    const auto& e = u.entries;
-    if (e.size() <= max_to_log) {
-        fmt::print(o, "{}", fmt::join(e, ", "));
+    if (entries.size() <= max_to_log) {
+        it = fmt::format_to(it, "{}", fmt::join(entries, ", "));
     } else {
-        fmt::print(o, "{}", fmt::join(e.begin(), e.begin() + halved, ", "));
-        o << "...";
-        fmt::print(o, "{}", fmt::join(e.end() - halved, e.end(), ", "));
+        it = fmt::format_to(
+          it,
+          "{}",
+          fmt::join(entries.begin(), entries.begin() + halved, ", "));
+        it = fmt::format_to(it, "...");
+        it = fmt::format_to(
+          it,
+          "{}",
+          fmt::join(entries.end() - halved, entries.end(), ", "));
     }
-    fmt::print(o, "] ({} entries)}}", e.size());
-    return o;
+    return fmt::format_to(it, "] ({} entries)}}", entries.size());
 }
 
-std::ostream&
-operator<<(std::ostream& o, const mark_files_committed_update& u) {
-    fmt::print(
-      o,
+fmt::iterator mark_files_committed_update::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{tp: {}, revision: {}, new_committed: {}, kafka_bytes_processed: {}}}",
-      u.tp,
-      u.topic_revision,
-      u.new_committed,
-      u.kafka_bytes_processed);
-    return o;
+      tp,
+      topic_revision,
+      new_committed,
+      kafka_bytes_processed);
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_lifecycle_update& u) {
-    fmt::print(
-      o,
+fmt::iterator topic_lifecycle_update::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{topic: {}, revision: {}, new_state: {}}}",
-      u.topic,
-      u.revision,
-      u.new_state);
-    return o;
+      topic,
+      revision,
+      new_state);
 }
 
-std::ostream& operator<<(std::ostream& o, const reset_topic_state_update& u) {
-    fmt::print(
-      o,
+fmt::iterator reset_topic_state_update::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{topic: {}, revision: {}, reset_all_partitions: {}, "
       "partition_overrides: {} entries}}",
-      u.topic,
-      u.topic_revision,
-      u.reset_all_partitions,
-      u.partition_overrides.size());
-    return o;
+      topic,
+      topic_revision,
+      reset_all_partitions,
+      partition_overrides.size());
 }
 
 } // namespace datalake::coordinator

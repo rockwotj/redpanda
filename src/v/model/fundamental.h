@@ -187,6 +187,22 @@ inline bool is_deletion_enabled(cleanup_policy_bitflags flags) {
            == cleanup_policy_bitflags::deletion;
 }
 
+inline constexpr std::string_view format_as(cleanup_policy_bitflags c) {
+    if (c == cleanup_policy_bitflags::none) {
+        return "none";
+    }
+    if (is_compaction_enabled(c) && is_deletion_enabled(c)) {
+        return "compact,delete";
+    }
+    if (is_compaction_enabled(c)) {
+        return "compact";
+    }
+    if (is_deletion_enabled(c)) {
+        return "delete";
+    }
+    return "none";
+}
+
 std::ostream& operator<<(std::ostream&, cleanup_policy_bitflags);
 std::istream& operator>>(std::istream&, cleanup_policy_bitflags&);
 
@@ -200,6 +216,18 @@ enum class compaction_strategy : int8_t {
     /// \brief header field compaction is not yet supported
     header,
 };
+inline constexpr std::string_view format_as(compaction_strategy c) {
+    switch (c) {
+    case compaction_strategy::offset:
+        return "offset";
+    case compaction_strategy::timestamp:
+        return "timestamp";
+    case compaction_strategy::header:
+        return "header";
+    }
+    __builtin_unreachable();
+}
+
 std::ostream& operator<<(std::ostream&, compaction_strategy);
 std::istream& operator>>(std::istream&, compaction_strategy&);
 
@@ -315,7 +343,7 @@ struct topic_partition_view {
 
     model::topic_view topic;
     model::partition_id partition;
-    friend std::ostream& operator<<(std::ostream&, const topic_partition_view&);
+    fmt::iterator format_to(fmt::iterator) const;
     friend auto
     operator<=>(const topic_partition_view&, const topic_partition_view&)
       = default;
@@ -359,7 +387,7 @@ struct topic_partition {
         return topic_partition_view(topic, partition);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const topic_partition&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     friend void read_nested(
       iobuf_parser& in, topic_partition& tp, const size_t bytes_left_limit) {
@@ -423,7 +451,7 @@ struct ntp {
     ss::sstring path() const;
     std::filesystem::path topic_path() const;
 
-    friend std::ostream& operator<<(std::ostream&, const ntp&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**
@@ -440,6 +468,17 @@ enum class control_record_type : int16_t {
     tx_commit = 1,
     unknown = -1
 };
+inline constexpr std::string_view format_as(control_record_type crt) {
+    switch (crt) {
+    case control_record_type::tx_abort:
+        return "tx_abort";
+    case control_record_type::tx_commit:
+        return "tx_commit";
+    case control_record_type::unknown:
+        return "unknown";
+    }
+}
+
 std::ostream& operator<<(std::ostream&, const control_record_type&);
 
 using control_record_version
@@ -524,6 +563,25 @@ static_assert(
     shadow_indexing_mode::full, shadow_indexing_mode::drop_full)
   == shadow_indexing_mode::disabled);
 
+inline constexpr std::string_view format_as(shadow_indexing_mode si) {
+    switch (si) {
+    case shadow_indexing_mode::disabled:
+        return "disabled";
+    case shadow_indexing_mode::archival:
+        return "archival";
+    case shadow_indexing_mode::fetch:
+        return "fetch";
+    case shadow_indexing_mode::full:
+        return "full";
+    case shadow_indexing_mode::drop_archival:
+        return "drop_archival";
+    case shadow_indexing_mode::drop_fetch:
+        return "drop_fetch";
+    case shadow_indexing_mode::drop_full:
+        return "drop_full";
+    }
+}
+
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 
 using client_address_t = ss::socket_address;
@@ -553,6 +611,10 @@ constexpr std::string_view to_string_view(fips_mode_flag f) {
     case fips_mode_flag::enabled:
         return "enabled";
     }
+}
+
+inline constexpr std::string_view format_as(fips_mode_flag f) {
+    return to_string_view(f);
 }
 
 std::ostream& operator<<(std::ostream& os, const fips_mode_flag& f);
@@ -595,7 +657,7 @@ struct topic_id_partition {
     bool operator==(const topic_id_partition& other) const = default;
     auto operator<=>(const topic_id_partition& other) const noexcept = default;
 
-    friend std::ostream& operator<<(std::ostream&, const topic_id_partition&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     friend void read_nested(
       iobuf_parser& in, topic_id_partition& tp, const size_t bytes_left_limit) {

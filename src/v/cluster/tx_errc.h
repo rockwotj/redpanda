@@ -12,6 +12,7 @@
  */
 
 #pragma once
+#include <string_view>
 #include <system_error>
 
 namespace cluster::tx {
@@ -56,6 +57,8 @@ enum class errc {
     producer_creation_error,
     partition_writes_locked
 };
+
+std::string_view format_as(errc e);
 
 std::ostream& operator<<(std::ostream& o, errc err);
 

@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/format_to.h"
 #include "kafka/protocol/types.h"
 #include "kafka/protocol/wire.h"
 #include "random/generators.h"
@@ -80,9 +81,8 @@ struct test_struct {
         return a.field_a == b.field_a && a.field_b == b.field_b;
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const test_struct& ts) {
-        os << "field_a: " << ts.field_a << " field_b: " << ts.field_b;
-        return os;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "field_a: {} field_b: {}", field_a, field_b);
     }
 };
 

@@ -17,8 +17,6 @@
 #include <boost/crc.hpp>
 #include <fmt/format.h>
 
-#include <ostream>
-
 namespace rpc {
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
 void crc_one(crc::crc32c& crc, T t) {
@@ -38,42 +36,58 @@ uint32_t checksum_header_only(const header& h) {
     return crc.value();
 }
 
-std::ostream& operator<<(std::ostream& o, const header& h) {
-    // NOTE: if we use the int8_t types, ostream doesn't print 0's
-    // artificially ast version and compression as ints
-    return o << "{version:" << int(h.version)
-             << ", header_checksum:" << h.header_checksum
-             << ", compression:" << static_cast<int>(h.compression)
-             << ", payload_size:" << h.payload_size << ", meta:" << h.meta
-             << ", correlation_id:" << h.correlation_id
-             << ", payload_checksum:" << h.payload_checksum << "}";
+fmt::iterator header::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{version:{}, header_checksum:{}, compression:{}, "
+      "payload_size:{}, meta:{}, correlation_id:{}, payload_checksum:{}}}",
+      static_cast<int>(version),
+      header_checksum,
+      static_cast<int>(compression),
+      payload_size,
+      meta,
+      correlation_id,
+      payload_checksum);
+}
+
+std::string_view format_as(status s) {
+    switch (s) {
+    case status::success:
+        return "rpc::status::success";
+    case status::method_not_found:
+        return "rpc::status::method_not_found";
+    case status::request_timeout:
+        return "rpc::status::request_timeout";
+    case status::server_error:
+        return "rpc::status::server_error";
+    case status::version_not_supported:
+        return "rpc::status::version_not_supported";
+    case status::service_unavailable:
+        return "rpc::status::service_unavailable";
+    default:
+        return "rpc::status::unknown";
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const status& s) {
-    switch (s) {
-    case status::success:
-        return o << "rpc::status::success";
-    case status::method_not_found:
-        return o << "rpc::status::method_not_found";
-    case status::request_timeout:
-        return o << "rpc::status::request_timeout";
-    case status::server_error:
-        return o << "rpc::status::server_error";
-    case status::version_not_supported:
-        return o << "rpc::status::version_not_supported";
-    case status::service_unavailable:
-        return o << "rpc::status::service_unavailable";
+    return o << format_as(s);
+}
+
+std::string_view format_as(transport_version v) {
+    switch (v) {
+    case transport_version::v0:
+        return "rpc::transport_version::v0";
+    case transport_version::v1:
+        return "rpc::transport_version::v1";
+    case transport_version::v2:
+        return "rpc::transport_version::v2";
     default:
-        return o << "rpc::status::unknown";
+        return "rpc::transport_version::unknown";
     }
 }
 
 std::ostream& operator<<(std::ostream& o, transport_version v) {
-    fmt::print(
-      o,
-      "rpc::transport_version::v{}",
-      static_cast<std::underlying_type_t<transport_version>>(v));
-    return o;
+    return o << format_as(v);
 }
 
 } // namespace rpc

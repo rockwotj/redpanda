@@ -15,6 +15,8 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 
+#include <string_view>
+
 namespace cloud_storage {
 
 enum class find_topic_manifest_outcome {
@@ -27,6 +29,16 @@ enum class find_topic_manifest_outcome {
     // and a hint must be provided to determine winner.
     multiple_matching_manifests,
 };
+inline constexpr std::string_view format_as(find_topic_manifest_outcome o) {
+    switch (o) {
+    case find_topic_manifest_outcome::success:
+        return "find_topic_manifest_outcome::success";
+    case find_topic_manifest_outcome::no_matching_manifest:
+        return "find_topic_manifest_outcome::no_matching_manifest";
+    case find_topic_manifest_outcome::multiple_matching_manifests:
+        return "find_topic_manifest_outcome::multiple_matching_manifests";
+    }
+}
 std::ostream& operator<<(std::ostream&, find_topic_manifest_outcome);
 
 // Encapsulates downloading manifests for a given topic.

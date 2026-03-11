@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 #include "bytes/bytes.h"
 #include "compaction/key.h"
 #include "model/fundamental.h"
@@ -71,11 +72,15 @@ struct compacted_index {
                                               + sizeof(flags) + sizeof(crc)
                                               + sizeof(version);
 
-        friend std::ostream&
-        operator<<(std::ostream& o, const compacted_index::footer& f) {
-            return o << "{size:" << f.size << ", keys:" << f.keys
-                     << ", flags:" << (uint32_t)f.flags << ", crc:" << f.crc
-                     << ", version: " << (int)f.version << "}";
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(
+              it,
+              "{{size:{}, keys:{}, flags:{}, crc:{}, version: {}}}",
+              size,
+              keys,
+              static_cast<uint32_t>(flags),
+              crc,
+              static_cast<int>(version));
         }
     };
 
@@ -135,6 +140,21 @@ struct compacted_index {
         int32_t delta;
     };
 };
+
+inline constexpr std::string_view
+format_as(compacted_index::recovery_state state) {
+    switch (state) {
+    case compacted_index::recovery_state::index_missing:
+        return "index_missing";
+    case compacted_index::recovery_state::already_compacted:
+        return "already_compacted";
+    case compacted_index::recovery_state::index_needs_rebuild:
+        return "index_needs_rebuild";
+    case compacted_index::recovery_state::index_recovered:
+        return "index_recovered";
+    }
+    __builtin_unreachable();
+}
 
 std::ostream& operator<<(std::ostream&, compacted_index::recovery_state);
 

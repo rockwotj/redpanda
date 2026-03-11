@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/btree_map.h"
+#include "base/format_to.h"
 #include "base/units.h"
 #include "bytes/bytes.h"
 #include "compaction/fwd.h"
@@ -272,15 +273,14 @@ public:
         size_t num_aborted_txes{0};
         size_t batches_processed{0};
 
-        friend std::ostream& operator<<(std::ostream& os, const stats& s) {
-            fmt::print(
-              os,
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(
+              it,
               "{{ batches processed: {}, aborted_txs: {}, "
               "discarded batches: {} }}",
-              s.batches_processed,
-              s.num_aborted_txes,
-              s.batches_discarded);
-            return os;
+              batches_processed,
+              num_aborted_txes,
+              batches_discarded);
         }
     };
 

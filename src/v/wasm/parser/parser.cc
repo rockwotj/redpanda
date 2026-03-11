@@ -56,13 +56,12 @@ std::string_view to_string(const wasm::val_type& vt) {
 }
 } // namespace
 
-std::ostream& operator<<(std::ostream& os, const function_signature& sig) {
-    fmt::print(
-      os,
+fmt::iterator function_signature::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{params:[{}],results:[{}]}}",
-      fmt::join(sig.parameters | std::views::transform(to_string), ","),
-      fmt::join(sig.results | std::views::transform(to_string), ","));
-    return os;
+      fmt::join(parameters | std::views::transform(to_string), ","),
+      fmt::join(results | std::views::transform(to_string), ","));
 }
 
 } // namespace wasm
@@ -70,55 +69,46 @@ std::ostream& operator<<(std::ostream& os, const function_signature& sig) {
 namespace wasm::parser {
 
 namespace declaration {
-std::ostream& operator<<(std::ostream& os, const limits& l) {
-    fmt::print(os, "{{min:{},max:{}}}", l.min, l.max);
-    return os;
+fmt::iterator limits::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{min:{},max:{}}}", min, max);
 }
-std::ostream& operator<<(std::ostream& os, const function& f) {
-    fmt::print(os, "{{signature:{}}}", f.signature);
-    return os;
+fmt::iterator function::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{signature:{}}}", signature);
 }
-std::ostream& operator<<(std::ostream& os, const table& t) {
-    fmt::print(os, "{{reftype:{},limits:{}}}", to_string(t.reftype), t.limits);
-    return os;
+fmt::iterator table::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{reftype:{},limits:{}}}", to_string(reftype), limits);
 }
-std::ostream& operator<<(std::ostream& os, const memory& m) {
-    fmt::print(os, "{{limits:{}}}", m.limits);
-    return os;
+fmt::iterator memory::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{limits:{}}}", limits);
 }
-std::ostream& operator<<(std::ostream& os, const global& m) {
-    fmt::print(os, "{{valtype:{},mut:{}}}", to_string(m.valtype), m.is_mutable);
-    return os;
+fmt::iterator global::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{valtype:{},mut:{}}}", to_string(valtype), is_mutable);
 }
 
 } // namespace declaration
 
-std::ostream& operator<<(std::ostream& os, const module_import& m_import) {
+fmt::iterator module_import::format_to(fmt::iterator it) const {
     std::visit(
       [&](auto desc) {
-          fmt::print(
-            os,
-            "{{name:{}/{},desc:{}}}",
-            m_import.module_name,
-            m_import.item_name,
-            desc);
+          it = fmt::format_to(
+            it, "{{name:{}/{},desc:{}}}", module_name, item_name, desc);
       },
-      m_import.description);
-    return os;
+      description);
+    return it;
 }
-std::ostream& operator<<(std::ostream& os, const module_export& m_export) {
+fmt::iterator module_export::format_to(fmt::iterator it) const {
     std::visit(
       [&](auto desc) {
-          fmt::print(os, "{{name:{},desc:{}}}", m_export.item_name, desc);
+          it = fmt::format_to(it, "{{name:{},desc:{}}}", item_name, desc);
       },
-      m_export.description);
-    return os;
+      description);
+    return it;
 }
 
-std::ostream& operator<<(std::ostream& os, const module_declarations& m_decls) {
-    fmt::print(
-      os, "{{imports:{},exports:{}}}", m_decls.imports, m_decls.exports);
-    return os;
+fmt::iterator module_declarations::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{imports:{},exports:{}}}", imports, exports);
 }
 
 namespace {

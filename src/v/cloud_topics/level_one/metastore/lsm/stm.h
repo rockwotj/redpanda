@@ -14,6 +14,9 @@
 #include "model/fundamental.h"
 #include "raft/persisted_stm.h"
 
+#include <ostream>
+#include <string_view>
+
 namespace cloud_topics::l1 {
 
 using metastore_stm_base = raft::persisted_stm_no_snapshot_at_offset<>;
@@ -100,6 +103,20 @@ public:
       const cluster::stm_instance_config&) final;
 };
 
-std::ostream& operator<<(std::ostream& os, stm::errc e);
+inline constexpr std::string_view format_as(stm::errc e) {
+    switch (e) {
+    case stm::errc::not_leader:
+        return "stm::errc::not_leader";
+    case stm::errc::raft_error:
+        return "stm::errc::raft_error";
+    case stm::errc::shutting_down:
+        return "stm::errc::shutting_down";
+    }
+    return "unknown";
+}
+
+inline std::ostream& operator<<(std::ostream& os, stm::errc e) {
+    return os << format_as(e);
+}
 
 } // namespace cloud_topics::l1

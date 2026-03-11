@@ -49,13 +49,12 @@ std::ostream& operator<<(std::ostream& o, const debug_bundle_status& s) {
 }
 
 std::ostream& operator<<(std::ostream& o, const partition_selection& p) {
-    fmt::print(o, "{}/{}/{}", p.tn.ns, p.tn.tp, fmt::join(p.partitions, ","));
+    fmt::print(o, "{}", p);
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const label_selection& l) {
-    fmt::print(o, "{}={}", l.key, l.value);
-    return o;
+fmt::iterator label_selection::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{}={}", key, value);
 }
 
 std::optional<partition_selection>

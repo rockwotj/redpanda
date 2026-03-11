@@ -7,6 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#include "base/format_to.h"
 #include "cloud_topics/object_utils.h"
 #include "gmock/gmock.h"
 #include "ssx/sformat.h"
@@ -137,13 +138,15 @@ expected_before_prune(cloud_topics::prefix_range_inclusive range) {
 struct trie_test_case {
     cloud_topics::prefix_range_inclusive range;
     std::vector<ss::sstring> expected_after_prune;
-};
 
-std::ostream& operator<<(std::ostream& os, const trie_test_case& tc) {
-    fmt::print(
-      os, "[{}] -> {{{}}}", tc.range, fmt::join(tc.expected_after_prune, ","));
-    return os;
-}
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "[{}] -> {{{}}}",
+          range,
+          fmt::join(expected_after_prune, ","));
+    }
+};
 
 } // namespace
 

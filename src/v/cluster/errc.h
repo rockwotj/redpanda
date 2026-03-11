@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include <string_view>
 #include <system_error>
 
 namespace cluster {
@@ -102,6 +103,7 @@ enum class errc : int16_t {
     feature_sanctioned,
 };
 
+std::string_view format_as(errc err);
 std::ostream& operator<<(std::ostream& o, errc err);
 
 struct errc_category final : public std::error_category {

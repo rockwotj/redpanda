@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/outcome.h"
 #include "cloud_storage/async_manifest_materializer.h"
 #include "cloud_storage/fwd.h"
@@ -41,15 +42,13 @@ struct async_view_timestamp_query {
       , ts(ts)
       , max_offset(max_offset) {}
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const async_view_timestamp_query& q) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "async_view_timestamp_query{{min_offset:{}, ts:{}, max_offset:{}}}",
-          q.min_offset,
-          q.ts,
-          q.max_offset);
-        return o;
+          min_offset,
+          ts,
+          max_offset);
     }
 
     kafka::offset min_offset;
@@ -62,6 +61,7 @@ using async_view_search_query_t
   = std::variant<model::offset, kafka::offset, async_view_timestamp_query>;
 
 std::ostream& operator<<(std::ostream&, const async_view_search_query_t&);
+// Note: async_view_search_query_t is a variant type alias, can't add format_to
 
 class async_manifest_view;
 
@@ -219,6 +219,19 @@ enum class async_manifest_view_cursor_status {
     evicted,
 };
 
+inline constexpr std::string_view
+format_as(async_manifest_view_cursor_status s) {
+    switch (s) {
+    case async_manifest_view_cursor_status::empty:
+        return "empty";
+    case async_manifest_view_cursor_status::evicted:
+        return "evicted";
+    case async_manifest_view_cursor_status::materialized_stm:
+        return "materialized_stm";
+    case async_manifest_view_cursor_status::materialized_spillover:
+        return "materialized_spillover";
+    }
+}
 std::ostream& operator<<(std::ostream&, async_manifest_view_cursor_status);
 
 /// The cursor can be used to traverse manifest

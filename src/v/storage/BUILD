@@ -76,7 +76,6 @@ redpanda_cc_library(
         "index_state.h",
     ],
     implementation_deps = [
-        "//src/v/base",
         "//src/v/bytes:iobuf_parser",
         "//src/v/hashing:crc32c",
         "//src/v/hashing:xx",
@@ -89,6 +88,7 @@ redpanda_cc_library(
         "@fmt",
     ],
     deps = [
+        "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:chunked_vector",
         "//src/v/model",
@@ -430,6 +430,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
         "//src/v/json",
         "//src/v/model",
         "@abseil-cpp//absl/container:flat_hash_map",

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/btree_set.h"
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "container/chunked_vector.h"
 #include "model/metadata.h"
@@ -94,7 +95,7 @@ struct label_selection {
     friend bool operator==(const label_selection&, const label_selection&)
       = default;
 
-    friend std::ostream& operator<<(std::ostream& o, const label_selection& l);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /// Parameters used to spawn rpk debug bundle

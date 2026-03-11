@@ -31,9 +31,12 @@ ss::sstring self_test_status_as_string(self_test_status sts) {
     }
 }
 
+ss::sstring format_as(self_test_status sts) {
+    return self_test_status_as_string(sts);
+}
+
 std::ostream& operator<<(std::ostream& o, self_test_status sts) {
-    fmt::print(o, "{}", self_test_status_as_string(sts));
-    return o;
+    return o << format_as(sts);
 }
 
 ss::sstring self_test_stage_as_string(self_test_stage sts) {
@@ -49,9 +52,12 @@ ss::sstring self_test_stage_as_string(self_test_stage sts) {
     }
 }
 
+ss::sstring format_as(self_test_stage sts) {
+    return self_test_stage_as_string(sts);
+}
+
 std::ostream& operator<<(std::ostream& o, self_test_stage sts) {
-    fmt::print(o, "{}", self_test_stage_as_string(sts));
-    return o;
+    return o << format_as(sts);
 }
 
 ss::future<cluster::netcheck_request>

@@ -30,13 +30,16 @@ enum class offset_reset_policy : int8_t {
     latest,
 };
 
-inline std::ostream& operator<<(std::ostream& os, offset_reset_policy p) {
+inline constexpr std::string_view format_as(offset_reset_policy p) {
     switch (p) {
     case offset_reset_policy::earliest:
-        return os << "earliest";
+        return "earliest";
     case offset_reset_policy::latest:
-        return os << "latest";
+        return "latest";
     }
+}
+inline std::ostream& operator<<(std::ostream& os, offset_reset_policy p) {
+    return os << format_as(p);
 }
 
 template<typename T>

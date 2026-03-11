@@ -15,73 +15,57 @@
 namespace cloud_roles {
 
 std::ostream& operator<<(std::ostream& os, api_request_error_kind kind) {
-    switch (kind) {
-    case api_request_error_kind::failed_abort:
-        return os << "failed_abort";
-    case api_request_error_kind::failed_retryable:
-        return os << "failed_retryable";
-    }
+    return os << format_as(kind);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const api_request_error& request_error) {
-    fmt::print(
-      os,
+fmt::iterator api_request_error::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "api_request_error{{reason:{}, error_kind:{}}}",
-      request_error.reason,
-      request_error.error_kind);
-    return os;
+      reason,
+      error_kind);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const malformed_api_response_error& err) {
-    fmt::print(
-      os,
-      "malformed_api_response_error{{missing_fields:{}}}",
-      err.missing_fields);
-    return os;
+fmt::iterator malformed_api_response_error::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "malformed_api_response_error{{missing_fields:{}}}", missing_fields);
 }
 
-std::ostream& operator<<(std::ostream& os, const gcp_credentials& gc) {
-    fmt::print(
-      os, "gcp_credentials{{oauth_token:**{}**}}", gc.oauth_token().size());
-    return os;
+fmt::iterator gcp_credentials::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "gcp_credentials{{oauth_token:**{}**}}", oauth_token().size());
 }
 
-std::ostream& operator<<(std::ostream& os, const aws_credentials& ac) {
-    fmt::print(
-      os,
+fmt::iterator aws_credentials::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "aws_credentials{{access_key_id: **{}**, secret_access_key: **{}**, "
       "session_token: **{}**, region: {}, service: {}}}",
-      ac.access_key_id().size(),
-      ac.secret_access_key().size(),
-      ac.session_token.value_or(session_token{})().size(),
-      ac.region(),
-      ac.service());
-    return os;
+      access_key_id().size(),
+      secret_access_key().size(),
+      session_token.value_or(cloud_roles::session_token{})().size(),
+      region(),
+      service());
 }
 
-std::ostream& operator<<(std::ostream& os, const abs_credentials& ac) {
-    fmt::print(
-      os,
+fmt::iterator abs_credentials::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "abs_credentials{{storage_account: **{}**, shared_key: **{}**}}",
-      ac.storage_account().size(),
-      ac.shared_key().size());
-    return os;
+      storage_account().size(),
+      shared_key().size());
 }
 
-std::ostream& operator<<(std::ostream& os, const abs_oauth_credentials& ac) {
-    fmt::print(
-      os,
+fmt::iterator abs_oauth_credentials::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "abs_oauth_credentials{{oauth_token:**{}**}}",
-      ac.oauth_token().size());
-    return os;
+      oauth_token().size());
 }
 
-std::ostream&
-operator<<(std::ostream& os, const api_response_parse_error& err) {
-    fmt::print(os, "api_response_parse_error{{reason:{}}}", err.reason);
-    return os;
+fmt::iterator api_response_parse_error::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "api_response_parse_error{{reason:{}}}", reason);
 }
 
 // tmp trick to ensure that we are not calling into infinite recursion if

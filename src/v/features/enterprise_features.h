@@ -38,6 +38,7 @@ enum class license_required_feature {
     topic_deletion_disabled,
 };
 
+std::string_view format_as(license_required_feature);
 std::ostream& operator<<(std::ostream&, license_required_feature);
 
 /**

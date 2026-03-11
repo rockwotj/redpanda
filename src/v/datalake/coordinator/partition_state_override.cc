@@ -10,17 +10,16 @@
 
 #include "datalake/coordinator/partition_state_override.h"
 
-#include <fmt/ostream.h>
-
 namespace datalake::coordinator {
 
-std::ostream& operator<<(std::ostream& o, const partition_state_override& p) {
-    if (p.last_committed.has_value()) {
-        fmt::print(o, "{{last_committed: {}}}", p.last_committed.value());
+fmt::iterator
+partition_state_override::format_to(fmt::iterator it) const {
+    if (last_committed.has_value()) {
+        return fmt::format_to(
+          it, "{{last_committed: {}}}", last_committed.value());
     } else {
-        fmt::print(o, "{{last_committed: nullopt}}");
+        return fmt::format_to(it, "{{last_committed: nullopt}}");
     }
-    return o;
 }
 
 } // namespace datalake::coordinator

@@ -65,14 +65,13 @@ bool datalake_throttle_manager::needs_throttling() const {
                 > ratio.value() * _disk_space_info->total;
 }
 
-std::ostream&
-operator<<(std::ostream& o, const datalake_throttle_manager::status& s) {
-    fmt::print(
-      o,
+fmt::iterator
+datalake_throttle_manager::status::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{max_shares_assigned: {}, total_translation_backlog: {}}}",
-      s.max_shares_assigned,
-      human::bytes(s.total_translation_backlog));
-    return o;
+      max_shares_assigned,
+      human::bytes(total_translation_backlog));
 }
 
 datalake_throttle_manager::datalake_throttle_manager(

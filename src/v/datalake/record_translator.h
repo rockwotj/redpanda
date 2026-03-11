@@ -32,7 +32,6 @@ public:
         translation_error,
         unexpected_schema,
     };
-    friend std::ostream& operator<<(std::ostream&, const errc&);
 
     virtual record_type build_type(std::optional<resolved_type> val_type) = 0;
     virtual ss::future<checked<iceberg::struct_value, errc>> translate_data(
@@ -47,6 +46,15 @@ public:
       = 0;
     virtual ~record_translator() = default;
 };
+
+inline constexpr std::string_view format_as(record_translator::errc e) {
+    switch (e) {
+    case record_translator::errc::translation_error:
+        return "record_translator::errc::translation_error";
+    case record_translator::errc::unexpected_schema:
+        return "record_translator::errc::unexpected_schema";
+    }
+}
 
 class key_value_translator : public record_translator {
 public:
@@ -102,3 +110,13 @@ private:
 };
 
 } // namespace datalake
+
+template<>
+struct fmt::formatter<datalake::record_translator::errc>
+  : fmt::formatter<std::string_view> {
+    auto
+    format(datalake::record_translator::errc e, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string_view>::format(
+          datalake::format_as(e), ctx);
+    }
+};

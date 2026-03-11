@@ -25,8 +25,11 @@ namespace pp = pandaproxy;
 namespace ppj = pp::json;
 
 namespace pandaproxy::json {
+inline std::string_view format_as(serialization_format fmt) {
+    return name(fmt);
+}
 std::ostream& operator<<(std::ostream& os, serialization_format fmt) {
-    return os << name(fmt);
+    return os << format_as(fmt);
 }
 } // namespace pandaproxy::json
 

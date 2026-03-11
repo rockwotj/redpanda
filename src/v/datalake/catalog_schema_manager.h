@@ -15,6 +15,9 @@
 #include "iceberg/schema.h"
 #include "iceberg/table_identifier.h"
 
+#include <ostream>
+#include <string_view>
+
 namespace features {
 class feature_table;
 }
@@ -32,7 +35,6 @@ public:
         // The system is shutting down.
         shutting_down,
     };
-    friend std::ostream& operator<<(std::ostream&, const errc&);
 
     virtual ss::future<checked<std::nullopt_t, errc>> ensure_table_schema(
       const iceberg::table_identifier&,
@@ -61,6 +63,21 @@ public:
     virtual ss::future<> stop() = 0;
     virtual ~schema_manager() = default;
 };
+
+inline constexpr std::string_view format_as(schema_manager::errc e) {
+    switch (e) {
+    case schema_manager::errc::not_supported:
+        return "schema_manager::errc::not_supported";
+    case schema_manager::errc::failed:
+        return "schema_manager::errc::failed";
+    case schema_manager::errc::shutting_down:
+        return "schema_manager::errc::shutting_down";
+    }
+}
+
+inline std::ostream& operator<<(std::ostream& os, schema_manager::errc e) {
+    return os << format_as(e);
+}
 
 // Used in unit tests
 class simple_schema_manager : public schema_manager {
@@ -126,3 +143,13 @@ private:
 };
 
 } // namespace datalake
+
+template<>
+struct fmt::formatter<datalake::schema_manager::errc>
+  : fmt::formatter<std::string_view> {
+    auto
+    format(datalake::schema_manager::errc e, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string_view>::format(
+          datalake::format_as(e), ctx);
+    }
+};

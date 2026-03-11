@@ -15,6 +15,8 @@
 #include <string_view>
 #include <system_error>
 
+#include <fmt/format.h>
+
 namespace kafka {
 
 enum class error_code : int16_t {
@@ -243,6 +245,9 @@ enum class error_code : int16_t {
 
 std::ostream& operator<<(std::ostream&, error_code);
 std::string_view error_code_to_str(error_code error);
+inline std::string_view format_as(error_code e) {
+    return error_code_to_str(e);
+}
 std::error_code make_error_code(error_code);
 const std::error_category& error_category() noexcept;
 bool is_retriable(error_code);

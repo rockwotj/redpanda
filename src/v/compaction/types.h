@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "compaction/key_offset_map.h"
 #include "model/fundamental.h"
 #include "storage/file_sanitizer_types.h"
@@ -99,7 +100,7 @@ struct compaction_config {
     // abort source for compaction task
     ss::abort_source* asrc;
 
-    friend std::ostream& operator<<(std::ostream&, const compaction_config&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 // POD containing compaction statistics from a `compaction::filter`'s run.
@@ -128,7 +129,7 @@ struct stats {
                || expired_tombstones_discarded > 0;
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const stats& s);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 } // namespace compaction

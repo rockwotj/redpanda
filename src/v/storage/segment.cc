@@ -728,52 +728,59 @@ void segment::advance_stable_offset(size_t filepos) {
     clear_cached_disk_usage();
 }
 
-std::ostream& operator<<(std::ostream& o, const segment::offset_tracker& t) {
-    fmt::print(
-      o,
+fmt::iterator
+segment::offset_tracker::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{term:{}, base_offset:{}, committed_offset:{}, stable_offset:{}, "
       "dirty_offset:{}}}",
-      t.get_term(),
-      t.get_base_offset(),
-      t.get_committed_offset(),
-      t.get_stable_offset(),
-      t.get_dirty_offset());
-    return o;
+      get_term(),
+      get_base_offset(),
+      get_committed_offset(),
+      get_stable_offset(),
+      get_dirty_offset());
 }
 
-std::ostream& operator<<(std::ostream& o, const segment& h) {
-    o << "{offset_tracker:" << h._tracker
-      << ", compacted_segment=" << h.is_compacted_segment()
-      << ", finished_self_compaction=" << h.has_self_compact_timestamp()
-      << ", finished_windowed_compaction=" << h.finished_windowed_compaction()
-      << ", generation=" << h.get_generation_id() << ", reader=";
-    if (h._reader) {
-        o << *h._reader;
+fmt::iterator segment::format_to(fmt::iterator it) const {
+    it = fmt::format_to(
+      it,
+      "{{offset_tracker:{}, compacted_segment={}, "
+      "finished_self_compaction={}, finished_windowed_compaction={}, "
+      "generation={}, reader=",
+      _tracker,
+      is_compacted_segment(),
+      has_self_compact_timestamp(),
+      finished_windowed_compaction(),
+      get_generation_id());
+    if (_reader) {
+        it = fmt::format_to(it, "{}", *_reader);
     } else {
-        o << "nullptr";
+        it = fmt::format_to(it, "nullptr");
     }
-
-    o << ", writer=";
-    if (h.has_appender()) {
-        o << *h._appender;
+    it = fmt::format_to(it, ", writer=");
+    if (has_appender()) {
+        it = fmt::format_to(it, "{}", *_appender);
     } else {
-        o << "nullptr";
+        it = fmt::format_to(it, "nullptr");
     }
-    o << ", cache=";
-    if (h._cache) {
-        o << *h._cache;
+    it = fmt::format_to(it, ", cache=");
+    if (_cache) {
+        it = fmt::format_to(it, "{}", *_cache);
     } else {
-        o << "nullptr";
+        it = fmt::format_to(it, "nullptr");
     }
-    o << ", compaction_index:";
-    if (h._compaction_index) {
-        o << *h._compaction_index;
+    it = fmt::format_to(it, ", compaction_index:");
+    if (_compaction_index) {
+        it = fmt::format_to(it, "{}", *_compaction_index);
     } else {
-        o << "nullopt";
+        it = fmt::format_to(it, "nullopt");
     }
-    return o << ", closed=" << h.is_closed()
-             << ", tombstone=" << h.is_tombstone() << ", index=" << h.index()
-             << "}";
+    return fmt::format_to(
+      it,
+      ", closed={}, tombstone={}, index={}}}",
+      is_closed(),
+      is_tombstone(),
+      index());
 }
 
 template<typename Func>

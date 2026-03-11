@@ -75,7 +75,7 @@ bool group_member::should_keep_alive(
     return false;
 }
 
-std::ostream& operator<<(std::ostream& o, const group_member& m) {
+fmt::iterator group_member::format_to(fmt::iterator it) const {
     auto timer_expires =
       [](const auto& timer) -> std::optional<group_member::duration_type> {
         if (timer.armed()) {
@@ -84,25 +84,24 @@ std::ostream& operator<<(std::ostream& o, const group_member& m) {
         return std::nullopt;
     };
 
-    fmt::print(
-      o,
+    return fmt::format_to(
+      it,
       "id={} group={} group_inst={} proto_type={} assignment_len={} "
       "timeouts={}/{} protocols={} is_new={} joining={} syncing={} "
       "latest_heartbeat={} expires={}",
-      m.id(),
-      m.group_id(),
-      m.group_instance_id(),
-      m.protocol_type(),
-      m.assignment().size(),
-      m.session_timeout(),
-      m.rebalance_timeout(),
-      m._protocols,
-      m._is_new,
-      m.is_joining(),
-      m.is_syncing(),
-      m._latest_heartbeat.time_since_epoch(),
-      timer_expires(m._expire_timer));
-    return o;
+      id(),
+      group_id(),
+      group_instance_id(),
+      protocol_type(),
+      assignment().size(),
+      session_timeout(),
+      rebalance_timeout(),
+      _protocols,
+      _is_new,
+      is_joining(),
+      is_syncing(),
+      _latest_heartbeat.time_since_epoch(),
+      timer_expires(_expire_timer));
 }
 
 described_group_member

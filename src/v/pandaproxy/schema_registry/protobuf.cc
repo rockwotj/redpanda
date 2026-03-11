@@ -625,16 +625,14 @@ bool operator==(
     return lhs.raw() == rhs.raw();
 }
 
-std::ostream&
-operator<<(std::ostream& os, const protobuf_schema_definition& def) {
-    fmt::print(
-      os,
+fmt::iterator protobuf_schema_definition::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "type: {}, definition: {}, references: {}, metadata: {}",
-      to_string_view(def.type()),
-      def.raw(),
-      def.refs(),
-      def.meta());
-    return os;
+      to_string_view(type()),
+      raw(),
+      refs(),
+      meta());
 }
 
 ss::future<protobuf_schema_definition> make_protobuf_schema_definition(

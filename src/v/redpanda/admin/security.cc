@@ -240,25 +240,28 @@ enum class role_errc {
     role_name_conflict = 40902,
 };
 
-// NOTE(oren): bogus -Wunneeded-internal-declaration here from clang-tidy (?)
-std::ostream& operator<<(std::ostream& os, role_errc code) {
+std::string_view format_as(role_errc code) {
     switch (code) {
     case role_errc::malformed_def:
-        return os << "Malformed request";
+        return "Malformed request";
     case role_errc::invalid_name:
-        return os << "Invalid role name";
+        return "Invalid role name";
     case role_errc::unrecognized_field:
-        return os << "Unrecognized field";
+        return "Unrecognized field";
     case role_errc::member_list_conflict:
-        return os << "Conflict between 'add' and 'remove' lists";
+        return "Conflict between 'add' and 'remove' lists";
     case role_errc::role_not_found:
-        return os << "Role not found";
+        return "Role not found";
     case role_errc::role_already_exists:
-        return os << "Role already exists";
+        return "Role already exists";
     case role_errc::role_name_conflict:
-        return os << "Role name conflict";
+        return "Role name conflict";
     }
     __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& os, role_errc code) {
+    return os << format_as(code);
 }
 
 ss::http::reply::status_type role_errc_to_status(role_errc c) {

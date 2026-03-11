@@ -30,55 +30,44 @@
 
 namespace cluster {
 
-std::ostream& operator<<(std::ostream& o, const recovery_stage& s) {
+std::string_view format_as(recovery_stage s) {
     switch (s) {
     case recovery_stage::initialized:
-        o << "recovery_stage::initialized";
-        break;
+        return "recovery_stage::initialized";
     case recovery_stage::starting:
-        o << "recovery_stage::starting";
-        break;
+        return "recovery_stage::starting";
     case recovery_stage::recovered_license:
-        o << "recovery_stage::recovered_license";
-        break;
+        return "recovery_stage::recovered_license";
     case recovery_stage::recovered_cluster_config:
-        o << "recovery_stage::recovered_cluster_config";
-        break;
+        return "recovery_stage::recovered_cluster_config";
     case recovery_stage::recovered_users:
-        o << "recovery_stage::recovered_users";
-        break;
+        return "recovery_stage::recovered_users";
     case recovery_stage::recovered_acls:
-        o << "recovery_stage::recovered_acls";
-        break;
+        return "recovery_stage::recovered_acls";
     case recovery_stage::recovered_remote_topic_data:
-        o << "recovery_stage::recovered_remote_topic_data";
-        break;
+        return "recovery_stage::recovered_remote_topic_data";
     case recovery_stage::recovered_cloud_topics_metastore:
-        o << "recovery_stage::recovered_cloud_topics_metastore";
-        break;
+        return "recovery_stage::recovered_cloud_topics_metastore";
     case recovery_stage::recovered_cloud_topic_data:
-        o << "recovery_stage::recovered_cloud_topic_data";
-        break;
+        return "recovery_stage::recovered_cloud_topic_data";
     case recovery_stage::recovered_topic_data:
-        o << "recovery_stage::recovered_topic_data";
-        break;
+        return "recovery_stage::recovered_topic_data";
     case recovery_stage::recovered_controller_snapshot:
-        o << "recovery_stage::recovered_controller_snapshot";
-        break;
+        return "recovery_stage::recovered_controller_snapshot";
     case recovery_stage::recovered_offsets_topic:
-        o << "recovery_stage::recovered_offsets_topic";
-        break;
+        return "recovery_stage::recovered_offsets_topic";
     case recovery_stage::recovered_tx_coordinator:
-        o << "recovery_stage::recovered_tx_coordinator";
-        break;
+        return "recovery_stage::recovered_tx_coordinator";
     case recovery_stage::complete:
-        o << "recovery_stage::complete";
-        break;
+        return "recovery_stage::complete";
     case recovery_stage::failed:
-        o << "recovery_stage::failed";
-        break;
+        return "recovery_stage::failed";
     }
-    return o;
+    return "unknown";
+}
+
+std::ostream& operator<<(std::ostream& o, const recovery_stage& s) {
+    return o << format_as(s);
 }
 
 kafka_stages::kafka_stages(
@@ -118,223 +107,218 @@ create_partitions_configuration::create_partitions_configuration(
   : tp_ns(std::move(tp_ns))
   , new_total_partition_count(cnt) {}
 
-std::ostream&
-operator<<(std::ostream& o, const update_topic_properties_request& r) {
-    fmt::print(o, "{{updates: {}}}", r.updates);
-    return o;
+fmt::iterator
+update_topic_properties_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{updates: {}}}", updates);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const update_topic_properties_reply& r) {
-    fmt::print(o, "{{results: {}}}", r.results);
-    return o;
+fmt::iterator
+update_topic_properties_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{results: {}}}", results);
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_properties_update& tpu) {
-    fmt::print(
-      o,
+fmt::iterator topic_properties_update::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "tp_ns: {} properties: {} custom_properties: {}",
-      tpu.tp_ns,
-      tpu.properties,
-      tpu.custom_properties);
-    return o;
+      tp_ns,
+      properties,
+      custom_properties);
+}
+
+std::string_view format_as(topic_purge_domain d) {
+    switch (d) {
+    case topic_purge_domain::cloud_storage:
+        return "cloud_storage";
+    case topic_purge_domain::iceberg:
+        return "iceberg";
+    case topic_purge_domain::cloud_topic:
+        return "cloud_topic";
+    }
+    return "unknown";
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_purge_domain& d) {
-    switch (d) {
-    case topic_purge_domain::cloud_storage:
-        return o << "cloud_storage";
-    case topic_purge_domain::iceberg:
-        return o << "iceberg";
-    case topic_purge_domain::cloud_topic:
-        return o << "cloud_topic";
-    }
-    fmt::print(o, "unknown({})", static_cast<int>(d));
-    return o;
+    return o << format_as(d);
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_result& r) {
-    fmt::print(o, "topic: {}, result: {}", r.tp_ns, r.ec);
-    return o;
+fmt::iterator topic_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "topic: {}, result: {}", tp_ns, ec);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const finish_partition_update_request& r) {
-    fmt::print(o, "{{ntp: {}, new_replica_set: {}}}", r.ntp, r.new_replica_set);
-    return o;
+fmt::iterator
+finish_partition_update_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ntp: {}, new_replica_set: {}}}", ntp, new_replica_set);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const finish_partition_update_reply& r) {
-    fmt::print(o, "{{result: {}}}", r.result);
-    return o;
+fmt::iterator
+finish_partition_update_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{result: {}}}", result);
 }
 
-std::ostream& operator<<(std::ostream& o, const configuration_invariants& c) {
-    fmt::print(
-      o,
+fmt::iterator configuration_invariants::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ version: {}, node_id: {}, core_count: {} }}",
-      c.version,
-      c.node_id,
-      c.core_count);
-    return o;
+      version,
+      node_id,
+      core_count);
 }
 
-std::ostream& operator<<(std::ostream& o, const partition_bootstrap_params& p) {
-    fmt::print(
-      o,
+fmt::iterator
+partition_bootstrap_params::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{start_offset: {}, next_offset: {}, initial_term: {}}}",
-      p.start_offset,
-      p.next_offset,
-      p.initial_term);
-    return o;
+      start_offset,
+      next_offset,
+      initial_term);
 }
 
-std::ostream& operator<<(std::ostream& o, const partition_assignment& p_as) {
-    fmt::print(
-      o,
-      "{{ id: {}, group_id: {}, replicas: {} }}",
-      p_as.id,
-      p_as.group,
-      p_as.replicas);
-    return o;
+fmt::iterator partition_assignment::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ id: {}, group_id: {}, replicas: {} }}", id, group, replicas);
 }
 
-std::ostream& operator<<(std::ostream& o, const shard_placement_target& spt) {
-    fmt::print(
-      o,
+fmt::iterator shard_placement_target::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{group: {}, log_revision: {}, shard: {}}}",
-      spt.group,
-      spt.log_revision,
-      spt.shard);
-    return o;
+      group,
+      log_revision,
+      shard);
+}
+
+std::string_view format_as(partition_operation_type tp) {
+    switch (tp) {
+    case partition_operation_type::add:
+        return "addition";
+    case partition_operation_type::remove:
+        return "deletion";
+    case partition_operation_type::reset:
+        return "reset";
+    case partition_operation_type::update:
+        return "update";
+    case partition_operation_type::force_update:
+        return "force_update";
+    case partition_operation_type::finish_update:
+        return "update_finished";
+    case partition_operation_type::update_properties:
+        return "update_properties";
+    case partition_operation_type::add_non_replicable:
+        return "add_non_replicable_addition";
+    case partition_operation_type::del_non_replicable:
+        return "del_non_replicable_deletion";
+    case partition_operation_type::cancel_update:
+        return "cancel_update";
+    case partition_operation_type::force_cancel_update:
+        return "force_abort_update";
+    }
+    __builtin_unreachable();
 }
 
 std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
+    return o << format_as(tp);
+}
+
+std::string_view format_as(topic_table_topic_delta_type tp) {
     switch (tp) {
-    case partition_operation_type::add:
-        return o << "addition";
-    case partition_operation_type::remove:
-        return o << "deletion";
-    case partition_operation_type::reset:
-        return o << "reset";
-    case partition_operation_type::update:
-        return o << "update";
-    case partition_operation_type::force_update:
-        return o << "force_update";
-    case partition_operation_type::finish_update:
-        return o << "update_finished";
-    case partition_operation_type::update_properties:
-        return o << "update_properties";
-    case partition_operation_type::add_non_replicable:
-        return o << "add_non_replicable_addition";
-    case partition_operation_type::del_non_replicable:
-        return o << "del_non_replicable_deletion";
-    case partition_operation_type::cancel_update:
-        return o << "cancel_update";
-    case partition_operation_type::force_cancel_update:
-        return o << "force_abort_update";
+    case topic_table_topic_delta_type::added:
+        return "added";
+    case topic_table_topic_delta_type::removed:
+        return "removed";
+    case topic_table_topic_delta_type::properties_updated:
+        return "properties_updated";
     }
     __builtin_unreachable();
 }
 
 std::ostream&
 operator<<(std::ostream& o, const topic_table_topic_delta_type& tp) {
-    switch (tp) {
-    case topic_table_topic_delta_type::added:
-        return o << "added";
-    case topic_table_topic_delta_type::removed:
-        return o << "removed";
-    case topic_table_topic_delta_type::properties_updated:
-        return o << "properties_updated";
-    }
-    __builtin_unreachable();
+    return o << format_as(tp);
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_table_topic_delta& d) {
-    fmt::print(
-      o,
+fmt::iterator topic_table_topic_delta::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{creation_revision:{}, ns_tp: {}, type: {}, revision: {}}}",
-      d.creation_revision,
-      d.ns_tp,
-      d.type,
-      d.revision);
-    return o;
+      creation_revision,
+      ns_tp,
+      type,
+      revision);
+}
+
+std::string_view format_as(topic_table_ntp_delta_type tp) {
+    switch (tp) {
+    case topic_table_ntp_delta_type::added:
+        return "added";
+    case topic_table_ntp_delta_type::removed:
+        return "removed";
+    case topic_table_ntp_delta_type::replicas_updated:
+        return "replicas_updated";
+    case topic_table_ntp_delta_type::properties_updated:
+        return "properties_updated";
+    case topic_table_ntp_delta_type::disabled_flag_updated:
+        return "disabled_flag_updated";
+    }
+    __builtin_unreachable();
 }
 
 std::ostream&
 operator<<(std::ostream& o, const topic_table_ntp_delta_type& tp) {
-    switch (tp) {
-    case topic_table_ntp_delta_type::added:
-        return o << "added";
-    case topic_table_ntp_delta_type::removed:
-        return o << "removed";
-    case topic_table_ntp_delta_type::replicas_updated:
-        return o << "replicas_updated";
-    case topic_table_ntp_delta_type::properties_updated:
-        return o << "properties_updated";
-    case topic_table_ntp_delta_type::disabled_flag_updated:
-        return o << "disabled_flag_updated";
-    }
-    __builtin_unreachable();
+    return o << format_as(tp);
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_table_ntp_delta& d) {
-    fmt::print(
-      o, "{{ntp: {}, type: {}, revision: {}}}", d.ntp, d.type, d.revision);
-    return o;
+fmt::iterator topic_table_ntp_delta::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ntp: {}, type: {}, revision: {}}}", ntp, type, revision);
 }
 
-std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
-    fmt::print(
-      o,
+fmt::iterator backend_operation::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{partition_assignment: {}, shard: {},  type: {}, "
       "recovery_state: {}}}",
-      op.p_as,
-      op.source_shard,
-      op.type,
-      op.recovery_state);
-    return o;
+      p_as,
+      source_shard,
+      type,
+      recovery_state);
 }
-std::ostream& operator<<(std::ostream& o, const recovery_state& r) {
-    fmt::print(
-      o,
+
+fmt::iterator recovery_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{local_last_offset: {}, local_size: {}, replicas: {}}}",
-      r.local_last_offset,
-      r.local_size,
-      r.replicas);
-    return o;
-}
-std::ostream& operator<<(std::ostream& o, const replica_recovery_state& rrs) {
-    fmt::print(
-      o,
-      "{{last_offset: {}, bytes_left: {}}}",
-      rrs.last_offset,
-      rrs.bytes_left);
-    return o;
+      local_last_offset,
+      local_size,
+      replicas);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const cluster_config_delta_cmd_data& data) {
-    fmt::print(
-      o,
+fmt::iterator replica_recovery_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{last_offset: {}, bytes_left: {}}}", last_offset, bytes_left);
+}
+
+fmt::iterator
+cluster_config_delta_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{cluster_config_delta_cmd_data: {} upserts, {} removes)}}",
-      data.upsert.size(),
-      data.remove.size());
-    return o;
+      upsert.size(),
+      remove.size());
 }
 
-std::ostream& operator<<(std::ostream& o, const config_status& s) {
-    fmt::print(
-      o,
+fmt::iterator config_status::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{cluster_status: node {}, version: {}, restart: {} ({} invalid, {} "
       "unknown)}}",
-      s.node,
-      s.version,
-      s.restart,
-      s.invalid.size(),
-      s.unknown.size());
-    return o;
+      node,
+      version,
+      restart,
+      invalid.size(),
+      unknown.size());
 }
 
 bool config_status::operator==(const config_status& rhs) const {
@@ -343,63 +327,54 @@ bool config_status::operator==(const config_status& rhs) const {
              rhs.node, rhs.version, rhs.restart, rhs.unknown, rhs.invalid);
 }
 
-std::ostream& operator<<(std::ostream& o, const cluster_property_kv& kv) {
-    fmt::print(
-      o, "{{cluster_property_kv: key {}, value: {})}}", kv.key, kv.value);
-    return o;
+fmt::iterator cluster_property_kv::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{cluster_property_kv: key {}, value: {})}}", key, value);
 }
 
-std::ostream& operator<<(std::ostream& o, const config_update_request& crq) {
-    fmt::print(
-      o,
-      "{{config_update_request: upsert {}, remove: {})}}",
-      crq.upsert,
-      crq.remove);
-    return o;
+fmt::iterator config_update_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{config_update_request: upsert {}, remove: {})}}", upsert, remove);
 }
 
-std::ostream& operator<<(std::ostream& o, const config_update_reply& crr) {
-    fmt::print(
-      o,
+fmt::iterator config_update_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{config_update_reply: error {}, latest_version: {})}}",
-      crr.error,
-      crr.latest_version);
-    return o;
+      error,
+      latest_version);
 }
 
-std::ostream& operator<<(std::ostream& o, const hello_request& h) {
-    fmt::print(
-      o, "{{hello_request: peer {}, start_time: {})}}", h.peer, h.start_time);
-    return o;
+fmt::iterator hello_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{hello_request: peer {}, start_time: {})}}", peer, start_time);
 }
 
-std::ostream& operator<<(std::ostream& o, const hello_reply& h) {
-    fmt::print(o, "{{hello_reply: error {}}}", h.error);
-    return o;
+fmt::iterator hello_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{hello_reply: error {}}}", error);
 }
 
-std::ostream& operator<<(std::ostream& o, const create_topics_request& r) {
-    fmt::print(
-      o,
+fmt::iterator create_topics_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{create_topics_request: topics: {} timeout: {}}}",
-      r.topics,
-      r.timeout);
-    return o;
+      topics,
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& o, const create_topics_reply& r) {
-    fmt::print(
-      o,
+fmt::iterator create_topics_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{create_topics_reply: results: {} metadata: {} configs: {}}}",
-      r.results,
-      r.metadata,
-      r.configs);
-    return o;
+      results,
+      metadata,
+      configs);
 }
 
-std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
-    fmt::print(
-      o,
+fmt::iterator
+incremental_topic_updates::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{incremental_topic_custom_updates: compression: {} "
       "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
       "segment_size: {} retention_bytes: {} retention_duration: {} "
@@ -422,43 +397,42 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "iceberg_target_lag_ms: {}, "
       "remote_allow_gaps: {}, "
       "topic_id: {}}}",
-      i.compression,
-      i.cleanup_policy_bitflags,
-      i.compaction_strategy,
-      i.timestamp_type,
-      i.segment_size,
-      i.retention_bytes,
-      i.retention_duration,
-      i.get_shadow_indexing(),
-      i.batch_max_bytes,
-      i.retention_local_target_bytes,
-      i.retention_local_target_ms,
-      i.remote_delete,
-      i.segment_ms,
-      i.record_key_schema_id_validation,
-      i.record_key_schema_id_validation_compat,
-      i.record_key_subject_name_strategy,
-      i.record_key_subject_name_strategy_compat,
-      i.record_value_schema_id_validation,
-      i.record_value_schema_id_validation_compat,
-      i.record_value_subject_name_strategy,
-      i.record_value_subject_name_strategy_compat,
-      i.initial_retention_local_target_bytes,
-      i.initial_retention_local_target_ms,
-      i.write_caching,
-      i.flush_ms,
-      i.flush_bytes,
-      i.iceberg_mode,
-      i.leaders_preference,
-      i.remote_read,
-      i.remote_write,
-      i.iceberg_delete,
-      i.iceberg_partition_spec,
-      i.iceberg_invalid_record_action,
-      i.iceberg_target_lag_ms,
-      i.remote_allow_gaps,
-      i.topic_id);
-    return o;
+      compression,
+      cleanup_policy_bitflags,
+      compaction_strategy,
+      timestamp_type,
+      segment_size,
+      retention_bytes,
+      retention_duration,
+      get_shadow_indexing(),
+      batch_max_bytes,
+      retention_local_target_bytes,
+      retention_local_target_ms,
+      remote_delete,
+      segment_ms,
+      record_key_schema_id_validation,
+      record_key_schema_id_validation_compat,
+      record_key_subject_name_strategy,
+      record_key_subject_name_strategy_compat,
+      record_value_schema_id_validation,
+      record_value_schema_id_validation_compat,
+      record_value_subject_name_strategy,
+      record_value_subject_name_strategy_compat,
+      initial_retention_local_target_bytes,
+      initial_retention_local_target_ms,
+      write_caching,
+      flush_ms,
+      flush_bytes,
+      iceberg_mode,
+      leaders_preference,
+      remote_read,
+      remote_write,
+      iceberg_delete,
+      iceberg_partition_spec,
+      iceberg_invalid_record_action,
+      iceberg_target_lag_ms,
+      remote_allow_gaps,
+      topic_id);
 }
 
 std::istream& operator>>(std::istream& i, replication_factor& cs) {
@@ -479,15 +453,14 @@ replication_factor parsing_replication_factor(const ss::sstring& value) {
     return cluster::replication_factor(raw_value);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
-    fmt::print(
-      o,
+fmt::iterator
+incremental_topic_custom_updates::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{incremental_topic_custom_updates: data_policy: {}, "
       "replication_factor: {}}}",
-      i.data_policy,
-      i.replication_factor);
-    return o;
+      data_policy,
+      replication_factor);
 }
 
 namespace {
@@ -581,273 +554,266 @@ topic_metadata topic_metadata::copy() const {
     return {_fields, _assignments.copy()};
 }
 
-std::ostream& operator<<(std::ostream& o, const reconciliation_status& s) {
+std::string_view format_as(reconciliation_status s) {
     switch (s) {
     case reconciliation_status::done:
-        return o << "done";
+        return "done";
     case reconciliation_status::error:
-        return o << "error";
+        return "error";
     case reconciliation_status::in_progress:
-        return o << "in_progress";
+        return "in_progress";
     }
     __builtin_unreachable();
 }
 
-std::ostream&
-operator<<(std::ostream& o, const ntp_reconciliation_state& state) {
-    fmt::print(
-      o,
+std::ostream& operator<<(std::ostream& o, const reconciliation_status& s) {
+    return o << format_as(s);
+}
+
+fmt::iterator ntp_reconciliation_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ntp: {}, backend_operations: {}, error: {}, status: {}}}",
-      state._ntp,
-      state._backend_operations,
-      state._error,
-      state._status);
-    return o;
+      _ntp,
+      _backend_operations,
+      _error,
+      _status);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const create_partitions_configuration& cfg) {
-    fmt::print(
-      o,
+fmt::iterator
+create_partitions_configuration::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{topic: {}, new total partition count: {}, custom assignments: {}}}",
-      cfg.tp_ns,
-      cfg.new_total_partition_count,
-      cfg.custom_assignments);
-    return o;
+      tp_ns,
+      new_total_partition_count,
+      custom_assignments);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const custom_assignable_topic_configuration& catc) {
-    fmt::print(
-      o,
-      "{{configuration: {}, custom_assignments: {}}}",
-      catc.cfg,
-      catc.custom_assignments);
-    return o;
+fmt::iterator
+custom_assignable_topic_configuration::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{configuration: {}, custom_assignments: {}}}", cfg, custom_assignments);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const custom_partition_assignment& cas) {
-    fmt::print(o, "{{partition_id: {}, replicas: {}}}", cas.id, cas.replicas);
-    return o;
+fmt::iterator custom_partition_assignment::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{partition_id: {}, replicas: {}}}", id, replicas);
 }
 
-std::ostream& operator<<(std::ostream& o, const leader_term& lt) {
-    fmt::print(o, "{{leader: {}, term: {}}}", lt.leader, lt.term);
-    return o;
+fmt::iterator leader_term::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{leader: {}, term: {}}}", leader, term);
+}
+
+std::string_view format_as(partition_move_direction s) {
+    switch (s) {
+    case partition_move_direction::to_node:
+        return "to_node";
+    case partition_move_direction::from_node:
+        return "from_node";
+    case partition_move_direction::all:
+        return "all";
+    }
+    __builtin_unreachable();
 }
 
 std::ostream& operator<<(std::ostream& o, const partition_move_direction& s) {
-    switch (s) {
-    case partition_move_direction::to_node:
-        return o << "to_node";
-    case partition_move_direction::from_node:
-        return o << "from_node";
-    case partition_move_direction::all:
-        return o << "all";
+    return o << format_as(s);
+}
+
+fmt::iterator move_cancellation_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ntp: {}, result: {}}}", ntp, result);
+}
+
+fmt::iterator
+cancel_node_partition_movements_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{node_id: {}, direction: {}}}", node_id, direction);
+}
+
+fmt::iterator
+cancel_partition_movements_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{general_error: {}, partition_results: {}}}",
+      general_error,
+      partition_results);
+}
+
+fmt::iterator feature_action_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{feature_update_request: {}}}", action);
+}
+
+fmt::iterator feature_action_response::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{error: {}}}", error);
+}
+
+fmt::iterator feature_barrier_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{tag: {} peer: {} entered: {}}}", tag, peer, entered);
+}
+
+fmt::iterator feature_barrier_response::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{entered: {} complete: {}}}", entered, complete);
+}
+
+fmt::iterator move_topic_replicas_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{partition: {}, replicas: {}}}", partition, replicas);
+}
+
+fmt::iterator
+force_partition_reconfiguration_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{target replicas: {}}}", replicas);
+}
+
+fmt::iterator
+set_topic_partitions_disabled_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{topic: {}, partition_id: {}, disabled: {}}}",
+      ns_tp,
+      partition_id,
+      disabled);
+}
+
+fmt::iterator
+feature_update_license_update_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{redpanda_license {}}}", redpanda_license);
+}
+
+fmt::iterator config_status_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{status: {}}}", status);
+}
+
+fmt::iterator config_status_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{error: {}}}", error);
+}
+
+fmt::iterator
+configuration_update_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{broker: {} target_node: {}}}", node, target_node);
+}
+
+fmt::iterator
+configuration_update_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{success: {}}}", success);
+}
+
+fmt::iterator broker_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{membership_state: {}, maintenance_state: {}}}",
+      _membership_state,
+      _maintenance_state);
+}
+
+fmt::iterator node_metadata::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{broker: {}, state: {} }}", broker, state);
+}
+
+std::string_view format_as(node_update_type tp) {
+    switch (tp) {
+    case node_update_type::added:
+        return "added";
+    case node_update_type::decommissioned:
+        return "decommissioned";
+    case node_update_type::recommissioned:
+        return "recommissioned";
+    case node_update_type::reallocation_finished:
+        return "reallocation_finished";
+    case node_update_type::removed:
+        return "removed";
+    case node_update_type::interrupted:
+        return "interrupted";
+    }
+    return "unknown";
+}
+
+std::ostream& operator<<(std::ostream& o, const node_update_type& tp) {
+    return o << format_as(tp);
+}
+
+std::string_view format_as(reconfiguration_state update) {
+    switch (update) {
+    case reconfiguration_state::in_progress:
+        return "in_progress";
+    case reconfiguration_state::force_update:
+        return "force_update";
+    case reconfiguration_state::cancelled:
+        return "cancelled";
+    case reconfiguration_state::force_cancelled:
+        return "force_cancelled";
     }
     __builtin_unreachable();
 }
 
-std::ostream& operator<<(std::ostream& o, const move_cancellation_result& r) {
-    fmt::print(o, "{{ntp: {}, result: {}}}", r.ntp, r.result);
-    return o;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const cancel_node_partition_movements_request& r) {
-    fmt::print(o, "{{node_id: {}, direction: {}}}", r.node_id, r.direction);
-    return o;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const cancel_partition_movements_reply& r) {
-    fmt::print(
-      o,
-      "{{general_error: {}, partition_results: {}}}",
-      r.general_error,
-      r.partition_results);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const feature_action_request& far) {
-    fmt::print(o, "{{feature_update_request: {}}}", far.action);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const feature_action_response& far) {
-    fmt::print(o, "{{error: {}}}", far.error);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const feature_barrier_request& fbr) {
-    fmt::print(
-      o, "{{tag: {} peer: {} entered: {}}}", fbr.tag, fbr.peer, fbr.entered);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const feature_barrier_response& fbr) {
-    fmt::print(o, "{{entered: {} complete: {}}}", fbr.entered, fbr.complete);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const move_topic_replicas_data& r) {
-    fmt::print(o, "{{partition: {}, replicas: {}}}", r.partition, r.replicas);
-    return o;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const force_partition_reconfiguration_cmd_data& r) {
-    fmt::print(o, "{{target replicas: {}}}", r.replicas);
-    return o;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const set_topic_partitions_disabled_cmd_data& r) {
-    fmt::print(
-      o,
-      "{{topic: {}, partition_id: {}, disabled: {}}}",
-      r.ns_tp,
-      r.partition_id,
-      r.disabled);
-    return o;
-}
-
-std::ostream& operator<<(
-  std::ostream& o, const feature_update_license_update_cmd_data& fulu) {
-    fmt::print(o, "{{redpanda_license {}}}", fulu.redpanda_license);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const config_status_request& r) {
-    fmt::print(o, "{{status: {}}}", r.status);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const config_status_reply& r) {
-    fmt::print(o, "{{error: {}}}", r.error);
-    return o;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const configuration_update_request& cr) {
-    fmt::print(o, "{{broker: {} target_node: {}}}", cr.node, cr.target_node);
-    return o;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const configuration_update_reply& cr) {
-    fmt::print(o, "{{success: {}}}", cr.success);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const broker_state& state) {
-    fmt::print(
-      o,
-      "{{membership_state: {}, maintenance_state: {}}}",
-      state._membership_state,
-      state._maintenance_state);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const node_metadata& nm) {
-    fmt::print(o, "{{broker: {}, state: {} }}", nm.broker, nm.state);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const node_update_type& tp) {
-    switch (tp) {
-    case node_update_type::added:
-        return o << "added";
-    case node_update_type::decommissioned:
-        return o << "decommissioned";
-    case node_update_type::recommissioned:
-        return o << "recommissioned";
-    case node_update_type::reallocation_finished:
-        return o << "reallocation_finished";
-    case node_update_type::removed:
-        return o << "removed";
-    case node_update_type::interrupted:
-        return o << "interrupted";
-    }
-    return o << "unknown";
-}
-
 std::ostream& operator<<(std::ostream& o, reconfiguration_state update) {
-    switch (update) {
-    case reconfiguration_state::in_progress:
-        return o << "in_progress";
-    case reconfiguration_state::force_update:
-        return o << "force_update";
-    case reconfiguration_state::cancelled:
-        return o << "cancelled";
-    case reconfiguration_state::force_cancelled:
-        return o << "force_cancelled";
+    return o << format_as(update);
+}
+
+std::string_view format_as(cloud_storage_mode mode) {
+    switch (mode) {
+    case cloud_storage_mode::disabled:
+        return "disabled";
+    case cloud_storage_mode::write_only:
+        return "write_only";
+    case cloud_storage_mode::read_only:
+        return "read_only";
+    case cloud_storage_mode::full:
+        return "full";
+    case cloud_storage_mode::read_replica:
+        return "read_replica";
     }
     __builtin_unreachable();
 }
 
 std::ostream& operator<<(std::ostream& o, const cloud_storage_mode& mode) {
-    switch (mode) {
-    case cloud_storage_mode::disabled:
-        return o << "disabled";
-    case cloud_storage_mode::write_only:
-        return o << "write_only";
-    case cloud_storage_mode::read_only:
-        return o << "read_only";
-    case cloud_storage_mode::full:
-        return o << "full";
-    case cloud_storage_mode::read_replica:
-        return o << "read_replica";
-    }
-    __builtin_unreachable();
+    return o << format_as(mode);
 }
 
-std::ostream& operator<<(std::ostream& o, const nt_revision& ntr) {
-    fmt::print(
-      o,
+fmt::iterator nt_revision::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ns: {}, topic: {}, revision: {}}}",
-      ntr.nt.ns,
-      ntr.nt.tp,
-      ntr.initial_revision_id);
-    return o;
+      nt.ns,
+      nt.tp,
+      initial_revision_id);
+}
+
+std::string_view format_as(reconfiguration_policy policy) {
+    switch (policy) {
+    case reconfiguration_policy::full_local_retention:
+        return "full_local_retention";
+    case reconfiguration_policy::target_initial_retention:
+        return "target_initial_retention";
+    case reconfiguration_policy::min_local_retention:
+        return "min_local_retention";
+    }
+    __builtin_unreachable();
 }
 
 std::ostream& operator<<(std::ostream& o, reconfiguration_policy policy) {
-    switch (policy) {
-    case reconfiguration_policy::full_local_retention:
-        return o << "full_local_retention";
-    case reconfiguration_policy::target_initial_retention:
-        return o << "target_initial_retention";
-    case reconfiguration_policy::min_local_retention:
-        return o << "min_local_retention";
-    }
-    __builtin_unreachable();
+    return o << format_as(policy);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const update_partition_replicas_cmd_data& data) {
-    fmt::print(
-      o,
-      "{{ntp: {}, replicas: {} policy: {}}}",
-      data.ntp,
-      data.replicas,
-      data.policy);
-    return o;
+fmt::iterator
+update_partition_replicas_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ntp: {}, replicas: {} policy: {}}}", ntp, replicas, policy);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const topic_disabled_partitions_set& disabled) {
-    if (disabled.partitions) {
-        fmt::print(
-          o,
+fmt::iterator
+topic_disabled_partitions_set::format_to(fmt::iterator it) const {
+    if (partitions) {
+        return fmt::format_to(
+          it,
           "{{partitions: {}}}",
-          std::vector(
-            disabled.partitions->begin(), disabled.partitions->end()));
+          std::vector(partitions->begin(), partitions->end()));
     } else {
-        fmt::print(o, "{{partitions: all}}");
+        return fmt::format_to(it, "{{partitions: all}}");
     }
-    return o;
 }
 
 void topic_disabled_partitions_set::add(model::partition_id id) {
@@ -874,15 +840,14 @@ void topic_disabled_partitions_set::remove(
     partitions->erase(id);
 }
 
-std::ostream& operator<<(std::ostream& o, const ntp_with_majority_loss& entry) {
-    fmt::print(
-      o,
+fmt::iterator ntp_with_majority_loss::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ ntp: {}, topic_revision: {}, replicas: {}, dead nodes: {} }}",
-      entry.ntp,
-      entry.topic_revision,
-      entry.assignment,
-      entry.dead_nodes);
-    return o;
+      ntp,
+      topic_revision,
+      assignment,
+      dead_nodes);
 }
 
 bulk_force_reconfiguration_cmd_data&
@@ -903,11 +868,28 @@ bulk_force_reconfiguration_cmd_data::bulk_force_reconfiguration_cmd_data(
       = other.user_approved_force_recovery_partitions.copy();
 }
 
-std::ostream&
-operator<<(std::ostream& o, const cluster::feature_update_cmd_data& r) {
-    fmt::print(
-      o, "{{logical_version: {}, actions: {}}}", r.logical_version, r.actions);
-    return o;
+fmt::iterator feature_update_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{logical_version: {}, actions: {}}}", logical_version, actions);
+}
+
+fmt::iterator purged_topic_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{topic: {}, timeout: {}, domain: {}}}",
+      topic,
+      timeout.count(),
+      domain);
+}
+
+fmt::iterator purged_topic_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{result: {}}}", result);
+}
+
+fmt::iterator
+set_partition_bootstrap_params_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{tp_ns: {}, partition_params: {}}}", tp_ns, partition_params);
 }
 
 fmt::iterator error_info::format_to(fmt::iterator it) const {

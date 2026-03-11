@@ -140,13 +140,12 @@ response registered_urls::lookup(const request_info& req) const {
     return content_mapping[default_content.data()];
 }
 
-std::ostream& operator<<(std::ostream& os, const response& resp) {
-    fmt::print(
-      os,
+fmt::iterator response::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{status: {}, body: {}}}",
-      static_cast<uint>(resp.status),
-      resp.body);
-    return os;
+      static_cast<uint>(status),
+      body);
 }
 
 } // namespace http_test_utils

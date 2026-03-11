@@ -173,6 +173,7 @@ redpanda_cc_gtest(
         ":codegen_test_redpanda_proto",
         ":test_messages_edition2023_cc_proto",
         ":test_messages_edition2023_redpanda_proto",
+        "//src/v/base",
         "//src/v/serde/protobuf:field_mask",
         "//src/v/test_utils:gtest",
         "@fmt",

@@ -22,7 +22,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/util/defer.hh>
 
-#include <fmt/ostream.h>
+#include <fmt/core.h>
 
 namespace storage {
 
@@ -523,39 +523,45 @@ ss::future<> batch_cache::background_reclaimer::reclaim_loop() {
     co_return;
 }
 
-std::ostream&
-operator<<(std::ostream& os, const batch_cache::reclaim_options& opts) {
-    fmt::print(
-      os,
+fmt::iterator
+batch_cache::reclaim_options::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "growth window {} stable window {} min_size {} max_size {}",
-      opts.growth_window,
-      opts.stable_window,
-      opts.min_size,
-      opts.max_size);
-    return os;
+      growth_window,
+      stable_window,
+      min_size,
+      max_size);
 }
 
-std::ostream& operator<<(std::ostream& o, const batch_cache& b) {
+fmt::iterator batch_cache::format_to(fmt::iterator it) const {
     // NOTE: intrusive list have a O(N) for size.
     // Do _not_ print size of _lru
-    return o << "{is_reclaiming:" << b.is_memory_reclaiming()
-             << ", size_bytes: " << b._size_bytes
-             << ", lru_empty:" << b._lru.empty() << "}";
+    return fmt::format_to(
+      it,
+      "{{is_reclaiming:{}, size_bytes: {}, lru_empty:{}}}",
+      is_memory_reclaiming(),
+      _size_bytes,
+      _lru.empty());
 }
-std::ostream&
-operator<<(std::ostream& o, const batch_cache_index::read_result& c) {
-    o << "{batches:" << c.batches.size() << ", memory_usage:" << c.memory_usage
-      << ", next_batch:" << c.next_batch << ", next_cache_batch:";
-    if (c.next_cached_batch) {
-        o << *c.next_cached_batch;
-    } else {
-        o << "nullopt";
-    }
-    return o << "}";
+
+fmt::iterator
+batch_cache_index::read_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{batches:{}, memory_usage:{}, next_batch:{}, next_cache_batch:{}}}",
+      batches.size(),
+      memory_usage,
+      next_batch,
+      next_cached_batch);
 }
-std::ostream& operator<<(std::ostream& o, const batch_cache_index& c) {
-    return o << "{cache_size=" << c._index.size()
-             << ", dirty tracker: " << c._dirty_tracker << "}";
+
+fmt::iterator batch_cache_index::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{cache_size={}, dirty tracker: {}}}",
+      _index.size(),
+      _dirty_tracker);
 }
 
 } // namespace storage

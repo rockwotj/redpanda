@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
@@ -33,6 +34,7 @@ public:
         explicit operator bool() const {
             return last_offset && truncate_file_pos && last_max_timestamp;
         }
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     const checkpoint& last_checkpoint() const { return _ckpt; }
@@ -43,8 +45,6 @@ public:
 private:
     checkpoint _ckpt;
     segment* _seg;
-
-    friend std::ostream& operator<<(std::ostream&, const checkpoint&);
 };
 
 } // namespace storage

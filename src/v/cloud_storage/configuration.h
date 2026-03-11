@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/configuration.h"
 #include "config/property.h"
@@ -25,7 +26,7 @@ struct configuration {
 
     model::cloud_credentials_source cloud_credentials_source;
 
-    friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
+    fmt::iterator format_to(fmt::iterator) const;
 
     static ss::future<configuration> get_config();
     static ss::future<configuration> get_s3_config();

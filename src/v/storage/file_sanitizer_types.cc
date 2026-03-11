@@ -177,34 +177,24 @@ file_sanitize_config::get_config_for_ntp(const model::ntp& ntp) const {
     return std::nullopt;
 }
 
-std::ostream& operator<<(std::ostream& o, const ntp_sanitizer_config& cfg) {
-    o << "{sanitize_only=" << cfg.sanitize_only
-      << ", failure_injection=" << static_cast<bool>(cfg.finjection_cfg) << "}";
-
-    return o;
+fmt::iterator ntp_sanitizer_config::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{sanitize_only={}, failure_injection={}}}",
+      sanitize_only,
+      static_cast<bool>(finjection_cfg));
 }
 
-std::ostream& operator<<(std::ostream& o, const file_sanitize_config& cfg) {
-    o << "{sanitize_only=" << cfg._sanitize_only
-      << ", ntps_with_failure_injection_count: "
-      << cfg._ntp_failure_configs.size() << "}";
-
-    return o;
+fmt::iterator file_sanitize_config::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{sanitize_only={}, ntps_with_failure_injection_count: {}}}",
+      _sanitize_only,
+      _ntp_failure_configs.size());
 }
 
 std::ostream& operator<<(std::ostream& o, failable_op_type op) {
-    switch (op) {
-    case failable_op_type::write:
-        return o << "write";
-    case failable_op_type::falloc:
-        return o << "falloc";
-    case failable_op_type::flush:
-        return o << "flush";
-    case failable_op_type::truncate:
-        return o << "truncate";
-    case failable_op_type::close:
-        return o << "close";
-    }
+    return o << format_as(op);
 }
 
 std::istream& operator>>(std::istream& i, failable_op_type& op) {

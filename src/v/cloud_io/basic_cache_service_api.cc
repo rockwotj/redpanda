@@ -16,18 +16,7 @@
 namespace cloud_io {
 
 std::ostream& operator<<(std::ostream& o, cache_element_status s) {
-    switch (s) {
-    case cache_element_status::available:
-        o << "cache_element_available";
-        break;
-    case cache_element_status::not_available:
-        o << "cache_element_not_available";
-        break;
-    case cache_element_status::in_progress:
-        o << "cache_element_in_progress";
-        break;
-    }
-    return o;
+    return o << format_as(s);
 }
 
 template<class Clock>

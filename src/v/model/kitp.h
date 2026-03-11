@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -65,12 +66,12 @@ private:
                == std::tie(rhs._id, rhs._tp_view);
     };
 
-    friend inline std::ostream&
-    operator<<(std::ostream& os, const kitp_view& v) {
-        fmt::print(os, "{}, topic_id: {}", v._tp_view, v._id);
-        return os;
+public:
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}, topic_id: {}", _tp_view, _id);
     }
 
+private:
     topic_id _id;
     topic_partition_view _tp_view;
 };
@@ -129,10 +130,12 @@ private:
         return lhs.as_kitp_view() == rhs.as_kitp_view();
     }
 
-    friend inline std::ostream& operator<<(std::ostream& os, const kitp& v) {
-        return os << v.as_kitp_view();
+public:
+    fmt::iterator format_to(fmt::iterator it) const {
+        return as_kitp_view().format_to(it);
     }
 
+private:
     topic_id _id;
 };
 

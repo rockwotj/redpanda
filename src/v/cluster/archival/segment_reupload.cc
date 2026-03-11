@@ -47,88 +47,88 @@ bool eligible_for_compacted_reupload(const storage::segment& s) {
     return s.has_self_compact_timestamp();
 }
 
-std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
+fmt::iterator upload_candidate::format_to(fmt::iterator it) const {
     vassert(
-      c.sources.empty() || c.remote_sources.empty(),
+      sources.empty() || remote_sources.empty(),
       "The upload candidate could have only local or only remote source");
-    if (c.sources.empty() && c.remote_sources.empty()) {
-        s << "{empty}";
-        return s;
+    if (sources.empty() && remote_sources.empty()) {
+        return fmt::format_to(it, "{{empty}}");
     }
 
     std::vector<ss::sstring> source_names;
-    source_names.reserve(std::max(c.sources.size(), c.remote_sources.size()));
-    if (c.remote_sources.empty()) {
+    source_names.reserve(std::max(sources.size(), remote_sources.size()));
+    if (remote_sources.empty()) {
         std::transform(
-          c.sources.begin(),
-          c.sources.end(),
+          sources.begin(),
+          sources.end(),
           std::back_inserter(source_names),
           [](const auto& src) { return src->filename(); });
-    } else if (c.sources.empty()) {
+    } else if (sources.empty()) {
         std::transform(
-          c.remote_sources.begin(),
-          c.remote_sources.end(),
+          remote_sources.begin(),
+          remote_sources.end(),
           std::back_inserter(source_names),
           [](const auto& src) { return src().native(); });
     }
 
-    fmt::print(
-      s,
+    return fmt::format_to(
+      it,
       "{{source segment offsets: {}, exposed_name: {}, starting_offset: {}, "
       "file_offset: {}, content_length: {}, final_offset: {}, "
       "final_file_offset: {}, term: {}, source names: {}}}",
-      c.sources.front()->offsets(),
-      c.exposed_name,
-      c.starting_offset,
-      c.file_offset,
-      c.content_length,
-      c.final_offset,
-      c.final_file_offset,
-      c.term,
+      sources.front()->offsets(),
+      exposed_name,
+      starting_offset,
+      file_offset,
+      content_length,
+      final_offset,
+      final_file_offset,
+      term,
       source_names);
-    return s;
 }
 
-std::ostream& operator<<(std::ostream& s, const segment_collector_stream& c) {
-    if (c.size == 0) {
-        return s << "{empty}";
+fmt::iterator segment_collector_stream::format_to(fmt::iterator it) const {
+    if (size == 0) {
+        return fmt::format_to(it, "{{empty}}");
     }
-    fmt::print(
-      s,
+    return fmt::format_to(
+      it,
       "{{starting_offset: {}, content_length: {}, final_offset: {}, term: {}}}",
-      c.start_offset,
-      c.size,
-      c.end_offset,
-      c.term);
-    return s;
+      start_offset,
+      size,
+      end_offset,
+      term);
+}
+
+std::string_view format_as(candidate_creation_error err) {
+    switch (err) {
+    case candidate_creation_error::no_segments_collected:
+        return "candidate creation error: no segments collected";
+    case candidate_creation_error::begin_offset_seek_error:
+        return "candidate creation error: failed to seek begin offset";
+    case candidate_creation_error::end_offset_seek_error:
+        return "candidate creation error: failed to seek end offset";
+    case candidate_creation_error::offset_inside_batch:
+        return "candidate creation error: offset inside batch";
+    case candidate_creation_error::upload_size_unchanged:
+        return "candidate creation error: size of candidate unchanged";
+    case candidate_creation_error::cannot_replace_manifest_entry:
+        return "candidate creation error: candidate cannot replace manifest entry";
+    case candidate_creation_error::no_segment_for_begin_offset:
+        return "candidate creation error: no segment for begin offset";
+    case candidate_creation_error::missing_ntp_config:
+        return "candidate creation error: missing config for NTP";
+    case candidate_creation_error::failed_to_get_file_range:
+        return "candidate creation error: failed to get file range for candidate";
+    case candidate_creation_error::zero_content_length:
+        return "candidate creation error: candidate has no content";
+    case candidate_creation_error::concurrency_error:
+        return "candidate creation error: collected segments are modified concurrently";
+    }
 }
 
 std::ostream& operator<<(std::ostream& os, candidate_creation_error err) {
-    os << "candidate creation error: ";
-    switch (err) {
-    case candidate_creation_error::no_segments_collected:
-        return os << "no segments collected";
-    case candidate_creation_error::begin_offset_seek_error:
-        return os << "failed to seek begin offset";
-    case candidate_creation_error::end_offset_seek_error:
-        return os << "failed to seek end offset";
-    case candidate_creation_error::offset_inside_batch:
-        return os << "offset inside batch";
-    case candidate_creation_error::upload_size_unchanged:
-        return os << "size of candidate unchanged";
-    case candidate_creation_error::cannot_replace_manifest_entry:
-        return os << "candidate cannot replace manifest entry";
-    case candidate_creation_error::no_segment_for_begin_offset:
-        return os << "no segment for begin offset";
-    case candidate_creation_error::missing_ntp_config:
-        return os << "missing config for NTP";
-    case candidate_creation_error::failed_to_get_file_range:
-        return os << "failed to get file range for candidate";
-    case candidate_creation_error::zero_content_length:
-        return os << "candidate has no content";
-    case candidate_creation_error::concurrency_error:
-        return os << "collected segments are modified concurrently";
-    }
+    return os << format_as(err);
 }
 
 ss::log_level log_level_for_error(const candidate_creation_error& error) {
@@ -149,15 +149,13 @@ ss::log_level log_level_for_error(const candidate_creation_error& error) {
     }
 }
 
-std::ostream&
-operator<<(std::ostream& os, const skip_offset_range& skip_range) {
-    fmt::print(
-      os,
+fmt::iterator skip_offset_range::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "skip_offset_range{{begin: {}, end: {}, error: {}}}",
-      skip_range.begin_offset,
-      skip_range.end_offset,
-      skip_range.reason);
-    return os;
+      begin_offset,
+      end_offset,
+      reason);
 }
 
 segment_collector::segment_collector(

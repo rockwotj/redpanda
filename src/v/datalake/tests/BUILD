@@ -164,6 +164,7 @@ redpanda_cc_gtest(
         ":record_generator",
         ":test_data_writer",
         ":test_utils",
+        "//src/v/base",
         "//src/v/cloud_io:provider",
         "//src/v/container:chunked_circular_buffer",
         "//src/v/datalake:catalog_schema_manager",

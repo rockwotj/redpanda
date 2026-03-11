@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/segment_meta_cstore.h"
@@ -39,8 +40,7 @@ struct partition_manifest_path_components {
     model::partition_id _part;
     model::initial_revision_id _rev;
 
-    friend std::ostream&
-    operator<<(std::ostream& s, const partition_manifest_path_components& c);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 struct segment_name_components {
@@ -49,8 +49,7 @@ struct segment_name_components {
 
     auto operator<=>(const segment_name_components&) const = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const segment_name_components& k);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 std::optional<segment_name_components>
@@ -594,6 +593,8 @@ public:
       scrub_status status,
       anomalies detected);
 
+    fmt::iterator format_to(fmt::iterator) const;
+
 private:
     ss::sstring display_name() const;
     std::optional<kafka::offset> compute_start_kafka_offset_local() const;
@@ -703,7 +704,5 @@ private:
     // skipped by the STM).
     model::offset _applied_offset;
 };
-
-std::ostream& operator<<(std::ostream& o, const partition_manifest& f);
 
 } // namespace cloud_storage

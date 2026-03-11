@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "bytes/iobuf.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
@@ -64,11 +65,11 @@ public:
         return _data == other._data;
     }
 
+    fmt::iterator format_to(fmt::iterator) const;
+
 private:
     std::variant<null_t, bool, int64_t, double, iobuf, json_array, json_object>
       _data;
 };
-
-std::ostream& operator<<(std::ostream&, const value&);
 
 } // namespace serde::json::test::dom

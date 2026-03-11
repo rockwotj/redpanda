@@ -140,25 +140,24 @@ segment_set::upper_bound(model::term_id term) const {
       _handles.cbegin(), _handles.cend(), term, segment_ordering{});
 }
 
-std::ostream& operator<<(std::ostream& o, const segment_set& s) {
-    o << "{size: " << s.size() << ", [";
+fmt::iterator segment_set::format_to(fmt::iterator it) const {
     static constexpr size_t max_to_log = 8;
     static constexpr size_t halved = max_to_log / 2;
-    if (s.size() <= max_to_log) {
-        for (auto& p : s) {
-            o << p;
+    it = fmt::format_to(it, "{{size: {}, [", size());
+    if (size() <= max_to_log) {
+        for (auto& p : *this) {
+            it = fmt::format_to(it, "{}", p);
         }
     } else {
-        for (auto it = s.begin(); it != std::next(s.begin(), halved); ++it) {
-            o << *it;
+        for (auto i = begin(); i != std::next(begin(), halved); ++i) {
+            it = fmt::format_to(it, "{}", *i);
         }
-        o << "...";
-        for (auto it = std::next(s.begin(), s.size() - halved); it != s.end();
-             ++it) {
-            o << *it;
+        it = fmt::format_to(it, "...");
+        for (auto i = std::next(begin(), size() - halved); i != end(); ++i) {
+            it = fmt::format_to(it, "{}", *i);
         }
     }
-    return o << "]}";
+    return fmt::format_to(it, "]}}");
 }
 
 static bool

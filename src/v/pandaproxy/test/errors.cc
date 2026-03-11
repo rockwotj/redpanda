@@ -13,6 +13,7 @@
 
 #include "kafka/protocol/errors.h"
 
+#include "base/format_to.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/json/error.h"
 #include "pandaproxy/parsing/error.h"
@@ -35,9 +36,9 @@ using jec = pandaproxy::json::error_code;
 struct ec_cond {
     std::error_code ec;
     rec cond;
-    friend std::ostream& operator<<(std::ostream& os, const ec_cond& p) {
-        return os << p.ec.message() << ", "
-                  << make_error_condition(p.cond).message();
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it, "{}, {}", ec.message(), make_error_condition(cond).message());
     }
 };
 

@@ -91,18 +91,22 @@ ss::future<iobuf> stream_compressor::uncompress(iobuf io, type t) {
     }
 }
 
-std::ostream& operator<<(std::ostream& os, const type& c) {
+std::string_view format_as(type c) {
     switch (c) {
     case type::gzip:
-        return os << "gzip";
+        return "gzip";
     case type::java_snappy:
-        return os << "java_snappy";
+        return "java_snappy";
     case type::lz4:
-        return os << "lz4";
+        return "lz4";
     case type::zstd:
-        return os << "zstd";
+        return "zstd";
     }
-    return os << "compression::type::unknown(" << std::to_underlying(c) << ")";
+    return "compression::type::unknown";
+}
+
+std::ostream& operator<<(std::ostream& os, const type& c) {
+    return os << format_as(c);
 }
 
 } // namespace compression

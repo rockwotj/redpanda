@@ -136,7 +136,7 @@ public:
         bad_input,
         invalid_config,
     };
-    friend std::ostream& operator<<(std::ostream&, const errc&);
+
     virtual ss::future<checked<type_and_buf, errc>>
     resolve_buf_type(std::optional<iobuf> b) const = 0;
     // TODO(iceberg): This should be it's own interface.
@@ -144,6 +144,19 @@ public:
       resolve_identifier(schema_identifier) const = 0;
     virtual ~type_resolver() = default;
 };
+
+inline constexpr std::string_view format_as(type_resolver::errc e) {
+    switch (e) {
+    case type_resolver::errc::registry_error:
+        return "type_resolver::errc::registry_error";
+    case type_resolver::errc::translation_error:
+        return "type_resolver::errc::translation_error";
+    case type_resolver::errc::bad_input:
+        return "type_resolver::errc::bad_input";
+    case type_resolver::errc::invalid_config:
+        return "type_resolver::errc::invalid_config";
+    }
+}
 
 // binary_type_resolver is the type resolver for the raw key_value mode of
 // iceberg.
@@ -265,3 +278,13 @@ private:
 };
 
 } // namespace datalake
+
+template<>
+struct fmt::formatter<datalake::type_resolver::errc>
+  : fmt::formatter<std::string_view> {
+    auto
+    format(datalake::type_resolver::errc e, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string_view>::format(
+          datalake::format_as(e), ctx);
+    }
+};

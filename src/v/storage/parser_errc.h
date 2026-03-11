@@ -58,8 +58,10 @@ inline std::error_code make_error_code(parser_errc e) noexcept {
     return std::error_code(static_cast<int>(e), error_category());
 }
 
+inline std::string format_as(parser_errc err) { return to_string(err); }
+
 inline std::ostream& operator<<(std::ostream& os, parser_errc err) {
-    return os << to_string(err);
+    return os << format_as(err);
 }
 
 } // namespace storage

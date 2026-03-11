@@ -69,9 +69,12 @@ inline std::error_code make_error_code(error_outcome e) noexcept {
     return {static_cast<int>(e), error_category()};
 }
 
+inline std::string format_as(error_outcome e) {
+    return error_category().message(static_cast<int>(e));
+}
+
 inline std::ostream& operator<<(std::ostream& o, error_outcome e) {
-    o << error_category().message(static_cast<int>(e));
-    return o;
+    return o << format_as(e);
 }
 
 } // namespace cluster::cloud_metadata

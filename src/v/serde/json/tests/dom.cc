@@ -25,50 +25,56 @@ std::string iobuf_as_string(const iobuf& b) {
     return absl::CHexEscape(b.linearize_to_string());
 }
 
-void debug_format_value(std::ostream& os, const value& v, int base_indent = 0) {
-    os << std::string(base_indent, ' ');
+fmt::iterator debug_format_value(
+  fmt::iterator it, const value& v, int base_indent = 0) {
+    it = fmt::format_to(it, "{:>{}}", "", base_indent);
 
     ss::visit(
       v.data(),
-      [&os](const iobuf& v) { os << "string(" << iobuf_as_string(v) << ")"; },
-      [&os, base_indent](const json_object& v) {
-          os << "object(";
+      [&it](const iobuf& v) {
+          it = fmt::format_to(it, "string({})", iobuf_as_string(v));
+      },
+      [&it, base_indent](const json_object& v) {
+          it = fmt::format_to(it, "object(");
           for (const auto& [k, v] : v) {
-              os << "\n"
-                 << std::string(base_indent + 2, ' ') << "key("
-                 << iobuf_as_string(k) << ") :\n";
-              debug_format_value(os, v, base_indent + 4);
+              it = fmt::format_to(
+                it, "\n{:>{}}key({}) :\n", "", base_indent + 2, iobuf_as_string(k));
+              it = debug_format_value(it, v, base_indent + 4);
           }
           if (v.size() == 0) {
-              os << ")";
+              it = fmt::format_to(it, ")");
           } else {
-              os << "\n" << std::string(base_indent, ' ') << ")";
+              it = fmt::format_to(it, "\n{:>{}}", "", base_indent);
+              it = fmt::format_to(it, ")");
           }
       },
-      [&os, base_indent](const json_array& v) {
-          os << "array(";
+      [&it, base_indent](const json_array& v) {
+          it = fmt::format_to(it, "array(");
           for (const auto& v : v) {
-              os << "\n";
-              debug_format_value(os, v, base_indent + 2);
+              it = fmt::format_to(it, "\n");
+              it = debug_format_value(it, v, base_indent + 2);
           }
           if (v.size() == 0) {
-              os << ")";
+              it = fmt::format_to(it, ")");
           } else {
-              os << "\n" << std::string(base_indent, ' ') << ")";
+              it = fmt::format_to(it, "\n{:>{}}", "", base_indent);
+              it = fmt::format_to(it, ")");
           }
       },
-      [&os](const null_t&) { os << "null"; },
-      [&os](bool b) { os << (b ? "true" : "false"); },
-      [&os](int64_t i) { os << "int(" << i << ")"; },
-      [&os](double d) { os << "double(" << fmt::format("{}", d) << ")"; });
+      [&it](const null_t&) { it = fmt::format_to(it, "null"); },
+      [&it](bool b) { it = fmt::format_to(it, "{}", b ? "true" : "false"); },
+      [&it](int64_t i) { it = fmt::format_to(it, "int({})", i); },
+      [&it](double d) { it = fmt::format_to(it, "double({})", d); });
+
+    return it;
 }
 
 } // namespace
 
-std::ostream& operator<<(std::ostream& os, const value& v) {
-    os << "json_value(";
-    debug_format_value(os, v, 0);
-    return os << ")";
+fmt::iterator value::format_to(fmt::iterator it) const {
+    it = fmt::format_to(it, "json_value(");
+    it = debug_format_value(it, *this, 0);
+    return fmt::format_to(it, ")");
 }
 
 } // namespace serde::json::test::dom

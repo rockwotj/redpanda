@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -95,8 +96,7 @@ public:
         // Storage mode for the topic (local, tiered, or cloud)
         model::redpanda_storage_mode storage_mode{default_storage_mode};
 
-        friend std::ostream&
-        operator<<(std::ostream&, const default_overrides&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     ntp_config(model::ntp n, ss::sstring base_dir) noexcept
@@ -512,8 +512,9 @@ private:
     /// _topic_revision in case of recovered topics or read replicas.
     model::initial_revision_id _remote_rev{0};
 
+public:
     // in storage/types.cc
-    friend std::ostream& operator<<(std::ostream&, const ntp_config&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 } // namespace storage

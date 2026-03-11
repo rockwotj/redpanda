@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/node_hash_map.h"
+#include "base/format_to.h"
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
 #include "cluster/notification.h"
@@ -212,8 +213,7 @@ public:
                    || _state == reconfiguration_state::force_update;
         }
 
-        friend std::ostream&
-        operator<<(std::ostream&, const in_progress_update&);
+        fmt::iterator format_to(fmt::iterator) const;
 
     private:
         replicas_t _previous_replicas;
@@ -490,8 +490,7 @@ public:
                           : last_update_finished_revision();
         }
 
-        friend std::ostream&
-        operator<<(std::ostream&, const partition_replicas_view&);
+        fmt::iterator format_to(fmt::iterator) const;
 
         const partition_meta& partition_meta;
         const partition_assignment& assignment;

@@ -19,6 +19,8 @@
 #include "model/fundamental.h"
 #include "utils/retry_chain_node.h"
 
+#include <string_view>
+
 namespace cloud_storage {
 
 enum class topic_mount_result {
@@ -28,10 +30,30 @@ enum class topic_mount_result {
     success
 };
 
+inline constexpr std::string_view format_as(topic_mount_result r) {
+    switch (r) {
+    case topic_mount_result::mount_manifest_does_not_exist:
+        return "{mount_manifest_does_not_exist}";
+    case topic_mount_result::mount_manifest_not_deleted:
+        return "{mount_manifest_not_deleted}";
+    case topic_mount_result::mount_manifest_exists:
+        return "{topic_manifest_exists}";
+    case topic_mount_result::success:
+        return "{success}";
+    }
+}
 std::ostream& operator<<(std::ostream& o, const topic_mount_result& r);
 
 enum class topic_unmount_result { mount_manifest_not_created, success };
 
+inline constexpr std::string_view format_as(topic_unmount_result r) {
+    switch (r) {
+    case topic_unmount_result::mount_manifest_not_created:
+        return "{mount_manifest_not_created}";
+    case topic_unmount_result::success:
+        return "{success}";
+    }
+}
 std::ostream& operator<<(std::ostream& o, const topic_unmount_result& r);
 
 class topic_mount_handler {

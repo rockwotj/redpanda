@@ -229,20 +229,18 @@ private:
     disk_manager& _disk_manager;
 };
 
-std::ostream& operator<<(std::ostream& os, const translation_status& status) {
-    fmt::print(
-      os,
+fmt::iterator translation_status::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{target_lag: {}, next_checkpoint: {}, memory_reserved: {}}}",
-      std::chrono::duration_cast<std::chrono::milliseconds>(status.target_lag),
+      std::chrono::duration_cast<std::chrono::milliseconds>(target_lag),
       std::chrono::duration_cast<std::chrono::milliseconds>(
-        status.next_checkpoint_deadline - clock::now()),
-      status.memory_bytes_reserved);
-    return os;
+        next_checkpoint_deadline - clock::now()),
+      memory_bytes_reserved);
 }
 
-std::ostream& operator<<(std::ostream& os, const translator& t) {
-    fmt::print(os, "{{id: {}, status: {}}}", t.id(), t.status());
-    return os;
+fmt::iterator translator::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{id: {}, status: {}}}", id(), status());
 }
 
 translator_executable::translator_executable(
@@ -271,39 +269,38 @@ translation_status translator_executable::status() const {
     return _translator->status();
 }
 
-std::ostream& operator<<(std::ostream& os, const translator_executable& state) {
+fmt::iterator translator_executable::format_to(fmt::iterator it) const {
     std::optional<std::chrono::milliseconds> current_wait_time;
-    if (state._current_wait_begin_time) {
+    if (_current_wait_begin_time) {
         current_wait_time
           = std::chrono::duration_cast<std::chrono::milliseconds>(
-            clock::now() - state._current_wait_begin_time.value());
+            clock::now() - _current_wait_begin_time.value());
     }
     std::optional<std::chrono::milliseconds> current_running_time;
-    if (state._current_running_begin_time) {
+    if (_current_running_begin_time) {
         current_running_time
           = std::chrono::duration_cast<std::chrono::milliseconds>(
-            clock::now() - state._current_running_begin_time.value());
+            clock::now() - _current_running_begin_time.value());
     }
-    fmt::print(
-      os,
+    return fmt::format_to(
+      it,
       "{{translator: {}, time_since_start: {}, current_wait_time: {}, "
       "total_wait_time: {}, current_running_time: {}, total_running_time: {},  "
       "translations_scheduled: {}, stop_in_progress: {}, "
       "running: {}, waiting: {}}}",
-      *state._translator,
+      *_translator,
       std::chrono::duration_cast<std::chrono::milliseconds>(
-        clock::now() - state._start_time),
+        clock::now() - _start_time),
       current_wait_time,
       std::chrono::duration_cast<std::chrono::milliseconds>(
-        state.total_wait_time()),
+        total_wait_time()),
       current_running_time,
       std::chrono::duration_cast<std::chrono::milliseconds>(
-        state.total_running_time()),
-      state._translations_scheduled,
-      state._stop_in_progress,
-      state._running_hook.is_linked(),
-      state._waiting_hook.is_linked());
-    return os;
+        total_running_time()),
+      _translations_scheduled,
+      _stop_in_progress,
+      _running_hook.is_linked(),
+      _waiting_hook.is_linked());
 }
 
 clock::duration translator_executable::total_running_time() const {

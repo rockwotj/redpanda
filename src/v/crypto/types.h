@@ -19,12 +19,15 @@
 
 namespace crypto {
 enum class digest_type { MD5, SHA256, SHA512 };
+std::string_view format_as(digest_type);
 std::ostream& operator<<(std::ostream&, digest_type);
 
 enum class key_type { RSA };
+std::string_view format_as(key_type);
 std::ostream& operator<<(std::ostream&, key_type);
 
 enum class format_type { PEM, DER };
+std::string_view format_as(format_type);
 std::ostream& operator<<(std::ostream&, format_type);
 
 using is_private_key_t = ss::bool_class<struct is_private_key_tag>;

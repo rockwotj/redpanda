@@ -18,17 +18,16 @@
 
 namespace datalake {
 
-std::ostream&
-operator<<(std::ostream& o, const partitioning_writer::partitioned_file& f) {
-    fmt::print(
-      o,
+fmt::iterator
+partitioning_writer::partitioned_file::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{local_file: {}, schema_id: {}, partition_spec_id: {}, "
       "partition_key: {}}}",
-      f.local_file,
-      f.schema_id,
-      f.partition_spec_id,
-      f.partition_key.val);
-    return o;
+      local_file,
+      schema_id,
+      partition_spec_id,
+      partition_key.val);
 }
 
 ss::future<> partitioning_writer::flush() {

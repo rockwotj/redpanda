@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "utils/named_type.h"
@@ -62,8 +63,7 @@ struct client_quota_limits {
     friend bool
     operator==(const client_quota_limits&, const client_quota_limits&)
       = default;
-    friend std::ostream&
-    operator<<(std::ostream& os, const client_quota_limits& l);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 enum class client_quota_type {
@@ -77,15 +77,24 @@ inline constexpr std::array all_client_quota_types = {
   client_quota_type::fetch_quota,
   client_quota_type::partition_mutation_quota};
 
+inline constexpr std::string_view format_as(client_quota_type qt) {
+    switch (qt) {
+    case client_quota_type::produce_quota:
+        return "produce_quota";
+    case client_quota_type::fetch_quota:
+        return "fetch_quota";
+    case client_quota_type::partition_mutation_quota:
+        return "partition_mutation_quota";
+    }
+}
 std::ostream& operator<<(std::ostream&, client_quota_type);
 
 struct client_quota_request_ctx {
     client_quota_type q_type;
     std::optional<std::string_view> user;
     std::optional<std::string_view> client_id;
+    fmt::iterator format_to(fmt::iterator) const;
 };
-
-std::ostream& operator<<(std::ostream&, const client_quota_request_ctx&);
 
 /// client_quota_rule is used for reporting metrics to show which type of rule
 /// is being used for limiting clients
@@ -118,14 +127,41 @@ inline constexpr std::array all_client_quota_rules = {
   client_quota_rule::kafka_user_client_prefix,
   client_quota_rule::kafka_user_client_id};
 
+inline constexpr std::string_view format_as(client_quota_rule r) {
+    switch (r) {
+    case client_quota_rule::not_applicable:
+        return "not_applicable";
+    case client_quota_rule::kafka_client_default:
+        return "kafka_client_default";
+    case client_quota_rule::kafka_client_prefix:
+        return "kafka_client_prefix";
+    case client_quota_rule::kafka_client_id:
+        return "kafka_client_id";
+    case client_quota_rule::kafka_user_default:
+        return "kafka_user_default";
+    case client_quota_rule::kafka_user_default_client_default:
+        return "kafka_user_default_client_default";
+    case client_quota_rule::kafka_user_default_client_prefix:
+        return "kafka_user_default_client_prefix";
+    case client_quota_rule::kafka_user_default_client_id:
+        return "kafka_user_default_client_id";
+    case client_quota_rule::kafka_user:
+        return "kafka_user";
+    case client_quota_rule::kafka_user_client_default:
+        return "kafka_user_client_default";
+    case client_quota_rule::kafka_user_client_prefix:
+        return "kafka_user_client_prefix";
+    case client_quota_rule::kafka_user_client_id:
+        return "kafka_user_client_id";
+    }
+}
 std::ostream& operator<<(std::ostream&, client_quota_rule);
 
 struct client_quota_value {
     std::optional<uint64_t> limit;
     client_quota_rule rule;
+    fmt::iterator format_to(fmt::iterator) const;
 };
-
-std::ostream& operator<<(std::ostream&, client_quota_value);
 
 /// client_quota_translator is responsible for providing quota_manager with a
 /// simplified interface to the quota configurations

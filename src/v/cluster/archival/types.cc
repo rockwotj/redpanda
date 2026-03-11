@@ -39,18 +39,17 @@ operator<<(std::ostream& o, const std::optional<segment_time_limit>& tl) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
-    fmt::print(
-      o,
+fmt::iterator configuration::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{bucket_name: {}, initial_backoff: {}, "
       "segment_upload_timeout: {}, "
       "manifest_upload_timeout: {}, time_limit: {}}}",
-      cfg.bucket_name,
-      cfg.cloud_storage_initial_backoff(),
-      cfg.segment_upload_timeout(),
-      cfg.manifest_upload_timeout(),
-      cfg.time_limit);
-    return o;
+      bucket_name,
+      cloud_storage_initial_backoff(),
+      segment_upload_timeout(),
+      manifest_upload_timeout(),
+      time_limit);
 }
 
 static ss::sstring get_value_or_throw(

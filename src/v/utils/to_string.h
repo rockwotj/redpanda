@@ -130,6 +130,18 @@ std::ostream& operator<<(std::ostream& o, const absl::btree_set<K>& s) {
 
 } // namespace absl
 
+template<typename T>
+struct fmt::formatter<std::optional<T>> : fmt::formatter<T> {
+    template<typename FormatContext>
+    auto format(const std::optional<T>& opt, FormatContext& ctx) const
+      -> decltype(ctx.out()) {
+        if (opt) {
+            return fmt::formatter<T>::format(*opt, ctx);
+        }
+        return fmt::format_to(ctx.out(), "nullopt");
+    }
+};
+
 template<>
 struct fmt::formatter<absl::Time> {
     constexpr format_parse_context::iterator parse(format_parse_context& ctx) {

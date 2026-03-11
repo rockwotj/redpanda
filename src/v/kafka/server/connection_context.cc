@@ -1231,13 +1231,12 @@ ss::future<> connection_context::client_protocol_state::maybe_process_responses(
     });
 }
 
-std::ostream& operator<<(std::ostream& o, const virtual_connection_id& id) {
-    fmt::print(
-      o,
+fmt::iterator virtual_connection_id::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{virtual_cluster_id: {}, connection_id: {}}}",
-      id.virtual_cluster_id,
-      id.connection_id);
-    return o;
+      virtual_cluster_id,
+      connection_id);
 }
 
 void last_value::update(std::optional<std::string_view> new_value) {

@@ -13,6 +13,7 @@
 
 #include "absl/container/btree_map.h"
 #include "absl/container/flat_hash_map.h"
+#include "base/format_to.h"
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "container/chunked_hash_map.h"
@@ -166,7 +167,8 @@ private:
     uint32_t _client_correlation_errors = 0;
     uint32_t _requests_blocked_memory = 0;
 
-    friend std::ostream& operator<<(std::ostream& o, const client_probe& p);
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**
@@ -296,9 +298,10 @@ private:
     friend class ::rpc_integration_fixture_oc_ns_adl_only_no_upgrade;
     void set_version(transport_version v) { _version = v; }
 
-    friend std::ostream& operator<<(std::ostream&, const transport&);
-
     std::unique_ptr<client_probe> _probe;
+
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 namespace internal {

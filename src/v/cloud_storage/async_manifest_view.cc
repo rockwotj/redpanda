@@ -104,21 +104,7 @@ contains(const partition_manifest& m, const async_view_search_query_t& query) {
 }
 
 std::ostream& operator<<(std::ostream& o, async_manifest_view_cursor_status s) {
-    switch (s) {
-    case async_manifest_view_cursor_status::empty:
-        fmt::print(o, "empty");
-        break;
-    case async_manifest_view_cursor_status::evicted:
-        fmt::print(o, "evicted");
-        break;
-    case async_manifest_view_cursor_status::materialized_stm:
-        fmt::print(o, "materialized_stm");
-        break;
-    case async_manifest_view_cursor_status::materialized_spillover:
-        fmt::print(o, "materialized_spillover");
-        break;
-    }
-    return o;
+    return o << format_as(s);
 }
 
 async_manifest_view_cursor::async_manifest_view_cursor(

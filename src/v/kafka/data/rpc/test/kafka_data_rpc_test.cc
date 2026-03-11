@@ -37,10 +37,12 @@ struct test_parameters {
     model::node_id leader_node;
     model::node_id non_leader_node;
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const test_parameters& tp) {
-        return os << "{leader_node: " << tp.leader_node
-                  << " non_leader_node: " << tp.non_leader_node << "}";
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "{{leader_node: {} non_leader_node: {}}}",
+          leader_node,
+          non_leader_node);
     }
 };
 

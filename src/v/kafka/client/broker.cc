@@ -578,9 +578,8 @@ api_version remote_broker::get_sasl_handshake_request_version() const {
       _node_id, _supported_versions);
 }
 
-std::ostream& operator<<(std::ostream& os, const api_version_range& r) {
-    fmt::print(os, "{{min: {}, max: {}}}", r.min, r.max);
-    return os;
+fmt::iterator api_version_range::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{min: {}, max: {}}}", min, max);
 }
 
 } // namespace kafka::client

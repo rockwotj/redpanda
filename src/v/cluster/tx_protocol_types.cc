@@ -15,275 +15,248 @@
 #include <fmt/format.h>
 namespace cluster {
 
-std::ostream& operator<<(std::ostream& o, const commit_tx_request& r) {
-    fmt::print(
-      o,
+fmt::iterator commit_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ntp {} pid {} tx_seq {} timeout {}}}",
-      r.ntp,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
+      ntp,
+      pid,
+      tx_seq,
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& o, const commit_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
+fmt::iterator commit_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ec {}}}", ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const abort_tx_request& r) {
-    fmt::print(
-      o,
+fmt::iterator abort_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ntp {} pid {} tx_seq {} timeout {}}}",
-      r.ntp,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
+      ntp,
+      pid,
+      tx_seq,
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& o, const abort_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
+fmt::iterator abort_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ec {}}}", ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const begin_group_tx_request& r) {
-    fmt::print(
-      o,
+fmt::iterator begin_group_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ntp {} group_id {} pid {} tx_seq {} timeout {} tm_partition: {}}}",
-      r.ntp,
-      r.group_id,
-      r.pid,
-      r.tx_seq,
-      r.timeout,
-      r.tm_partition);
-    return o;
+      ntp,
+      group_id,
+      pid,
+      tx_seq,
+      timeout,
+      tm_partition);
 }
 
-std::ostream& operator<<(std::ostream& o, const begin_group_tx_reply& r) {
-    fmt::print(o, "{{etag {} ec {}}}", r.etag, r.ec);
-    return o;
+fmt::iterator begin_group_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{etag {} ec {}}}", etag, ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const prepare_group_tx_request& r) {
-    fmt::print(
-      o,
+fmt::iterator prepare_group_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ntp {} group_id {} etag {} pid {} tx_seq {} timeout {}}}",
-      r.ntp,
-      r.group_id,
-      r.etag,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
+      ntp,
+      group_id,
+      etag,
+      pid,
+      tx_seq,
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& o, const prepare_group_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
+fmt::iterator prepare_group_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ec {}}}", ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const commit_group_tx_request& r) {
-    fmt::print(
-      o,
+fmt::iterator commit_group_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ntp {} pid {} tx_seq {} group_id {} timeout {}}}",
-      r.ntp,
-      r.pid,
-      r.tx_seq,
-      r.group_id,
-      r.timeout);
-    return o;
+      ntp,
+      pid,
+      tx_seq,
+      group_id,
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& o, const commit_group_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
+fmt::iterator commit_group_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ec {}}}", ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const abort_group_tx_request& r) {
-    fmt::print(
-      o,
+fmt::iterator abort_group_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ntp {} pid {} tx_seq {} group_id {} timeout {}}}",
-      r.ntp,
-      r.pid,
-      r.tx_seq,
-      r.group_id,
-      r.timeout);
-    return o;
+      ntp,
+      pid,
+      tx_seq,
+      group_id,
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& o, const abort_group_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
+fmt::iterator abort_group_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ec {}}}", ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const find_coordinator_request& r) {
-    fmt::print(o, "{{tid {}}}", r.tid);
-    return o;
+fmt::iterator find_coordinator_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{tid {}}}", tid);
 }
 
-std::ostream& operator<<(std::ostream& o, const find_coordinator_reply& r) {
-    fmt::print(
-      o, "{{coordinator {} ntp {} ec {}}}", r.coordinator, r.ntp, r.ec);
-    return o;
+fmt::iterator find_coordinator_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{coordinator {} ntp {} ec {}}}", coordinator, ntp, ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const fetch_tx_reply& r) {
-    fmt::print(
-      o,
+fmt::iterator fetch_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{tx_id: {}, term: {}, tm: {}}}", tx_id, term, tm);
+}
+
+fmt::iterator fetch_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ec: {}, pid: {}, last_pid: {}, tx_seq: {}, timeout_ms: {}, status: "
       "{}, partitions: {}, groups: {}}}",
-      r.ec,
-      r.pid,
-      r.last_pid,
-      r.tx_seq,
-      r.timeout_ms.count(),
-      static_cast<int32_t>(r.status),
-      r.partitions,
-      r.groups);
-    return o;
+      ec,
+      pid,
+      last_pid,
+      tx_seq,
+      timeout_ms.count(),
+      static_cast<int32_t>(status),
+      partitions,
+      groups);
 }
 
-std::ostream& operator<<(std::ostream& o, const fetch_tx_reply::tx_group& g) {
-    fmt::print(o, "{{etag: {}, group_id: {}}}", g.etag, g.group_id);
-    return o;
+fmt::iterator fetch_tx_reply::tx_group::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{etag: {}, group_id: {}}}", etag, group_id);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const fetch_tx_reply::tx_partition& p) {
-    fmt::print(
-      o,
-      "{{etag: {}, ntp: {}, revision: {}}}",
-      p.etag,
-      p.ntp,
-      p.topic_revision);
-
-    return o;
+fmt::iterator
+fetch_tx_reply::tx_partition::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{etag: {}, ntp: {}, revision: {}}}", etag, ntp, topic_revision);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const add_partitions_tx_request::topic& t) {
-    fmt::print(o, "{{topic: {}, partitions: {}}}", t.name, t.partitions);
-    return o;
+fmt::iterator
+add_partitions_tx_request::topic::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{topic: {}, partitions: {}}}", name, partitions);
 }
 
-std::ostream& operator<<(std::ostream& o, const begin_tx_request& r) {
-    fmt::print(
-      o,
+fmt::iterator begin_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ ntp: {}, pid: {}, tx_seq: {}, tm_partition: {}}}",
-      r.ntp,
-      r.pid,
-      r.tx_seq,
-      r.tm_partition);
-    return o;
+      ntp,
+      pid,
+      tx_seq,
+      tm_partition);
 }
 
-std::ostream& operator<<(std::ostream& o, const begin_tx_reply& r) {
-    fmt::print(o, "{{ ntp: {}, etag: {}, ec: {} }}", r.ntp, r.etag, r.ec);
-    return o;
+fmt::iterator begin_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ ntp: {}, etag: {}, ec: {} }}", ntp, etag, ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const prepare_tx_request& r) {
-    fmt::print(
-      o,
+fmt::iterator prepare_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ ntp: {}, etag: {}, tm: {}, pid: {}, tx_seq: {}, timeout: {} }}",
-      r.ntp,
-      r.etag,
-      r.tm,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
+      ntp,
+      etag,
+      tm,
+      pid,
+      tx_seq,
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& o, const prepare_tx_reply& r) {
-    fmt::print(o, "{{ ec: {} }}", r.ec);
-    return o;
+fmt::iterator prepare_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ ec: {} }}", ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const init_tm_tx_request& r) {
-    fmt::print(
-      o,
+fmt::iterator init_tm_tx_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ tx_id: {}, transaction_timeout_ms: {}, timeout: {} }}",
-      r.tx_id,
-      r.transaction_timeout_ms,
-      r.timeout);
-    return o;
+      tx_id,
+      transaction_timeout_ms,
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& o, const init_tm_tx_reply& r) {
-    fmt::print(o, "{{ pid: {}, ec: {} }}", r.pid, r.ec);
-    return o;
+fmt::iterator init_tm_tx_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ pid: {}, ec: {} }}", pid, ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const try_abort_request& r) {
-    fmt::print(
-      o,
+fmt::iterator try_abort_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ tm: {}, pid: {}, tx_seq: {}, timeout: {} }}",
-      r.tm,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
+      tm,
+      pid,
+      tx_seq,
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& o, const try_abort_reply& r) {
-    fmt::print(
-      o,
+fmt::iterator try_abort_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ commited: {}, aborted: {}, ec: {} }}",
-      bool(r.commited),
-      bool(r.aborted),
-      r.ec);
-    return o;
+      bool(commited),
+      bool(aborted),
+      ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const idempotent_request_info& info) {
-    fmt::print(
-      o,
+fmt::iterator
+idempotent_request_info::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ first: {}, last: {}, term: {} }}",
-      info.first_sequence,
-      info.last_sequence,
-      info.term);
-    return o;
+      first_sequence,
+      last_sequence,
+      term);
 }
 
-std::ostream& operator<<(std::ostream& o, const producer_state_info& info) {
-    fmt::print(
-      o,
+fmt::iterator producer_state_info::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ pid: {}, inflight_requests: {}, finished: {}, begin offset: {}, end "
       "offset: {}, sequence: {}, timeout: "
       "{}, coordinator: {}, last_update: {}, group: {} }}",
-      info.pid,
-      info.inflight_requests,
-      info.finished_requests,
-      info.tx_begin_offset,
-      info.tx_end_offset,
-      info.tx_seq,
-      info.tx_timeout,
-      info.coordinator_partition,
-      info.last_update,
-      info.group_id);
-    return o;
+      pid,
+      inflight_requests,
+      finished_requests,
+      tx_begin_offset,
+      tx_end_offset,
+      tx_seq,
+      tx_timeout,
+      coordinator_partition,
+      last_update,
+      group_id);
 }
 
-std::ostream& operator<<(std::ostream& o, const get_producers_reply& r) {
-    fmt::print(
-      o,
+fmt::iterator get_producers_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ ec: {}, producers: {} , count: {} }}",
-      r.error_code,
-      r.producers,
-      r.producer_count);
-    return o;
+      error_code,
+      producers,
+      producer_count);
 }
 
-std::ostream& operator<<(std::ostream& o, const get_producers_request& r) {
-    fmt::print(
-      o,
+fmt::iterator get_producers_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ ntp: {} timeout: {}, max_producers_to_include: {} }}",
-      r.ntp,
-      r.timeout,
-      r.max_producers_to_include);
-    return o;
+      ntp,
+      timeout,
+      max_producers_to_include);
 }
 
 } // namespace cluster

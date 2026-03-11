@@ -23,6 +23,7 @@
  * the License.
  */
 
+#include "base/format_to.h"
 #include "random/generators.h"
 #include "serde/json/detail/numeric.h"
 
@@ -53,28 +54,31 @@ struct test_case {
         };
     }
 
+    fmt::iterator format_to(fmt::iterator it) const {
+        it = fmt::format_to(
+          it,
+          "input: {}, expected_err: {}, expected_pos: {}",
+          input,
+          static_cast<int>(expected_err),
+          expected_pos);
+
+        ss::visit(expected_output, [&it](const auto& v) {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (std::is_same_v<T, int64_t>) {
+                it = fmt::format_to(it, ", expected_output: {}", v);
+            } else if constexpr (std::is_same_v<T, double>) {
+                it = fmt::format_to(it, ", expected_output: {}", v);
+            }
+        });
+
+        return it;
+    }
+
     std::string_view input;
     numeric_parser::result expected_err;
     size_t expected_pos;
     std::variant<std::monostate, int64_t, double> expected_output;
 };
-
-std::ostream& operator<<(std::ostream& os, const test_case& tc) {
-    os << "input: " << tc.input
-       << ", expected_err: " << static_cast<int>(tc.expected_err)
-       << ", expected_pos: " << tc.expected_pos;
-
-    ss::visit(tc.expected_output, [&os](const auto& v) {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, int64_t>) {
-            os << ", expected_output: " << v;
-        } else if constexpr (std::is_same_v<T, double>) {
-            os << ", expected_output: " << v;
-        }
-    });
-
-    return os;
-}
 
 class numeric_parse_test : public testing::TestWithParam<test_case> {};
 

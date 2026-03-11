@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 
 #include "base/seastarx.h"
 #include "kafka/protocol/schemata/api_versions_request.h"
@@ -31,10 +32,8 @@ struct api_versions_request final {
     void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const api_versions_request& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 
@@ -50,10 +49,8 @@ struct api_versions_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const api_versions_response& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 

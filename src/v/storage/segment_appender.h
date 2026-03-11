@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "bytes/bytes.h"
 #include "container/chunked_vector.h"
@@ -220,9 +221,8 @@ private:
         size_t offset;
         ss::promise<> p;
 
-        friend std::ostream& operator<<(std::ostream& s, const flush_op& op) {
-            fmt::print(s, "{{offset: {}}}", op.offset);
-            return s;
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(it, "{{offset: {}}}", offset);
         }
     };
 
@@ -319,11 +319,8 @@ private:
             return committed_offset % alignment == 0;
         }
 
-        friend std::ostream&
-        operator<<(std::ostream& s, const inflight_write& op);
+        fmt::iterator format_to(fmt::iterator) const;
     };
-
-    friend std::ostream& operator<<(std::ostream& s, const inflight_write& op);
 
     ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
     // A gauge of the current number of oustanding dispatched writes, equal to

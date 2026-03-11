@@ -660,25 +660,29 @@ tx_manager_migrator::copy_from_temporary_to_tx_manager_topic(
 
 ss::future<> tx_manager_migrator::stop() { return ss::now(); }
 
-std::ostream&
-operator<<(std::ostream& o, tx_manager_migrator::migration_step step) {
+std::string_view format_as(tx_manager_migrator::migration_step step) {
     switch (step) {
     case tx_manager_migrator::migration_step::create_new_temp_topic:
-        return o << "create_new_temp_topic";
+        return "create_new_temp_topic";
     case tx_manager_migrator::migration_step::rehash_tx_manager_topic:
-        return o << "rehash_tx_manager_topic";
+        return "rehash_tx_manager_topic";
     case tx_manager_migrator::migration_step::delete_old_tx_manager_topic:
-        return o << "delete_old_tx_manager_topic";
+        return "delete_old_tx_manager_topic";
     case tx_manager_migrator::migration_step::create_new_tx_manager_topic:
-        return o << "create_new_tx_manager_topic";
+        return "create_new_tx_manager_topic";
     case tx_manager_migrator::migration_step::copy_temp_to_new_tx_manger:
-        return o << "copy_temp_to_new_tx_manger";
+        return "copy_temp_to_new_tx_manger";
     case tx_manager_migrator::migration_step::delete_temp_topic:
-        return o << "delete_temp_topic";
+        return "delete_temp_topic";
     case tx_manager_migrator::migration_step::finished:
-        return o << "finished";
+        return "finished";
     }
     __builtin_unreachable();
+}
+
+std::ostream&
+operator<<(std::ostream& o, tx_manager_migrator::migration_step step) {
+    return o << format_as(step);
 }
 
 } // namespace cluster

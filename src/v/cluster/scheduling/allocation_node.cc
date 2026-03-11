@@ -11,6 +11,7 @@
 
 #include "cluster/scheduling/allocation_node.h"
 
+#include "base/format_to.h"
 #include "cluster/logger.h"
 
 #include <fmt/ranges.h>
@@ -138,33 +139,24 @@ void allocation_node::update_core_count(uint32_t core_count) {
 }
 
 std::ostream& operator<<(std::ostream& o, allocation_node::state s) {
-    switch (s) {
-    case allocation_node::state::active:
-        return o << "active";
-    case allocation_node::state::decommissioned:
-        return o << "decommissioned";
-    case allocation_node::state::deleted:
-        return o << "deleted";
-    }
-    return o << "unknown";
+    return o << format_as(s);
 }
 
-std::ostream& operator<<(std::ostream& o, const allocation_node& n) {
-    fmt::print(
-      o,
+fmt::iterator allocation_node::format_to(fmt::iterator it) const {
+    it = fmt::format_to(
+      it,
       "{{node: {}, max_partitions_per_core: {}, state: {}, allocated: {}, "
       "partition_capacity: {}, weights: [",
-      n._id,
-      n._partitions_per_shard(),
-      n._state,
-      n._allocated_partitions,
-      n.partition_capacity());
+      _id,
+      _partitions_per_shard(),
+      _state,
+      _allocated_partitions,
+      partition_capacity());
 
-    for (auto w : n._weights) {
-        fmt::print(o, "({})", w);
+    for (auto w : _weights) {
+        it = fmt::format_to(it, "({})", w);
     }
-    fmt::print(o, "], allocated: {}}}", n._allocated_partitions);
-    return o;
+    return fmt::format_to(it, "], allocated: {}}}", _allocated_partitions);
 }
 
 } // namespace cluster

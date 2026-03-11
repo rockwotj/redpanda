@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "container/chunked_hash_map.h"
 #include "datalake/data_writer_interface.h"
 #include "iceberg/datatypes.h"
@@ -64,7 +65,7 @@ public:
         iceberg::partition_key partition_key;
         remote_path partition_key_path;
 
-        friend std::ostream& operator<<(std::ostream&, const partitioned_file&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     // Finishes and returns the list of local files written by the underlying

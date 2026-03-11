@@ -898,22 +898,4 @@ long long feature_table::calculate_expiry_metric(
 
 } // namespace features
 
-namespace cluster {
-std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
-    std::string_view action_name;
-    switch (fua.action) {
-    case feature_update_action::action_t::complete_preparing:
-        action_name = "complete_preparing";
-        break;
-    case feature_update_action::action_t::activate:
-        action_name = "activate";
-        break;
-    case feature_update_action::action_t::deactivate:
-        action_name = "deactivate";
-        break;
-    }
-
-    fmt::print(o, "{{action {} {} }}", fua.feature_name, action_name);
-    return o;
-}
-} // namespace cluster
+// feature_update_action::format_to is defined inline in its header

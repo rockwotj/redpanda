@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/vassert.h"
 #include "model/fundamental.h"
 
@@ -59,10 +60,8 @@ public:
         return _min <= o && o <= _max;
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const bounded_offset_interval& r) {
-        fmt::print(o, "{{min: {}, max: {}}}", r._min, r._max);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{min: {}, max: {}}}", _min, _max);
     }
 
     inline model::offset min() const noexcept { return _min; }

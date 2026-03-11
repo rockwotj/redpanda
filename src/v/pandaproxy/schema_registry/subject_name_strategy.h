@@ -16,6 +16,8 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <string_view>
+
 namespace pandaproxy::schema_registry {
 
 enum class subject_name_strategy : uint8_t {
@@ -49,9 +51,13 @@ to_string_view_compat(subject_name_strategy e) {
     return "{invalid}";
 }
 
+inline constexpr std::string_view format_as(subject_name_strategy e) {
+    return to_string_view(e);
+}
+
 inline constexpr std::ostream&
 operator<<(std::ostream& os, subject_name_strategy e) {
-    return os << to_string_view(e);
+    return os << format_as(e);
 }
 
 inline std::istream& operator>>(std::istream& i, subject_name_strategy& e) {

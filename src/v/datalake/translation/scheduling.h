@@ -10,6 +10,7 @@
 #pragma once
 
 #include "absl/container/btree_map.h"
+#include "base/format_to.h"
 #include "config/property.h"
 #include "container/chunked_hash_map.h"
 #include "container/intrusive_list_helpers.h"
@@ -141,8 +142,9 @@ struct translation_status {
     std::optional<size_t> disk_bytes_flushed;
 
     std::optional<size_t> translation_backlog;
+
+    fmt::iterator format_to(fmt::iterator) const;
 };
-std::ostream& operator<<(std::ostream&, const translation_status&);
 
 /**
  * A single schedulable translator instance. Translation interacts with
@@ -235,9 +237,9 @@ public:
      * then eventually return false.
      */
     virtual bool get_finish_translation() { return false; }
-};
 
-std::ostream& operator<<(std::ostream&, const translator&);
+    fmt::iterator format_to(fmt::iterator) const;
+};
 
 struct executor;
 class scheduler;
@@ -293,8 +295,7 @@ public:
     // hook into the running queue
     intrusive_list_hook _running_hook;
 
-    friend std::ostream&
-    operator<<(std::ostream&, const translator_executable&);
+    fmt::iterator format_to(fmt::iterator) const;
 
 private:
     friend struct executor;

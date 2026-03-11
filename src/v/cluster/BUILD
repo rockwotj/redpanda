@@ -163,6 +163,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
         "//src/v/cloud_storage:remote_label",
         "//src/v/model",
         "//src/v/pandaproxy/schema_registry:subject_name_strategy",

@@ -9,6 +9,7 @@
 
 #include "cluster/log_eviction_stm.h"
 
+#include "base/format_to.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/prefix_truncate_record.h"
@@ -29,10 +30,9 @@ struct snapshot_data
 
     auto serde_fields() { return std::tie(effective_start_offset); }
 
-    friend std::ostream& operator<<(std::ostream& os, const snapshot_data& d) {
-        fmt::print(
-          os, "{{ effective_start_offset: {} }}", d.effective_start_offset);
-        return os;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it, "{{ effective_start_offset: {} }}", effective_start_offset);
     }
 };
 

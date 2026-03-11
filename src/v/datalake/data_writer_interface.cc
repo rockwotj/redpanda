@@ -12,32 +12,33 @@
 
 #include <fmt/core.h>
 namespace datalake {
-std::ostream& operator<<(std::ostream& os, const writer_error& ev) {
+constexpr std::string_view format_as(writer_error ev) {
     switch (ev) {
     case writer_error::ok:
-        return os << "Ok";
+        return "Ok";
     case writer_error::parquet_conversion_error:
-        return os << "Parquet Conversion Error";
+        return "Parquet Conversion Error";
     case writer_error::file_io_error:
-        return os << "File IO Error";
+        return "File IO Error";
     case writer_error::no_data:
-        return os << "No data";
+        return "No data";
     case writer_error::flush_error:
-        return os << "Flush failed";
+        return "Flush failed";
     case writer_error::oom_error:
-        return os << "Memory exhausted";
+        return "Memory exhausted";
     case writer_error::time_limit_exceeded:
-        return os << "Time limit exceeded";
+        return "Time limit exceeded";
     case writer_error::shutting_down:
-        return os << "Shutting down";
+        return "Shutting down";
     case writer_error::out_of_disk:
-        return os << "Disk exhausted";
+        return "Disk exhausted";
     case writer_error::unknown_error:
-        return os << "Unknown error";
+        return "Unknown error";
     case writer_error::retryable_type_resolution_error:
-        return os << "Retryable type resolution error";
+        return "Retryable type resolution error";
     }
 }
+
 std::string data_writer_error_category::message(int ev) const {
     return fmt::to_string(static_cast<writer_error>(ev));
 }

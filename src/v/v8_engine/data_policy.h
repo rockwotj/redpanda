@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "base/vassert.h"
 #include "reflection/adl.h"
@@ -37,11 +38,16 @@ struct data_policy
     friend bool operator==(const data_policy&, const data_policy&) = default;
     auto serde_fields() { return std::tie(fn_name, sct_name); }
 
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "function_name: {} script_name: {}",
+          function_name(),
+          script_name());
+    }
+
     ss::sstring fn_name;
     ss::sstring sct_name;
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const data_policy& datapolicy);
 };
 
 } // namespace v8_engine
@@ -67,17 +73,3 @@ struct adl<v8_engine::data_policy> {
 };
 
 } // namespace reflection
-
-namespace v8_engine {
-
-inline std::ostream&
-operator<<(std::ostream& os, const data_policy& datapolicy) {
-    fmt::print(
-      os,
-      "function_name: {} script_name: {}",
-      datapolicy.function_name(),
-      datapolicy.script_name());
-    return os;
-}
-
-} // namespace v8_engine

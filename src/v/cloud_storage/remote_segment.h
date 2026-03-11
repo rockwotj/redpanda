@@ -490,6 +490,16 @@ struct hydration_request {
     kind path_kind;
 };
 
+inline constexpr std::string_view format_as(hydration_request::kind k) {
+    switch (k) {
+    case hydration_request::kind::segment:
+        return "segment";
+    case hydration_request::kind::tx:
+        return "tx-range";
+    case hydration_request::kind::index:
+        return "index";
+    }
+}
 std::ostream& operator<<(std::ostream&, hydration_request::kind);
 
 struct hydration_loop_state {

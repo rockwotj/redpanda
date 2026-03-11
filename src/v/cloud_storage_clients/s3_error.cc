@@ -16,409 +16,148 @@
 
 namespace cloud_storage_clients {
 
-std::ostream& operator<<(std::ostream& o, s3_error_code code) {
+// NOLINTBEGIN(bugprone-switch-missing-default-case)
+std::string_view format_as(s3_error_code code) {
     switch (code) {
-    case s3_error_code::access_denied:
-        o << "AccessDenied";
-        break;
-    case s3_error_code::account_problem:
-        o << "AccountProblem";
-        break;
-    case s3_error_code::all_access_disabled:
-        o << "AllAccessDisabled";
-        break;
-    case s3_error_code::ambiguous_grant_by_email_address:
-        o << "AmbiguousGrantByEmailAddress";
-        break;
-    case s3_error_code::authentication_required:
-        o << "AuthenticationRequired";
-        break;
-    case s3_error_code::authorization_header_malformed:
-        o << "AuthorizationHeaderMalformed";
-        break;
-    case s3_error_code::bad_digest:
-        o << "BadDigest";
-        break;
-    case s3_error_code::bucket_already_exists:
-        o << "BucketAlreadyExists";
-        break;
-    case s3_error_code::bucket_already_owned_by_you:
-        o << "BucketAlreadyOwnedByYou";
-        break;
-    case s3_error_code::bucket_not_empty:
-        o << "BucketNotEmpty";
-        break;
-    case s3_error_code::credentials_not_supported:
-        o << "CredentialsNotSupported";
-        break;
-    case s3_error_code::cross_location_logging_prohibited:
-        o << "CrossLocationLoggingProhibited";
-        break;
-    case s3_error_code::entity_too_small:
-        o << "EntityTooSmall";
-        break;
-    case s3_error_code::entity_too_large:
-        o << "EntityTooLarge";
-        break;
-    case s3_error_code::expired_token:
-        o << "ExpiredToken";
-        break;
-    case s3_error_code::illegal_location_constraint_exception:
-        o << "IllegalLocationConstraintException";
-        break;
-    case s3_error_code::illegal_versioning_configuration_exception:
-        o << "IllegalVersioningConfigurationException";
-        break;
-    case s3_error_code::incomplete_body:
-        o << "IncompleteBody";
-        break;
-    case s3_error_code::incorrect_number_of_files_in_post_request:
-        o << "IncorrectNumberOfFilesInPostRequest";
-        break;
-    case s3_error_code::inline_data_too_large:
-        o << "InlineDataTooLarge";
-        break;
-    case s3_error_code::internal_error:
-        o << "InternalError";
-        break;
-    case s3_error_code::invalid_access_key_id:
-        o << "InvalidAccessKeyId";
-        break;
-    case s3_error_code::invalid_access_point:
-        o << "InvalidAccessPoint";
-        break;
-    case s3_error_code::invalid_addressing_header:
-        o << "InvalidAddressingHeader";
-        break;
-    case s3_error_code::invalid_argument:
-        o << "InvalidArgument";
-        break;
-    case s3_error_code::invalid_bucket_name:
-        o << "InvalidBucketName";
-        break;
-    case s3_error_code::invalid_bucket_state:
-        o << "InvalidBucketState";
-        break;
-    case s3_error_code::invalid_digest:
-        o << "InvalidDigest";
-        break;
-    case s3_error_code::invalid_encryption_algorithm_error:
-        o << "InvalidEncryptionAlgorithmError";
-        break;
-    case s3_error_code::invalid_location_constraint:
-        o << "InvalidLocationConstraint";
-        break;
-    case s3_error_code::invalid_object_state:
-        o << "InvalidObjectState";
-        break;
-    case s3_error_code::invalid_part:
-        o << "InvalidPart";
-        break;
-    case s3_error_code::invalid_part_order:
-        o << "InvalidPartOrder";
-        break;
-    case s3_error_code::invalid_payer:
-        o << "InvalidPayer";
-        break;
-    case s3_error_code::invalid_policy_document:
-        o << "InvalidPolicyDocument";
-        break;
-    case s3_error_code::invalid_range:
-        o << "InvalidRange";
-        break;
-    case s3_error_code::invalid_request:
-        o << "InvalidRequest";
-        break;
-    case s3_error_code::invalid_security:
-        o << "InvalidSecurity";
-        break;
-    case s3_error_code::invalid_soaprequest:
-        o << "InvalidSOAPRequest";
-        break;
-    case s3_error_code::invalid_storage_class:
-        o << "InvalidStorageClass";
-        break;
-    case s3_error_code::invalid_target_bucket_for_logging:
-        o << "InvalidTargetBucketForLogging";
-        break;
-    case s3_error_code::invalid_token:
-        o << "InvalidToken";
-        break;
-    case s3_error_code::invalid_uri:
-        o << "InvalidURI";
-        break;
-    case s3_error_code::key_too_long_error:
-        o << "KeyTooLongError";
-        break;
-    case s3_error_code::malformed_aclerror:
-        o << "MalformedACLError";
-        break;
-    case s3_error_code::malformed_postrequest:
-        o << "MalformedPOSTRequest";
-        break;
-    case s3_error_code::malformed_xml:
-        o << "MalformedXML";
-        break;
-    case s3_error_code::max_message_length_exceeded:
-        o << "MaxMessageLengthExceeded";
-        break;
-    case s3_error_code::max_post_pre_data_length_exceeded_error:
-        o << "MaxPostPreDataLengthExceededError";
-        break;
-    case s3_error_code::metadata_too_large:
-        o << "MetadataTooLarge";
-        break;
-    case s3_error_code::method_not_allowed:
-        o << "MethodNotAllowed";
-        break;
-    case s3_error_code::missing_attachment:
-        o << "MissingAttachment";
-        break;
-    case s3_error_code::missing_content_length:
-        o << "MissingContentLength";
-        break;
-    case s3_error_code::missing_request_body_error:
-        o << "MissingRequestBodyError";
-        break;
-    case s3_error_code::missing_security_element:
-        o << "MissingSecurityElement";
-        break;
-    case s3_error_code::missing_security_header:
-        o << "MissingSecurityHeader";
-        break;
-    case s3_error_code::no_logging_status_for_key:
-        o << "NoLoggingStatusForKey";
-        break;
-    case s3_error_code::no_such_bucket:
-        o << "NoSuchBucket";
-        break;
-    case s3_error_code::no_such_bucket_policy:
-        o << "NoSuchBucketPolicy";
-        break;
-    case s3_error_code::no_such_key:
-        o << "NoSuchKey";
-        break;
-    case s3_error_code::no_such_lifecycle_configuration:
-        o << "NoSuchLifecycleConfiguration";
-        break;
-    case s3_error_code::no_such_tag_set:
-        o << "NoSuchTagSet";
-        break;
-    case s3_error_code::no_such_upload:
-        o << "NoSuchUpload";
-        break;
-    case s3_error_code::no_such_version:
-        o << "NoSuchVersion";
-        break;
-    case s3_error_code::not_implemented:
-        o << "NotImplemented";
-        break;
-    case s3_error_code::not_signed_up:
-        o << "NotSignedUp";
-        break;
-    case s3_error_code::operation_aborted:
-        o << "OperationAborted";
-        break;
-    case s3_error_code::permanent_redirect:
-        o << "PermanentRedirect";
-        break;
-    case s3_error_code::precondition_failed:
-        o << "PreconditionFailed";
-        break;
-    case s3_error_code::redirect:
-        o << "Redirect";
-        break;
-    case s3_error_code::request_header_section_too_large:
-        o << "RequestHeaderSectionTooLarge";
-        break;
-    case s3_error_code::request_is_not_multi_part_content:
-        o << "RequestIsNotMultiPartContent";
-        break;
-    case s3_error_code::request_timeout:
-        o << "RequestTimeout";
-        break;
-    case s3_error_code::request_time_too_skewed:
-        o << "RequestTimeTooSkewed";
-        break;
-    case s3_error_code::request_torrent_of_bucket_error:
-        o << "RequestTorrentOfBucketError";
-        break;
-    case s3_error_code::restore_already_in_progress:
-        o << "RestoreAlreadyInProgress";
-        break;
-    case s3_error_code::server_side_encryption_configuration_not_found_error:
-        o << "ServerSideEncryptionConfigurationNotFoundError";
-        break;
-    case s3_error_code::service_unavailable:
-        o << "ServiceUnavailable";
-        break;
-    case s3_error_code::signature_does_not_match:
-        o << "SignatureDoesNotMatch";
-        break;
-    case s3_error_code::slow_down:
-        o << "SlowDown";
-        break;
-    case s3_error_code::temporary_redirect:
-        o << "TemporaryRedirect";
-        break;
-    case s3_error_code::token_refresh_required:
-        o << "TokenRefreshRequired";
-        break;
-    case s3_error_code::too_many_access_points:
-        o << "TooManyAccessPoints";
-        break;
-    case s3_error_code::too_many_buckets:
-        o << "TooManyBuckets";
-        break;
-    case s3_error_code::unexpected_content:
-        o << "UnexpectedContent";
-        break;
-    case s3_error_code::unresolvable_grant_by_email_address:
-        o << "UnresolvableGrantByEmailAddress";
-        break;
-    case s3_error_code::user_key_must_be_specified:
-        o << "UserKeyMustBeSpecified";
-        break;
-    case s3_error_code::no_such_access_point:
-        o << "NoSuchAccessPoint";
-        break;
-    case s3_error_code::invalid_tag:
-        o << "InvalidTag";
-        break;
-    case s3_error_code::malformed_policy:
-        o << "MalformedPolicy";
-        break;
-    case s3_error_code::no_such_configuration:
-        o << "NoSuchConfiguration";
-        break;
-    case s3_error_code::authorization_query_parameters_error:
-        o << "AuthorizationQueryParametersError";
-        break;
-    case s3_error_code::access_point_already_owned_by_you:
-        o << "AccessPointAlreadyOwnedByYou";
-        break;
-    case s3_error_code::access_control_list_not_supported:
-        o << "AccessControlListNotSupported";
-        break;
-    case s3_error_code::endpoint_not_found:
-        o << "EndpointNotFound";
-        break;
-    case s3_error_code::device_not_active_error:
-        o << "DeviceNotActiveError";
-        break;
-    case s3_error_code::conditional_request_conflict:
-        o << "ConditionalRequestConflict";
-        break;
-    case s3_error_code::connection_closed_by_requester:
-        o << "ConnectionClosedByRequester";
-        break;
-    case s3_error_code::client_token_conflict:
-        o << "ClientTokenConflict";
-        break;
-    case s3_error_code::bucket_has_access_points_attached:
-        o << "BucketHasAccessPointsAttached";
-        break;
-    case s3_error_code::invalid_access_point_alias_error:
-        o << "InvalidAccessPointAliasError";
-        break;
-    case s3_error_code::incorrect_endpoint:
-        o << "IncorrectEndpoint";
-        break;
-    case s3_error_code::invalid_http_method:
-        o << "InvalidHttpMethod";
-        break;
-    case s3_error_code::invalid_host_header:
-        o << "InvalidHostHeader";
-        break;
-    case s3_error_code::invalid_bucket_owner_aws_account_id:
-        o << "InvalidBucketOwnerAWSAccountID";
-        break;
-    case s3_error_code::invalid_bucket_acl_with_object_ownership:
-        o << "InvalidBucketAclWithObjectOwnership";
-        break;
-    case s3_error_code::invalid_session_exception:
-        o << "InvalidSessionException";
-        break;
-    case s3_error_code::invalid_signature:
-        o << "InvalidSignature";
-        break;
-    case s3_error_code::kms_disabled_exception:
-        o << "KMS.DisabledException";
-        break;
-    case s3_error_code::kms_invalid_key_usage_exception:
-        o << "KMS.InvalidKeyUsageException";
-        break;
-    case s3_error_code::kms_invalid_state_exception:
-        o << "KMS.KMSInvalidStateException";
-        break;
-    case s3_error_code::kms_not_found_exception:
-        o << "KMS.NotFoundException";
-        break;
-    case s3_error_code::missing_authentication_token:
-        o << "MissingAuthenticationToken";
-        break;
-    case s3_error_code::no_such_async_request:
-        o << "NoSuchAsyncRequest";
-        break;
-    case s3_error_code::no_such_cors_configuration:
-        o << "NoSuchCORSConfiguration";
-        break;
-    case s3_error_code::no_such_multi_region_access_point:
-        o << "NoSuchMultiRegionAccessPoint";
-        break;
-    case s3_error_code::no_such_object_lock_configuration:
-        o << "NoSuchObjectLockConfiguration";
-        break;
-    case s3_error_code::no_such_website_configuration:
-        o << "NoSuchWebsiteConfiguration";
-        break;
-    case s3_error_code::not_modified:
-        o << "NotModified";
-        break;
-    case s3_error_code::not_device_owner_error:
-        o << "NotDeviceOwnerError";
-        break;
-    case s3_error_code::no_transformation_defined:
-        o << "NoTransformationDefined";
-        break;
-    case s3_error_code::object_lock_configuration_not_found_error:
-        o << "ObjectLockConfigurationNotFoundError";
-        break;
-    case s3_error_code::ownership_controls_not_found_error:
-        o << "OwnershipControlsNotFoundError";
-        break;
-    case s3_error_code::permanent_redirect_control_error:
-        o << "PermanentRedirectControlError";
-        break;
-    case s3_error_code::response_interrupted:
-        o << "ResponseInterrupted";
-        break;
-    case s3_error_code::token_code_invalid_error:
-        o << "TokenCodeInvalidError";
-        break;
-    case s3_error_code::too_many_multi_region_access_pointregions_error:
-        o << "TooManyMultiRegionAccessPointregionsError";
-        break;
-    case s3_error_code::too_many_multi_region_access_points:
-        o << "TooManyMultiRegionAccessPoints";
-        break;
-    case s3_error_code::unauthorized_access_error:
-        o << "UnauthorizedAccessError";
-        break;
-    case s3_error_code::unexpected_ip_error:
-        o << "UnexpectedIPError";
-        break;
-    case s3_error_code::unsupported_signature:
-        o << "UnsupportedSignature";
-        break;
-    case s3_error_code::unsupported_argument:
-        o << "UnsupportedArgument";
-        break;
-    case s3_error_code::_unknown:
-        o << "_unknown_error_code_";
-        break;
+    case s3_error_code::access_denied: return "AccessDenied";
+    case s3_error_code::account_problem: return "AccountProblem";
+    case s3_error_code::all_access_disabled: return "AllAccessDisabled";
+    case s3_error_code::ambiguous_grant_by_email_address: return "AmbiguousGrantByEmailAddress";
+    case s3_error_code::authentication_required: return "AuthenticationRequired";
+    case s3_error_code::authorization_header_malformed: return "AuthorizationHeaderMalformed";
+    case s3_error_code::bad_digest: return "BadDigest";
+    case s3_error_code::bucket_already_exists: return "BucketAlreadyExists";
+    case s3_error_code::bucket_already_owned_by_you: return "BucketAlreadyOwnedByYou";
+    case s3_error_code::bucket_not_empty: return "BucketNotEmpty";
+    case s3_error_code::credentials_not_supported: return "CredentialsNotSupported";
+    case s3_error_code::cross_location_logging_prohibited: return "CrossLocationLoggingProhibited";
+    case s3_error_code::entity_too_small: return "EntityTooSmall";
+    case s3_error_code::entity_too_large: return "EntityTooLarge";
+    case s3_error_code::expired_token: return "ExpiredToken";
+    case s3_error_code::illegal_location_constraint_exception: return "IllegalLocationConstraintException";
+    case s3_error_code::illegal_versioning_configuration_exception: return "IllegalVersioningConfigurationException";
+    case s3_error_code::incomplete_body: return "IncompleteBody";
+    case s3_error_code::incorrect_number_of_files_in_post_request: return "IncorrectNumberOfFilesInPostRequest";
+    case s3_error_code::inline_data_too_large: return "InlineDataTooLarge";
+    case s3_error_code::internal_error: return "InternalError";
+    case s3_error_code::invalid_access_key_id: return "InvalidAccessKeyId";
+    case s3_error_code::invalid_access_point: return "InvalidAccessPoint";
+    case s3_error_code::invalid_addressing_header: return "InvalidAddressingHeader";
+    case s3_error_code::invalid_argument: return "InvalidArgument";
+    case s3_error_code::invalid_bucket_name: return "InvalidBucketName";
+    case s3_error_code::invalid_bucket_state: return "InvalidBucketState";
+    case s3_error_code::invalid_digest: return "InvalidDigest";
+    case s3_error_code::invalid_encryption_algorithm_error: return "InvalidEncryptionAlgorithmError";
+    case s3_error_code::invalid_location_constraint: return "InvalidLocationConstraint";
+    case s3_error_code::invalid_object_state: return "InvalidObjectState";
+    case s3_error_code::invalid_part: return "InvalidPart";
+    case s3_error_code::invalid_part_order: return "InvalidPartOrder";
+    case s3_error_code::invalid_payer: return "InvalidPayer";
+    case s3_error_code::invalid_policy_document: return "InvalidPolicyDocument";
+    case s3_error_code::invalid_range: return "InvalidRange";
+    case s3_error_code::invalid_request: return "InvalidRequest";
+    case s3_error_code::invalid_security: return "InvalidSecurity";
+    case s3_error_code::invalid_soaprequest: return "InvalidSOAPRequest";
+    case s3_error_code::invalid_storage_class: return "InvalidStorageClass";
+    case s3_error_code::invalid_target_bucket_for_logging: return "InvalidTargetBucketForLogging";
+    case s3_error_code::invalid_token: return "InvalidToken";
+    case s3_error_code::invalid_uri: return "InvalidURI";
+    case s3_error_code::key_too_long_error: return "KeyTooLongError";
+    case s3_error_code::malformed_aclerror: return "MalformedACLError";
+    case s3_error_code::malformed_postrequest: return "MalformedPOSTRequest";
+    case s3_error_code::malformed_xml: return "MalformedXML";
+    case s3_error_code::max_message_length_exceeded: return "MaxMessageLengthExceeded";
+    case s3_error_code::max_post_pre_data_length_exceeded_error: return "MaxPostPreDataLengthExceededError";
+    case s3_error_code::metadata_too_large: return "MetadataTooLarge";
+    case s3_error_code::method_not_allowed: return "MethodNotAllowed";
+    case s3_error_code::missing_attachment: return "MissingAttachment";
+    case s3_error_code::missing_content_length: return "MissingContentLength";
+    case s3_error_code::missing_request_body_error: return "MissingRequestBodyError";
+    case s3_error_code::missing_security_element: return "MissingSecurityElement";
+    case s3_error_code::missing_security_header: return "MissingSecurityHeader";
+    case s3_error_code::no_logging_status_for_key: return "NoLoggingStatusForKey";
+    case s3_error_code::no_such_bucket: return "NoSuchBucket";
+    case s3_error_code::no_such_bucket_policy: return "NoSuchBucketPolicy";
+    case s3_error_code::no_such_key: return "NoSuchKey";
+    case s3_error_code::no_such_lifecycle_configuration: return "NoSuchLifecycleConfiguration";
+    case s3_error_code::no_such_tag_set: return "NoSuchTagSet";
+    case s3_error_code::no_such_upload: return "NoSuchUpload";
+    case s3_error_code::no_such_version: return "NoSuchVersion";
+    case s3_error_code::not_implemented: return "NotImplemented";
+    case s3_error_code::not_signed_up: return "NotSignedUp";
+    case s3_error_code::operation_aborted: return "OperationAborted";
+    case s3_error_code::permanent_redirect: return "PermanentRedirect";
+    case s3_error_code::precondition_failed: return "PreconditionFailed";
+    case s3_error_code::redirect: return "Redirect";
+    case s3_error_code::request_header_section_too_large: return "RequestHeaderSectionTooLarge";
+    case s3_error_code::request_is_not_multi_part_content: return "RequestIsNotMultiPartContent";
+    case s3_error_code::request_timeout: return "RequestTimeout";
+    case s3_error_code::request_time_too_skewed: return "RequestTimeTooSkewed";
+    case s3_error_code::request_torrent_of_bucket_error: return "RequestTorrentOfBucketError";
+    case s3_error_code::restore_already_in_progress: return "RestoreAlreadyInProgress";
+    case s3_error_code::server_side_encryption_configuration_not_found_error: return "ServerSideEncryptionConfigurationNotFoundError";
+    case s3_error_code::service_unavailable: return "ServiceUnavailable";
+    case s3_error_code::signature_does_not_match: return "SignatureDoesNotMatch";
+    case s3_error_code::slow_down: return "SlowDown";
+    case s3_error_code::temporary_redirect: return "TemporaryRedirect";
+    case s3_error_code::token_refresh_required: return "TokenRefreshRequired";
+    case s3_error_code::too_many_access_points: return "TooManyAccessPoints";
+    case s3_error_code::too_many_buckets: return "TooManyBuckets";
+    case s3_error_code::unexpected_content: return "UnexpectedContent";
+    case s3_error_code::unresolvable_grant_by_email_address: return "UnresolvableGrantByEmailAddress";
+    case s3_error_code::user_key_must_be_specified: return "UserKeyMustBeSpecified";
+    case s3_error_code::no_such_access_point: return "NoSuchAccessPoint";
+    case s3_error_code::invalid_tag: return "InvalidTag";
+    case s3_error_code::malformed_policy: return "MalformedPolicy";
+    case s3_error_code::no_such_configuration: return "NoSuchConfiguration";
+    case s3_error_code::authorization_query_parameters_error: return "AuthorizationQueryParametersError";
+    case s3_error_code::access_point_already_owned_by_you: return "AccessPointAlreadyOwnedByYou";
+    case s3_error_code::access_control_list_not_supported: return "AccessControlListNotSupported";
+    case s3_error_code::endpoint_not_found: return "EndpointNotFound";
+    case s3_error_code::device_not_active_error: return "DeviceNotActiveError";
+    case s3_error_code::conditional_request_conflict: return "ConditionalRequestConflict";
+    case s3_error_code::connection_closed_by_requester: return "ConnectionClosedByRequester";
+    case s3_error_code::client_token_conflict: return "ClientTokenConflict";
+    case s3_error_code::bucket_has_access_points_attached: return "BucketHasAccessPointsAttached";
+    case s3_error_code::invalid_access_point_alias_error: return "InvalidAccessPointAliasError";
+    case s3_error_code::incorrect_endpoint: return "IncorrectEndpoint";
+    case s3_error_code::invalid_http_method: return "InvalidHttpMethod";
+    case s3_error_code::invalid_host_header: return "InvalidHostHeader";
+    case s3_error_code::invalid_bucket_owner_aws_account_id: return "InvalidBucketOwnerAWSAccountID";
+    case s3_error_code::invalid_bucket_acl_with_object_ownership: return "InvalidBucketAclWithObjectOwnership";
+    case s3_error_code::invalid_session_exception: return "InvalidSessionException";
+    case s3_error_code::invalid_signature: return "InvalidSignature";
+    case s3_error_code::kms_disabled_exception: return "KMS.DisabledException";
+    case s3_error_code::kms_invalid_key_usage_exception: return "KMS.InvalidKeyUsageException";
+    case s3_error_code::kms_invalid_state_exception: return "KMS.KMSInvalidStateException";
+    case s3_error_code::kms_not_found_exception: return "KMS.NotFoundException";
+    case s3_error_code::missing_authentication_token: return "MissingAuthenticationToken";
+    case s3_error_code::no_such_async_request: return "NoSuchAsyncRequest";
+    case s3_error_code::no_such_cors_configuration: return "NoSuchCORSConfiguration";
+    case s3_error_code::no_such_multi_region_access_point: return "NoSuchMultiRegionAccessPoint";
+    case s3_error_code::no_such_object_lock_configuration: return "NoSuchObjectLockConfiguration";
+    case s3_error_code::no_such_website_configuration: return "NoSuchWebsiteConfiguration";
+    case s3_error_code::not_modified: return "NotModified";
+    case s3_error_code::not_device_owner_error: return "NotDeviceOwnerError";
+    case s3_error_code::no_transformation_defined: return "NoTransformationDefined";
+    case s3_error_code::object_lock_configuration_not_found_error: return "ObjectLockConfigurationNotFoundError";
+    case s3_error_code::ownership_controls_not_found_error: return "OwnershipControlsNotFoundError";
+    case s3_error_code::permanent_redirect_control_error: return "PermanentRedirectControlError";
+    case s3_error_code::response_interrupted: return "ResponseInterrupted";
+    case s3_error_code::token_code_invalid_error: return "TokenCodeInvalidError";
+    case s3_error_code::too_many_multi_region_access_pointregions_error: return "TooManyMultiRegionAccessPointregionsError";
+    case s3_error_code::too_many_multi_region_access_points: return "TooManyMultiRegionAccessPoints";
+    case s3_error_code::unauthorized_access_error: return "UnauthorizedAccessError";
+    case s3_error_code::unexpected_ip_error: return "UnexpectedIPError";
+    case s3_error_code::unsupported_signature: return "UnsupportedSignature";
+    case s3_error_code::unsupported_argument: return "UnsupportedArgument";
+    case s3_error_code::_unknown: return "_unknown_error_code_";
     }
-    return o;
+}
+// NOLINTEND(bugprone-switch-missing-default-case)
+
+std::ostream& operator<<(std::ostream& o, s3_error_code code) {
+    return o << format_as(code);
 }
 
 // NOLINTNEXTLINE
@@ -629,12 +368,14 @@ std::string_view rest_error_response::resource() const noexcept {
     return _resource;
 }
 
-std::ostream& operator<<(std::ostream& o, const rest_error_response& err) {
-    static constexpr auto format
-      = "code: {}, message: {}, request_id: {}, resource: {}";
-    fmt::print(
-      o, format, err._code_str, err._message, err._request_id, err._resource);
-    return o;
+fmt::iterator rest_error_response::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "code: {}, message: {}, request_id: {}, resource: {}",
+      _code_str,
+      _message,
+      _request_id,
+      _resource);
 }
 
 } // namespace cloud_storage_clients

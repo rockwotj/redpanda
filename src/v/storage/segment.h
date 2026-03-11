@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/file_sanitizer_types.h"
@@ -114,7 +115,10 @@ public:
         // Offset of last message written to this log, may not yet be stable.
         model::offset _dirty_offset;
 
-        friend std::ostream& operator<<(std::ostream&, const offset_tracker&);
+    public:
+        fmt::iterator format_to(fmt::iterator) const;
+
+    private:
         friend class testing_details::offset_tracker_accessor;
     };
     enum class bitflags : uint32_t {
@@ -362,7 +366,10 @@ private:
     // Used to implement segment.ms rolling
     std::optional<ss::lowres_clock::time_point> _first_write;
 
-    friend std::ostream& operator<<(std::ostream&, const segment&);
+public:
+    fmt::iterator format_to(fmt::iterator) const;
+
+private:
     friend class testing_details::segment_accessor;
 };
 

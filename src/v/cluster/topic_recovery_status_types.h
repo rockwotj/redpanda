@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cluster/topic_recovery_service.h"
 #include "serde/envelope.h"
 
@@ -56,12 +57,12 @@ struct recovery_request_params
         return std::tie(topic_names_pattern, retention_bytes, retention_ms);
     }
 
+    fmt::iterator format_to(fmt::iterator) const;
+
     friend bool
     operator==(const recovery_request_params&, const recovery_request_params&)
       = default;
 };
-
-std::ostream& operator<<(std::ostream&, const recovery_request_params&);
 
 struct single_status
   : serde::

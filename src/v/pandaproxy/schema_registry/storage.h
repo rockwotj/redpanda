@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/vlog.h"
 #include "json/iobuf_writer.h"
 #include "json/json.h"
@@ -148,28 +149,27 @@ struct schema_key {
 
     friend bool operator==(const schema_key&, const schema_key&) = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const schema_key& v) {
-        if (v.seq.has_value() && v.node.has_value()) {
-            fmt::print(
-              os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        if (seq.has_value() && node.has_value()) {
+            return fmt::format_to(
+              it,
               "seq: {}, node: {}, keytype: {}, subject: {}, version: {}, "
               "magic: {}",
-              *v.seq,
-              *v.node,
-              to_string_view(v.keytype),
-              v.sub,
-              v.version,
-              v.magic);
+              *seq,
+              *node,
+              to_string_view(keytype),
+              sub,
+              version,
+              magic);
         } else {
-            fmt::print(
-              os,
+            return fmt::format_to(
+              it,
               "unsequenced keytype: {}, subject: {}, version: {}, magic: {}",
-              to_string_view(v.keytype),
-              v.sub,
-              v.version,
-              v.magic);
+              to_string_view(keytype),
+              sub,
+              version,
+              magic);
         }
-        return os;
     }
 };
 
@@ -320,15 +320,14 @@ struct schema_value {
 
     friend bool operator==(const schema_value&, const schema_value&) = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const schema_value& v) {
-        fmt::print(
-          os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{}, version: {}, id: {}, deleted: {}",
-          v.schema,
-          v.version,
-          v.id,
-          v.deleted);
-        return os;
+          schema,
+          version,
+          id,
+          deleted);
     }
 };
 
@@ -698,25 +697,24 @@ struct config_key {
 
     friend bool operator==(const config_key&, const config_key&) = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const config_key& v) {
-        if (v.seq.has_value() && v.node.has_value()) {
-            fmt::print(
-              os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        if (seq.has_value() && node.has_value()) {
+            return fmt::format_to(
+              it,
               "seq: {} node: {} keytype: {}, subject: {}, magic: {}",
-              *v.seq,
-              *v.node,
-              to_string_view(v.keytype),
-              v.sub.value_or(invalid_subject),
-              v.magic);
+              *seq,
+              *node,
+              to_string_view(keytype),
+              sub.value_or(invalid_subject),
+              magic);
         } else {
-            fmt::print(
-              os,
+            return fmt::format_to(
+              it,
               "unsequenced keytype: {}, subject: {}, magic: {}",
-              to_string_view(v.keytype),
-              v.sub.value_or(invalid_subject),
-              v.magic);
+              to_string_view(keytype),
+              sub.value_or(invalid_subject),
+              magic);
         }
-        return os;
     }
 };
 
@@ -848,13 +846,11 @@ struct config_value {
 
     friend bool operator==(const config_value&, const config_value&) = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const config_value& v) {
-        if (v.sub.has_value()) {
-            fmt::print(os, "subject: {}, ", v.sub.value());
+    fmt::iterator format_to(fmt::iterator it) const {
+        if (sub.has_value()) {
+            it = fmt::format_to(it, "subject: {}, ", sub.value());
         }
-        fmt::print(os, "compatibility: {}", to_string_view(v.compat));
-
-        return os;
+        return fmt::format_to(it, "compatibility: {}", to_string_view(compat));
     }
 };
 
@@ -934,25 +930,24 @@ struct mode_key {
 
     friend bool operator==(const mode_key&, const mode_key&) = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const mode_key& v) {
-        if (v.seq.has_value() && v.node.has_value()) {
-            fmt::print(
-              os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        if (seq.has_value() && node.has_value()) {
+            return fmt::format_to(
+              it,
               "seq: {} node: {} keytype: {}, subject: {}, magic: {}",
-              *v.seq,
-              *v.node,
-              to_string_view(v.keytype),
-              v.sub.value_or(invalid_subject),
-              v.magic);
+              *seq,
+              *node,
+              to_string_view(keytype),
+              sub.value_or(invalid_subject),
+              magic);
         } else {
-            fmt::print(
-              os,
+            return fmt::format_to(
+              it,
               "unsequenced keytype: {}, subject: {}, magic: {}",
-              to_string_view(v.keytype),
-              v.sub.value_or(invalid_subject),
-              v.magic);
+              to_string_view(keytype),
+              sub.value_or(invalid_subject),
+              magic);
         }
-        return os;
     }
 };
 
@@ -1084,13 +1079,11 @@ struct mode_value {
 
     friend bool operator==(const mode_value&, const mode_value&) = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const mode_value& v) {
-        if (v.sub.has_value()) {
-            fmt::print(os, "subject: {}, ", v.sub.value());
+    fmt::iterator format_to(fmt::iterator it) const {
+        if (sub.has_value()) {
+            it = fmt::format_to(it, "subject: {}, ", sub.value());
         }
-        fmt::print(os, "mode: {}", to_string_view(v.mode));
-
-        return os;
+        return fmt::format_to(it, "mode: {}", to_string_view(mode));
     }
 };
 
@@ -1170,26 +1163,24 @@ struct delete_subject_key {
     friend bool operator==(const delete_subject_key&, const delete_subject_key&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const delete_subject_key& v) {
-        if (v.seq.has_value() && v.node.has_value()) {
-            fmt::print(
-              os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        if (seq.has_value() && node.has_value()) {
+            return fmt::format_to(
+              it,
               "seq: {}, node: {}, keytype: {}, subject: {}, magic: {}",
-              *v.seq,
-              *v.node,
-              to_string_view(v.keytype),
-              v.sub,
-              v.magic);
+              *seq,
+              *node,
+              to_string_view(keytype),
+              sub,
+              magic);
         } else {
-            fmt::print(
-              os,
+            return fmt::format_to(
+              it,
               "unsequenced keytype: {}, subject: {}, magic: {}",
-              to_string_view(v.keytype),
-              v.sub,
-              v.magic);
+              to_string_view(keytype),
+              sub,
+              magic);
         }
-        return os;
     }
 };
 
@@ -1327,10 +1318,8 @@ struct delete_subject_value {
     operator==(const delete_subject_value&, const delete_subject_value&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const delete_subject_value& v) {
-        fmt::print(os, "subject: {}", v.sub);
-        return os;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "subject: {}", sub);
     }
 };
 
@@ -1432,28 +1421,27 @@ struct context_key {
 
     friend bool operator==(const context_key&, const context_key&) = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const context_key& v) {
-        if (v.seq.has_value() && v.node.has_value()) {
-            fmt::print(
-              os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        if (seq.has_value() && node.has_value()) {
+            return fmt::format_to(
+              it,
               "seq: {}, node: {}, keytype: {}, tenant: {}, context: {}, magic: "
               "{}",
-              *v.seq,
-              *v.node,
-              to_string_view(v.keytype),
-              v.tenant,
-              v.ctx,
-              v.magic);
+              *seq,
+              *node,
+              to_string_view(keytype),
+              tenant,
+              ctx,
+              magic);
         } else {
-            fmt::print(
-              os,
+            return fmt::format_to(
+              it,
               "unsequenced keytype: {}, tenant: {}, context: {}, magic: {}",
-              to_string_view(v.keytype),
-              v.tenant,
-              v.ctx,
-              v.magic);
+              to_string_view(keytype),
+              tenant,
+              ctx,
+              magic);
         }
-        return os;
     }
 };
 
@@ -1464,9 +1452,8 @@ struct context_value {
     friend bool operator==(const context_value&, const context_value&)
       = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const context_value& v) {
-        fmt::print(os, "tenant: {}, context: {}", v.tenant, v.ctx);
-        return os;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "tenant: {}, context: {}", tenant, ctx);
     }
 };
 

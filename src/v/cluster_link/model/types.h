@@ -154,6 +154,9 @@ static constexpr std::string_view to_string_view(mirror_topic_status s) {
 bool is_valid_status_transition(
   mirror_topic_status current, mirror_topic_status target) noexcept;
 
+inline constexpr std::string_view format_as(mirror_topic_status s) {
+    return to_string_view(s);
+}
 std::ostream& operator<<(std::ostream& os, mirror_topic_status s);
 
 enum class task_state : uint8_t {
@@ -187,6 +190,9 @@ static constexpr std::string_view to_string_view(task_state st) {
     }
 }
 
+inline constexpr std::string_view format_as(task_state s) {
+    return to_string_view(s);
+}
 std::ostream& operator<<(std::ostream& os, task_state s);
 
 /**
@@ -414,6 +420,9 @@ static constexpr std::string_view to_string_view(filter_pattern_type f) {
     return "unknown";
 }
 
+inline constexpr std::string_view format_as(filter_pattern_type f) {
+    return to_string_view(f);
+}
 std::ostream& operator<<(std::ostream& os, filter_pattern_type f);
 
 /// Whether or not the filter is an inclusive or exclusive filter
@@ -429,6 +438,9 @@ static constexpr std::string_view to_string_view(filter_type f) {
     return "unknown";
 }
 
+inline constexpr std::string_view format_as(filter_type f) {
+    return to_string_view(f);
+}
 std::ostream& operator<<(std::ostream& os, filter_type f);
 
 struct resource_name_filter_pattern
@@ -810,6 +822,9 @@ static constexpr std::string_view to_string_view(link_status s) {
     case link_status::paused:
         return "paused";
     }
+}
+inline constexpr std::string_view format_as(link_status s) {
+    return to_string_view(s);
 }
 std::ostream& operator<<(std::ostream& os, const link_status& s);
 
@@ -1243,19 +1258,7 @@ struct shadow_link_status_report {
 using status_report_ret_t = std::expected<shadow_link_status_report, errc>;
 } // namespace cluster_link::model
 
-template<>
-struct fmt::formatter<cluster_link::model::mirror_topic_status>
-  : fmt::formatter<string_view> {
-    auto format(cluster_link::model::mirror_topic_status s, format_context& ctx)
-      -> decltype(ctx.out());
-};
-
-template<>
-struct fmt::formatter<cluster_link::model::task_state>
-  : fmt::formatter<string_view> {
-    auto format(cluster_link::model::task_state, format_context& ctx) const
-      -> decltype(ctx.out());
-};
+// mirror_topic_status and task_state use format_as() for formatting
 
 template<>
 struct fmt::formatter<cluster_link::model::scram_credentials>
@@ -1354,19 +1357,7 @@ struct fmt::formatter<cluster_link::model::mirror_topic_metadata>
       format_context& ctx) const -> decltype(ctx.out());
 };
 
-template<>
-struct fmt::formatter<cluster_link::model::filter_pattern_type>
-  : fmt::formatter<string_view> {
-    auto format(cluster_link::model::filter_pattern_type s, format_context& ctx)
-      const -> decltype(ctx.out());
-};
-
-template<>
-struct fmt::formatter<cluster_link::model::filter_type>
-  : fmt::formatter<string_view> {
-    auto format(cluster_link::model::filter_type s, format_context& ctx) const
-      -> decltype(ctx.out());
-};
+// filter_pattern_type and filter_type use format_as() for formatting
 
 template<>
 struct fmt::formatter<cluster_link::model::resource_name_filter_pattern>

@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "container/chunked_vector.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
@@ -26,7 +27,7 @@ namespace tests {
 struct kv_t {
     ss::sstring key;
     std::optional<ss::sstring> val;
-    friend std::ostream& operator<<(std::ostream& o, const kv_t& kv);
+    fmt::iterator format_to(fmt::iterator) const;
 
     kv_t(ss::sstring k, ss::sstring v)
       : key(std::move(k))

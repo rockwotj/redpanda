@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/format_to.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/create_acls_request.h"
@@ -33,10 +34,8 @@ struct create_acls_request final {
     void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const create_acls_request& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 
@@ -52,10 +51,8 @@ struct create_acls_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const create_acls_response& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 

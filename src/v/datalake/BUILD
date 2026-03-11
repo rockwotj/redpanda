@@ -62,13 +62,13 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":logger",
-        "//src/v/base",
         "//src/v/iceberg:struct_accessor",
     ],
     visibility = [":__subpackages__"],
     deps = [
         ":partition_key_path",
         ":writer",
+        "//src/v/base",
         "//src/v/container:chunked_hash_map",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:partition_key",
@@ -256,6 +256,7 @@ redpanda_cc_library(
     ],
     visibility = [":__subpackages__"],
     deps = [
+        "//src/v/base",
         "//src/v/utils:named_type",
         "@fmt",
     ],

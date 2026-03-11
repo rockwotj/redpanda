@@ -22,7 +22,6 @@ public:
         // The system is shutting down.
         shutting_down,
     };
-    friend std::ostream& operator<<(std::ostream&, const errc&);
 
     virtual ss::future<checked<std::nullopt_t, errc>> ensure_table(
       const model::topic&,
@@ -37,4 +36,25 @@ public:
     virtual ~table_creator() = default;
 };
 
+inline constexpr std::string_view format_as(table_creator::errc e) {
+    switch (e) {
+    case table_creator::errc::incompatible_schema:
+        return "table_creator::errc::incompatible_schema";
+    case table_creator::errc::failed:
+        return "table_creator::errc::failed";
+    case table_creator::errc::shutting_down:
+        return "table_creator::errc::shutting_down";
+    }
+}
+
 } // namespace datalake
+
+template<>
+struct fmt::formatter<datalake::table_creator::errc>
+  : fmt::formatter<std::string_view> {
+    auto
+    format(datalake::table_creator::errc e, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string_view>::format(
+          datalake::format_as(e), ctx);
+    }
+};

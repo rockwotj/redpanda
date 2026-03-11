@@ -163,6 +163,7 @@ redpanda_test_cc_library(
         "utils/log_gap_analysis.h",
     ],
     deps = [
+        "//src/v/base",
         "//src/v/model",
         "//src/v/model:batch_compression",
     ],
@@ -399,6 +400,7 @@ redpanda_cc_gtest(
         "record_batch_builder_test.cc",
     ],
     deps = [
+        "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
         "//src/v/model",

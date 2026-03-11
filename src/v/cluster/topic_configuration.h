@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/format_to.h"
 #include "cluster/topic_properties.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -97,7 +98,7 @@ struct topic_configuration
     void serde_write(iobuf& out) const;
     void serde_read(iobuf_parser& in, const serde::header& h);
 
-    friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     friend bool
     operator==(const topic_configuration&, const topic_configuration&)

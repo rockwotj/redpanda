@@ -8,6 +8,7 @@ redpanda_cc_gtest(
     ],
     cpu = 1,
     deps = [
+        "//src/v/base",
         "//src/v/random:generators",
         "//src/v/serde/json/detail:numeric",
         "@googletest//:gtest",
@@ -24,6 +25,7 @@ redpanda_cc_gtest(
     ],
     cpu = 1,
     deps = [
+        "//src/v/base",
         "//src/v/bytes:iobuf_parser",
         "//src/v/serde/json/detail:string",
         "@googletest//:gtest",

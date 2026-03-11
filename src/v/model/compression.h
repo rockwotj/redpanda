@@ -16,6 +16,7 @@
 #include <iosfwd>
 #include <limits>
 #include <ostream>
+#include <string_view>
 #include <type_traits>
 
 namespace model {
@@ -60,33 +61,29 @@ constexpr auto all_batch_compression_types = [] {
     return types;
 }();
 
+inline constexpr std::string_view format_as(compression c) {
+    switch (c) {
+    case compression::none:
+        return "none";
+    case compression::gzip:
+        return "gzip";
+    case compression::snappy:
+        return "snappy";
+    case compression::lz4:
+        return "lz4";
+    case compression::zstd:
+        return "zstd";
+    case compression::producer:
+        return "producer";
+    default:
+        return "ERROR";
+    }
+}
+
 /// operators needed for boost::lexical_cast<compression>
 /// inline to prevent library depdency with the v::compression module
 inline std::ostream& operator<<(std::ostream& os, const compression& c) {
-    switch (c) {
-    case compression::none:
-        os << "none";
-        break;
-    case compression::gzip:
-        os << "gzip";
-        break;
-    case compression::snappy:
-        os << "snappy";
-        break;
-    case compression::lz4:
-        os << "lz4";
-        break;
-    case compression::zstd:
-        os << "zstd";
-        break;
-    case compression::producer:
-        os << "producer";
-        break;
-    default:
-        os << "ERROR";
-        break;
-    }
-    return os;
+    return os << format_as(c);
 }
 std::istream& operator>>(std::istream&, compression&);
 

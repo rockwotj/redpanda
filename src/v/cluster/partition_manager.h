@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/flat_hash_map.h"
+#include "base/format_to.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/types.h"
@@ -312,8 +313,9 @@ private:
     // The sharded app may not be initialized if cloud topics isn't enabled.
     ss::sharded<cloud_topics::state_accessors>* _cloud_topics_state;
 
-    friend std::ostream& operator<<(std::ostream&, const partition_manager&);
-    friend std::ostream& operator<<(
-      std::ostream&, const partition_manager::partition_shutdown_stage&);
+    friend constexpr std::string_view format_as(partition_shutdown_stage);
+
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 } // namespace cluster

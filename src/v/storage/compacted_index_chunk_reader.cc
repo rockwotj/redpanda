@@ -249,20 +249,19 @@ compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point t) {
     });
 }
 
-std::ostream&
-operator<<(std::ostream& o, const compacted_index_chunk_reader& r) {
-    fmt::print(
-      o,
+fmt::iterator
+compacted_index_chunk_reader::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{type:compacted_index_chunk_reader, _max_chunk_memory:{}, "
       "_data_size:{}, _footer:{}, active_cursor:{}, end_of_stream:{}, "
       "_byte_index:{}}}",
-      r._max_chunk_memory,
-      r._data_size,
-      r._footer,
-      (r._cursor ? "yes" : "no"),
-      r.is_end_of_stream(),
-      r._byte_index);
-    return o;
+      _max_chunk_memory,
+      _data_size,
+      _footer,
+      (_cursor ? "yes" : "no"),
+      is_end_of_stream(),
+      _byte_index);
 }
 
 } // namespace storage::internal

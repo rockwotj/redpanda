@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 
 #include "base/seastarx.h"
 #include "kafka/protocol/schemata/metadata_request.h"
@@ -69,10 +70,8 @@ struct metadata_request {
           .list_all_topics = list_all_topics,
         };
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const metadata_request& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 

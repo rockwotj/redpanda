@@ -18,6 +18,8 @@
 
 #include <seastar/util/variant_utils.hh>
 
+#include <fmt/chrono.h>
+#include <fmt/ostream.h>
 #include <fmt/ranges.h>
 
 #include <ostream>
@@ -58,74 +60,86 @@ bool is_valid_status_transition(
 }
 
 std::ostream& operator<<(std::ostream& os, const link_status& s) {
-    return os << fmt::format("{}", s);
+    return os << format_as(s);
 }
 
 std::ostream& operator<<(std::ostream& os, mirror_topic_status s) {
-    return os << fmt::format("{}", s);
+    return os << format_as(s);
 }
 
 std::ostream& operator<<(std::ostream& os, task_state s) {
-    return os << fmt::format("{}", s);
+    return os << format_as(s);
 }
 
 std::ostream& operator<<(std::ostream& os, const scram_credentials& creds) {
-    return os << fmt::format("{}", creds);
+    fmt::print(os, "{}", creds);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const tls_file_path& p) {
-    return os << fmt::format("{}", p());
+    fmt::print(os, "{}", p());
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const tls_value& v) {
-    return os << fmt::format("{}", v());
+    fmt::print(os, "{}", v());
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const tls_file_or_value& t) {
-    return os << fmt::format("{}", t);
+    fmt::print(os, "{}", t);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const connection_config& cfg) {
-    return os << fmt::format("{}", cfg);
+    fmt::print(os, "{}", cfg);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const mirror_topic_metadata& md) {
-    return os << fmt::format("{}", md);
+    fmt::print(os, "{}", md);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, filter_pattern_type f) {
-    return os << fmt::format("{}", f);
+    return os << format_as(f);
 }
 
 std::ostream& operator<<(std::ostream& os, filter_type f) {
-    return os << fmt::format("{}", f);
+    return os << format_as(f);
 }
 
 std::ostream&
 operator<<(std::ostream& os, const resource_name_filter_pattern& p) {
-    return os << fmt::format("{}", p);
+    fmt::print(os, "{}", p);
+    return os;
 }
 
 std::ostream&
 operator<<(std::ostream& os, const topic_metadata_mirroring_config& cfg) {
-    return os << fmt::format("{}", cfg);
+    fmt::print(os, "{}", cfg);
+    return os;
 }
 
 std::ostream&
 operator<<(std::ostream& os, const consumer_groups_mirroring_config& cfg) {
-    return os << fmt::format("{}", cfg);
+    fmt::print(os, "{}", cfg);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const link_configuration& cfg) {
-    return os << fmt::format("{}", cfg);
+    fmt::print(os, "{}", cfg);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const link_state& ls) {
-    return os << fmt::format("{}", ls);
+    fmt::print(os, "{}", ls);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const metadata& md) {
-    return os << fmt::format("{}", md);
+    fmt::print(os, "{}", md);
+    return os;
 }
 
 mirror_topic_metadata mirror_topic_metadata::copy() const {
@@ -403,11 +417,7 @@ fmt::iterator shadow_link_status_report::format_to(fmt::iterator it) const {
 }
 } // namespace cluster_link::model
 
-auto fmt::formatter<cluster_link::model::task_state>::format(
-  cluster_link::model::task_state st, format_context& ctx) const
-  -> decltype(ctx.out()) {
-    return fmt::format_to(ctx.out(), "{}", to_string_view(st));
-}
+// task_state uses format_as() for formatting
 
 auto fmt::formatter<cluster_link::model::scram_credentials>::format(
   const cluster_link::model::scram_credentials& c, format_context& ctx)
@@ -530,17 +540,7 @@ auto fmt::formatter<
       ctx.out(), "{{topic: {}, metadata: {}}}", m.first, m.second);
 }
 
-auto fmt::formatter<cluster_link::model::filter_pattern_type>::format(
-  cluster_link::model::filter_pattern_type s, format_context& ctx) const
-  -> decltype(ctx.out()) {
-    return fmt::format_to(ctx.out(), "{}", to_string_view(s));
-}
-
-auto fmt::formatter<cluster_link::model::filter_type>::format(
-  cluster_link::model::filter_type s, format_context& ctx) const
-  -> decltype(ctx.out()) {
-    return fmt::format_to(ctx.out(), "{}", to_string_view(s));
-}
+// filter_pattern_type and filter_type use format_as() for formatting
 
 auto fmt::formatter<cluster_link::model::resource_name_filter_pattern>::format(
   const cluster_link::model::resource_name_filter_pattern& m,

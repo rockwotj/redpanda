@@ -328,19 +328,6 @@ resolved_schema::resolved_schema(ss::shared_ptr<iceberg::json_conversion_ir> ir)
   , schema_(
       *std::get<ss::shared_ptr<iceberg::json_conversion_ir>>(shared_schema_)) {}
 
-std::ostream& operator<<(std::ostream& o, const type_resolver::errc& e) {
-    switch (e) {
-    case type_resolver::errc::registry_error:
-        return o << "type_resolver::errc::registry_error";
-    case type_resolver::errc::translation_error:
-        return o << "type_resolver::errc::translation_error";
-    case type_resolver::errc::bad_input:
-        return o << "type_resolver::errc::bad_input";
-    case type_resolver::errc::invalid_config:
-        return o << "type_resolver::errc::invalid_config";
-    }
-}
-
 type_and_buf type_and_buf::make_raw_binary(std::optional<iobuf> b) {
     return type_and_buf{
       .type = std::nullopt,

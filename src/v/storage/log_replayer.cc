@@ -117,19 +117,20 @@ log_replayer::checkpoint log_replayer::recover_in_thread() {
     return _ckpt;
 }
 
-std::ostream& operator<<(std::ostream& o, const log_replayer::checkpoint& c) {
-    o << "{ last_offset: ";
-    if (c.last_offset) {
-        o << *c.last_offset;
+fmt::iterator
+log_replayer::checkpoint::format_to(fmt::iterator it) const {
+    it = fmt::format_to(it, "{{ last_offset: ");
+    if (last_offset) {
+        it = fmt::format_to(it, "{}", *last_offset);
     } else {
-        o << "null";
+        it = fmt::format_to(it, "null");
     }
-    o << ", truncate_file_pos:";
-    if (c.truncate_file_pos) {
-        o << *c.truncate_file_pos;
+    it = fmt::format_to(it, ", truncate_file_pos:");
+    if (truncate_file_pos) {
+        it = fmt::format_to(it, "{}", *truncate_file_pos);
     } else {
-        o << "null";
+        it = fmt::format_to(it, "null");
     }
-    return o << "}";
+    return fmt::format_to(it, "}}");
 }
 } // namespace storage

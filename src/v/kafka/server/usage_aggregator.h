@@ -71,17 +71,16 @@ struct usage
           bytes_sent, bytes_received, bytes_cloud_storage, datalake_usage);
     }
     friend bool operator==(const usage&, const usage&) = default;
-    friend std::ostream& operator<<(std::ostream& os, const usage& u) {
-        fmt::print(
-          os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{ bytes_sent: {} bytes_received: {} bytes_cloud_storage: {} "
           "datalake_usage: {} }}",
-          u.bytes_sent,
-          u.bytes_received,
-          u.bytes_cloud_storage ? std::to_string(*u.bytes_cloud_storage)
-                                : "n/a",
-          u.datalake_usage);
-        return os;
+          bytes_sent,
+          bytes_received,
+          bytes_cloud_storage ? std::to_string(*bytes_cloud_storage)
+                              : "n/a",
+          datalake_usage);
     }
 };
 

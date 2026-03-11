@@ -41,6 +41,7 @@
 #include "test_utils/test.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
+#include "base/format_to.h"
 #include "transform/rpc/serde.h"
 #include "transform/rpc/service.h"
 #include "utils/backoff_policy.h"
@@ -383,10 +384,12 @@ struct test_parameters {
     model::node_id leader_node;
     model::node_id non_leader_node;
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const test_parameters& tp) {
-        return os << "{leader_node: " << tp.leader_node
-                  << " non_leader_node: " << tp.non_leader_node << "}";
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "{{leader_node: {} non_leader_node: {}}}",
+          leader_node,
+          non_leader_node);
     }
 };
 

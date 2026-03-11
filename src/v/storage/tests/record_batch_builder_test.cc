@@ -10,6 +10,7 @@
  */
 
 #include "absl/container/btree_map.h"
+#include "base/format_to.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "model/record.h"
@@ -30,13 +31,16 @@ struct sample_type {
         return key == st.key && value == st.value && kv_pairs == st.kv_pairs;
     }
     bool operator!=(const sample_type& st) const { return !(*this == st); }
-};
 
-std::ostream& operator<<(std::ostream& os, const sample_type& st) {
-    os << "Key: " << st.key << " Value: " << st.value
-       << " Number of headers: " << st.kv_pairs.size() << std::endl;
-    return os;
-}
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "Key: {} Value: {} Number of headers: {}\n",
+          key,
+          value,
+          kv_pairs.size());
+    }
+};
 
 void serialize_sample_type(storage::record_batch_builder& rbb, sample_type st) {
     iobuf key, value;

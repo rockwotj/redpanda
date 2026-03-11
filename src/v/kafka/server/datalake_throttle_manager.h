@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #pragma once
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "config/property.h"
 #include "container/chunked_hash_map.h"
@@ -41,7 +42,7 @@ public:
 
         status operator+(const status& o) const;
 
-        friend std::ostream& operator<<(std::ostream&, const status&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     using clock_type = ss::lowres_clock;

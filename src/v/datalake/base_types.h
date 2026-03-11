@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #pragma once
+#include "base/format_to.h"
 #include "utils/named_type.h"
 
 #include <filesystem>
@@ -29,7 +30,6 @@ struct local_file_metadata {
     size_t row_count = 0;
     size_t size_bytes = 0;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const local_file_metadata& r);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 } // namespace datalake

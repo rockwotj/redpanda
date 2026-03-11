@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "container/chunked_vector.h"
 #include "kafka/protocol/errors.h"
@@ -49,10 +50,8 @@ struct join_group_request final {
     void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const join_group_request& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 
@@ -101,10 +100,8 @@ struct join_group_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const join_group_response& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 

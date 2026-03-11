@@ -29,7 +29,6 @@
 #include <fmt/ranges.h>
 
 #include <chrono>
-#include <ostream>
 #include <span>
 #include <string>
 #include <vector>
@@ -175,25 +174,31 @@ void server_probe::setup_public_metrics(
       });
 }
 
-std::ostream& operator<<(std::ostream& o, const server_probe& p) {
-    o << "{"
-      << "connects: " << p._connects << ", "
-      << "current connections: " << p._connections << ", "
-      << "connection close errors: " << p._connection_close_error << ", "
-      << "connections rejected (open limit): "
-      << p._connections_rejected_open_limit << ", "
-      << "connections rejected (rate limit): "
-      << p._connections_rejected_rate_limit << ", "
-      << "requests received: " << p._requests_received << ", "
-      << "requests completed: " << p._requests_completed << ", "
-      << "service errors: " << p._service_errors << ", "
-      << "received bytes: " << p._in_bytes << ", "
-      << "sent bytes: " << p._out_bytes << ", "
-      << "corrupted headers: " << p._corrupted_headers << ", "
-      << "method not found errors: " << p._method_not_found_errors << ", "
-      << "requests blocked by memory: " << p._requests_blocked_memory << ", "
-      << "connections wait rate: " << p._connections_wait_rate << "}";
-    return o;
+fmt::iterator server_probe::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{connects: {}, current connections: {}, "
+      "connection close errors: {}, "
+      "connections rejected (open limit): {}, "
+      "connections rejected (rate limit): {}, "
+      "requests received: {}, requests completed: {}, "
+      "service errors: {}, received bytes: {}, sent bytes: {}, "
+      "corrupted headers: {}, method not found errors: {}, "
+      "requests blocked by memory: {}, connections wait rate: {}}}",
+      _connects,
+      _connections,
+      _connection_close_error,
+      _connections_rejected_open_limit,
+      _connections_rejected_rate_limit,
+      _requests_received,
+      _requests_completed,
+      _service_errors,
+      _in_bytes,
+      _out_bytes,
+      _corrupted_headers,
+      _method_not_found_errors,
+      _requests_blocked_memory,
+      _connections_wait_rate);
 }
 
 void client_probe::setup_metrics(

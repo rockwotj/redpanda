@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
@@ -51,6 +52,7 @@ enum class candidate_creation_error {
     concurrency_error,
 };
 
+std::string_view format_as(candidate_creation_error);
 std::ostream& operator<<(std::ostream&, candidate_creation_error);
 
 ss::log_level log_level_for_error(const candidate_creation_error& error);
@@ -68,7 +70,7 @@ struct upload_candidate {
     std::vector<ss::lw_shared_ptr<storage::segment>> sources;
     std::vector<cloud_storage::remote_segment_path> remote_sources;
 
-    friend std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 struct upload_candidate_with_locks {
@@ -83,7 +85,7 @@ struct skip_offset_range {
     model::offset end_offset;
     candidate_creation_error reason;
 
-    friend std::ostream& operator<<(std::ostream&, const skip_offset_range&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 using candidate_creation_result = std::variant<
@@ -119,8 +121,7 @@ struct segment_collector_stream {
 
     model::term_id term;
 
-    friend std::ostream&
-    operator<<(std::ostream& s, const segment_collector_stream&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 using segment_collector_stream_result = std::variant<

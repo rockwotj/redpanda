@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/node_hash_map.h"
+#include "base/format_to.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/types.h"
 #include "config/property.h"
@@ -132,7 +133,21 @@ private:
     int32_t _shard0_reserved{0};
     uint32_t _cpus;
 
-    friend std::ostream& operator<<(std::ostream&, const allocation_node&);
     friend std::ostream& operator<<(std::ostream& o, state s);
+
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
+
+inline constexpr std::string_view format_as(allocation_node::state s) {
+    switch (s) {
+    case allocation_node::state::active:
+        return "active";
+    case allocation_node::state::decommissioned:
+        return "decommissioned";
+    case allocation_node::state::deleted:
+        return "deleted";
+    }
+}
+
 } // namespace cluster

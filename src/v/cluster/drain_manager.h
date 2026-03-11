@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "reflection/adl.h"
@@ -55,7 +56,7 @@ public:
         std::optional<size_t> transferring;
         std::optional<size_t> failed;
 
-        friend std::ostream& operator<<(std::ostream&, const drain_status&);
+        fmt::iterator format_to(fmt::iterator) const;
         friend bool operator==(const drain_status&, const drain_status&)
           = default;
 

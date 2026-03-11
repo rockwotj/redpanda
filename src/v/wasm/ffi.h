@@ -207,6 +207,15 @@ public:
 
 /** The values we support passing via FFI right now. */
 enum class val_type { i32, i64 };
+inline constexpr std::string_view format_as(val_type vt) {
+    switch (vt) {
+    case val_type::i32:
+        return "i32";
+    case val_type::i64:
+        return "i64";
+    }
+    return "unknown";
+}
 std::ostream& operator<<(std::ostream& o, val_type vt);
 
 namespace detail {

@@ -12,6 +12,7 @@
 
 #include "cluster/fwd.h"
 #include "kafka/data/partition_proxy.h"
+#include "base/format_to.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 
@@ -22,7 +23,7 @@ namespace kafka {
 struct consumer_info {
     model::offset fetch_offset;
     std::optional<model::rack_id> rack_id;
-    friend std::ostream& operator<<(std::ostream&, const consumer_info&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 struct replica_selector {

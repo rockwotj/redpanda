@@ -11,6 +11,7 @@
 #pragma once
 
 #include "absl/hash/hash.h"
+#include "base/format_to.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "serde/rw/envelope.h"
@@ -34,7 +35,7 @@ struct nt_revision
     }
 
     friend bool operator==(const nt_revision& lhs, const nt_revision& rhs);
-    friend std::ostream& operator<<(std::ostream&, const nt_revision&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     auto serde_fields() { return std::tie(nt, initial_revision_id); }
 };

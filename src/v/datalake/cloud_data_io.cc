@@ -150,14 +150,4 @@ cloud_data_io::delete_data_files(
     co_return map_upload_result(r_fut.get());
 }
 
-std::ostream& operator<<(std::ostream& o, cloud_data_io::errc ec) {
-    switch (ec) {
-    case cloud_data_io::errc::file_io_error:
-        return o << "cloud operation local file io error";
-    case cloud_data_io::errc::cloud_op_error:
-        return o << "cloud operation error";
-    case cloud_data_io::errc::cloud_op_timeout:
-        return o << "cloud operation timeout";
-    }
-}
 } // namespace datalake

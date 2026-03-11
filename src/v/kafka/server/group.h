@@ -12,6 +12,7 @@
 #pragma once
 #include "absl/container/node_hash_map.h"
 #include "absl/container/node_hash_set.h"
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/simple_batch_builder.h"
@@ -222,7 +223,7 @@ public:
          */
         bool non_reclaimable{false};
 
-        friend std::ostream& operator<<(std::ostream&, const offset_metadata&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     struct offset_metadata_with_probe {
@@ -729,11 +730,12 @@ public:
      */
     ss::future<cluster::tx::errc> abort_txes(bool expired_only);
 
+public:
+    fmt::iterator format_to(fmt::iterator) const;
+
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
-
-    friend std::ostream& operator<<(std::ostream&, const group&);
 
     class ctx_log {
     public:

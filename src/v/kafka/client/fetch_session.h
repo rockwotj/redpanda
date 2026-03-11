@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/node_hash_map.h"
+#include "base/format_to.h"
 #include "kafka/protocol/schemata/offset_commit_request.h"
 #include "model/fundamental.h"
 
@@ -42,7 +43,7 @@ public:
     std::vector<kafka::offset_commit_request_topic>
     make_offset_commit_request() const;
 
-    friend std::ostream& operator<<(std::ostream& os, const fetch_session&);
+    fmt::iterator format_to(fmt::iterator) const;
 
 private:
     kafka::fetch_session_id _id{kafka::invalid_fetch_session_id};

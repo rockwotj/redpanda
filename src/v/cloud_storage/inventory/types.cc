@@ -20,27 +20,15 @@ constexpr auto supported_backends = {model::cloud_storage_backend::aws};
 
 namespace cloud_storage::inventory {
 std::ostream& operator<<(std::ostream& os, report_generation_frequency rgf) {
-    switch (rgf) {
-    case report_generation_frequency::daily:
-        return os << "Daily";
-    }
+    return os << format_as(rgf);
 }
 
 std::ostream& operator<<(std::ostream& os, report_format rf) {
-    switch (rf) {
-    case report_format::csv:
-        return os << "CSV";
-    }
+    return os << format_as(rf);
 }
 
 std::ostream& operator<<(std::ostream& os, inventory_creation_result icr) {
-    switch (icr) {
-        using enum inventory_creation_result;
-    case success:
-        return os << "success";
-    case already_exists:
-        return os << "already-exists";
-    }
+    return os << format_as(icr);
 }
 
 bool validate_backend_supported_for_inventory_scrub(

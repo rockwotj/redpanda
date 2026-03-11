@@ -53,6 +53,7 @@ redpanda_cc_gtest(
         "object_utils_test.cc",
     ],
     deps = [
+        "//src/v/base",
         "//src/v/cloud_topics:object_utils",
         "//src/v/ssx:sformat",
         "//src/v/test_utils:gtest",
@@ -122,6 +123,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         ":cluster_fixture",
+        "//src/v/base",
         "//src/v/cloud_storage",
         "//src/v/cluster",
         "//src/v/cluster/cloud_metadata/tests:cluster_metadata_utils",

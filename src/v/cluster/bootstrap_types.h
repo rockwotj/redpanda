@@ -8,11 +8,10 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/format_to.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
-
-#include <fmt/ostream.h>
 
 #include <vector>
 
@@ -23,10 +22,8 @@ struct cluster_bootstrap_info_request
       cluster_bootstrap_info_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    friend std::ostream&
-    operator<<(std::ostream& o, const cluster_bootstrap_info_request&) {
-        fmt::print(o, "{{}}");
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{}}");
     }
 
     auto serde_fields() { return std::tie(); }
@@ -54,19 +51,17 @@ struct cluster_bootstrap_info_reply
           node_uuid);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const cluster_bootstrap_info_reply& v) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{broker: {}, version: {}, seed_servers: {}, "
           "empty_seed_starts_cluster: {}, cluster_uuid: {}, node_uuid: {}}}",
-          v.broker,
-          v.version,
-          v.seed_servers,
-          v.empty_seed_starts_cluster,
-          v.cluster_uuid,
-          v.node_uuid);
-        return o;
+          broker,
+          version,
+          seed_servers,
+          empty_seed_starts_cluster,
+          cluster_uuid,
+          node_uuid);
     }
 };
 

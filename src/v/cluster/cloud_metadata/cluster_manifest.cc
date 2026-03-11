@@ -160,18 +160,19 @@ cluster_metadata_manifest::get_manifest_path() const {
     return cluster_manifest_key(cluster_uuid, metadata_id);
 }
 
-std::ostream& operator<<(std::ostream& os, const cluster_metadata_manifest& m) {
-    os << fmt::format(
+fmt::iterator
+cluster_metadata_manifest::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{upload_time_since_epoch: {}, cluster_uuid: {}, metadata_id: {}, "
       "controller_snapshot_offset: {}, controller_snapshot_path: '{}', "
       "offsets_snapshots_by_partition: '{}'}}",
-      m.upload_time_since_epoch,
-      m.cluster_uuid,
-      m.metadata_id,
-      m.controller_snapshot_offset,
-      m.controller_snapshot_path,
-      m.offsets_snapshots_by_partition);
-    return os;
+      upload_time_since_epoch,
+      cluster_uuid,
+      metadata_id,
+      controller_snapshot_offset,
+      controller_snapshot_path,
+      offsets_snapshots_by_partition);
 }
 
 } // namespace cluster::cloud_metadata

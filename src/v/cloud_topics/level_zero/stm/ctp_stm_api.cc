@@ -25,19 +25,6 @@
 
 namespace cloud_topics {
 
-std::ostream& operator<<(std::ostream& o, ctp_stm_api_errc errc) {
-    switch (errc) {
-    case ctp_stm_api_errc::timeout:
-        return o << "timeout";
-    case ctp_stm_api_errc::not_leader:
-        return o << "not_leader";
-    case ctp_stm_api_errc::shutdown:
-        return o << "shutdown";
-    case ctp_stm_api_errc::failure:
-        return o << "failure";
-    }
-}
-
 ctp_stm_api::ctp_stm_api(ss::shared_ptr<ctp_stm> stm)
   : _stm(std::move(stm))
   , _log(_stm->log()) {}

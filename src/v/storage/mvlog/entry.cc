@@ -9,29 +9,19 @@
 
 #include "storage/mvlog/entry.h"
 
-#include <fmt/ostream.h>
-
-#include <type_traits>
-
 namespace storage::experimental::mvlog {
 
 std::ostream& operator<<(std::ostream& o, entry_type t) {
-    switch (t) {
-    case entry_type::record_batch:
-        return o << "record_batch";
-    }
-    fmt::print(o, "unknown ({})", static_cast<int8_t>(t));
-    return o;
+    return o << format_as(t);
 }
 
-std::ostream& operator<<(std::ostream& o, const entry_header& h) {
-    fmt::print(
-      o,
+fmt::iterator entry_header::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{header_crc: {}, body_size: {}, entry_type: {}}}",
-      h.header_crc,
-      h.body_size,
-      h.type);
-    return o;
+      header_crc,
+      body_size,
+      type);
 }
 
 } // namespace storage::experimental::mvlog

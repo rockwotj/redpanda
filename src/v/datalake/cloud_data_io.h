@@ -42,10 +42,29 @@ public:
       chunked_vector<remote_path> files_to_delete,
       retry_chain_node& rtc_parent);
 
-    friend std::ostream& operator<<(std::ostream&, errc);
-
 private:
     cloud_io::remote* _cloud_io;
     cloud_storage_clients::bucket_name _bucket;
 };
+
+inline constexpr std::string_view format_as(cloud_data_io::errc ec) {
+    switch (ec) {
+    case cloud_data_io::errc::file_io_error:
+        return "cloud operation local file io error";
+    case cloud_data_io::errc::cloud_op_error:
+        return "cloud operation error";
+    case cloud_data_io::errc::cloud_op_timeout:
+        return "cloud operation timeout";
+    }
+}
+
 } // namespace datalake
+
+template<>
+struct fmt::formatter<datalake::cloud_data_io::errc>
+  : fmt::formatter<std::string_view> {
+    auto format(datalake::cloud_data_io::errc e, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string_view>::format(
+          datalake::format_as(e), ctx);
+    }
+};

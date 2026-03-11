@@ -2819,10 +2819,10 @@ error_code group::validate_existing_member(
     return error_code::none;
 }
 
-std::ostream& operator<<(std::ostream& o, const group& g) {
-    const auto ntp = [&g] {
-        if (g._partition) {
-            return fmt::format("{}", g._partition->ntp());
+fmt::iterator group::format_to(fmt::iterator it) const {
+    const auto ntp = [this] {
+        if (_partition) {
+            return fmt::format("{}", _partition->ntp());
         } else {
             return std::string("<none>");
         }
@@ -2836,34 +2836,34 @@ std::ostream& operator<<(std::ostream& o, const group& g) {
         return std::nullopt;
     };
 
-    fmt::print(
-      o,
+    it = fmt::format_to(
+      it,
       "id={} state={} gen={} proto_type={} proto={} leader={} "
       "empty={} ntp={} num_members_joining={} new_member_added={} "
       "join_timer={}",
-      g.id(),
-      g.state(),
-      g.generation(),
-      g.protocol_type(),
-      g.protocol(),
-      g.leader(),
-      !g.has_members(),
+      id(),
+      state(),
+      generation(),
+      protocol_type(),
+      protocol(),
+      leader(),
+      !has_members(),
       ntp,
-      g._num_members_joining,
-      g._new_member_added,
-      timer_expires(g._join_timer));
+      _num_members_joining,
+      _new_member_added,
+      timer_expires(_join_timer));
 
-    fmt::print(o, " pending members [");
-    for (const auto& m : g._pending_members) {
-        fmt::print(o, "{} expires={} ", m.first, timer_expires(m.second));
+    it = fmt::format_to(it, " pending members [");
+    for (const auto& m : _pending_members) {
+        it = fmt::format_to(it, "{} expires={} ", m.first, timer_expires(m.second));
     }
-    fmt::print(o, "] full members [");
-    for (const auto& m : g._members) {
-        fmt::print(o, "{} ", m.second);
+    it = fmt::format_to(it, "] full members [");
+    for (const auto& m : _members) {
+        it = fmt::format_to(it, "{} ", m.second);
     }
-    fmt::print(o, "]");
+    it = fmt::format_to(it, "]");
 
-    return o;
+    return it;
 }
 
 std::ostream& operator<<(std::ostream& o, group_state gs) {
@@ -3379,16 +3379,15 @@ void group::try_arm(time_point_type deadline) {
     }
 }
 
-std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {
-    fmt::print(
-      o,
+fmt::iterator group::offset_metadata::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{log_offset:{}, offset:{}, metadata:{}, "
       "committed_leader_epoch:{}}}",
-      md.log_offset,
-      md.offset,
-      md.metadata,
-      md.committed_leader_epoch);
-    return o;
+      log_offset,
+      offset,
+      metadata,
+      committed_leader_epoch);
 }
 
 bool group::subscribed(const model::topic& topic) const {

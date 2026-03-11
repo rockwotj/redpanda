@@ -35,6 +35,7 @@ redpanda_cc_btest(
         "errors.cc",
     ],
     deps = [
+        "//src/v/base",
         "//src/v/kafka/protocol",
         "//src/v/pandaproxy:error",
         "//src/v/pandaproxy:json",

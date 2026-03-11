@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -49,14 +50,13 @@ struct ntp_leader
 
     friend bool operator==(const ntp_leader&, const ntp_leader&) = default;
 
-    friend std::ostream& operator<<(std::ostream& o, const ntp_leader& l) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{ntp: {}, term: {}, leader: {}}}",
-          l.ntp,
-          l.term,
-          l.leader_id ? l.leader_id.value()() : -1);
-        return o;
+          ntp,
+          term,
+          leader_id ? leader_id.value()() : -1);
     }
 
     auto serde_fields() { return std::tie(ntp, term, leader_id); }
@@ -88,16 +88,14 @@ struct ntp_leader_revision
     operator==(const ntp_leader_revision&, const ntp_leader_revision&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const ntp_leader_revision& r) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{ntp: {}, term: {}, leader: {}, revision: {}}}",
-          r.ntp,
-          r.term,
-          r.leader_id,
-          r.revision);
-        return o;
+          ntp,
+          term,
+          leader_id,
+          revision);
     }
 
     auto serde_fields() { return std::tie(ntp, term, leader_id, revision); }
@@ -132,10 +130,8 @@ struct update_leadership_request_v2
         return update_leadership_request_v2(std::move(leaders_cp));
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const update_leadership_request_v2& r) {
-        fmt::print(o, "leaders {}", r.leaders);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "leaders {}", leaders);
     }
 
     explicit update_leadership_request_v2(
@@ -152,10 +148,8 @@ struct update_leadership_reply
       serde::compat_version<0>> {
     update_leadership_reply() noexcept = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const update_leadership_reply&) {
-        fmt::print(o, "{{}}");
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{}}");
     }
 
     auto serde_fields() { return std::tie(); }
@@ -168,10 +162,8 @@ struct get_leadership_request
       serde::compat_version<0>> {
     get_leadership_request() noexcept = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const get_leadership_request&) {
-        fmt::print(o, "{{}}");
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{}}");
     }
 
     auto serde_fields() { return std::tie(); }
@@ -197,10 +189,8 @@ struct get_leadership_reply
     operator==(const get_leadership_reply&, const get_leadership_reply&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const get_leadership_reply& r) {
-        fmt::print(o, "leaders {}, success: {}", r.leaders, r.success);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "leaders {}, success: {}", leaders, success);
     }
 
     auto serde_fields() { return std::tie(leaders, success); }

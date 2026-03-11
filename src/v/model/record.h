@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
@@ -73,7 +74,9 @@ public:
         return !(*this == other);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const record_attributes&);
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{{}}}", _attributes.to_string());
+    }
 
 private:
     std::bitset<8> _attributes;
@@ -126,7 +129,7 @@ public:
                && _key == rhs._key && _value == rhs._value;
     }
 
-    friend std::ostream& operator<<(std::ostream&, const record_header&);
+    fmt::iterator format_to(fmt::iterator it) const;
 
 private:
     // If negative, the key is nil.
@@ -335,7 +338,7 @@ public:
 
     bool operator!=(const record& other) const { return !(*this == other); }
 
-    friend std::ostream& operator<<(std::ostream&, const record&);
+    fmt::iterator format_to(fmt::iterator it) const;
 
 private:
     int32_t _size_bytes{0};
@@ -456,8 +459,7 @@ public:
         serde::write(out, static_cast<uint64_t>(el._attributes.to_ullong()));
     }
 
-    friend std::ostream&
-    operator<<(std::ostream&, const record_batch_attributes&);
+    fmt::iterator format_to(fmt::iterator it) const;
 
 private:
     uint16_t maskable_value() const {
@@ -602,7 +604,7 @@ struct record_batch_header
     /// \brief resets the size, header crc and payload crc
     void reset_size_checksum_metadata(const iobuf& records);
 
-    friend std::ostream& operator<<(std::ostream&, const record_batch_header&);
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 
 using tx_seq = named_type<int64_t, struct tm_tx_seq>;
@@ -645,7 +647,7 @@ struct producer_identity
         return H::combine(std::move(h), pid.id, pid.epoch);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const producer_identity&);
+    fmt::iterator format_to(fmt::iterator it) const;
 
     auto serde_fields() { return std::tie(id, epoch); }
 };
@@ -669,7 +671,8 @@ struct tx_range
     auto serde_fields() { return std::tie(pid, first, last); }
 
     auto operator<=>(const tx_range&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const tx_range&);
+
+    fmt::iterator format_to(fmt::iterator it) const;
 
     template<typename H>
     friend H AbslHashValue(H h, const tx_range& range) {
@@ -715,7 +718,7 @@ struct batch_identity {
 
     bool is_idempotent() const { return pid.id > no_producer_id; }
 
-    friend std::ostream& operator<<(std::ostream&, const batch_identity&);
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 
 // A simple iterator for model::record_batch. Note that this iterator makes a
@@ -890,7 +893,7 @@ public:
         return !(*this == other);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const record_batch&);
+    fmt::iterator format_to(fmt::iterator it) const;
 
     record_batch share() {
         return record_batch(

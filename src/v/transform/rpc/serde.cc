@@ -48,159 +48,132 @@ produce_request produce_request::share() {
     return {std::move(shared), timeout};
 }
 
-std::ostream& operator<<(std::ostream& os, const offset_commit_request& req) {
-    fmt::print(
-      os, "{{ kvs: {}, coordinator: {} }}", req.kvs.size(), req.coordinator);
-    return os;
+fmt::iterator offset_commit_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ kvs: {}, coordinator: {} }}", kvs.size(), coordinator);
 }
 
-std::ostream& operator<<(std::ostream& os, const offset_commit_response& resp) {
-    fmt::print(os, "{{ errc: {} }}", resp.errc);
-    return os;
+fmt::iterator offset_commit_response::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ errc: {} }}", errc);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const find_coordinator_request& req) {
-    fmt::print(os, "{{ num_keys: {} }}", req.keys.size());
-    return os;
+fmt::iterator find_coordinator_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ num_keys: {} }}", keys.size());
 }
 
-std::ostream&
-operator<<(std::ostream& os, const find_coordinator_response& resp) {
-    fmt::print(
-      os,
+fmt::iterator find_coordinator_response::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ coordinators: {}, errors: {} }}",
-      resp.coordinators.size(),
-      resp.errors.size());
-    return os;
+      coordinators.size(),
+      errors.size());
 }
 
-std::ostream& operator<<(std::ostream& os, const generate_report_request&) {
-    fmt::print(os, "{{ }}");
-    return os;
+fmt::iterator generate_report_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ }}");
 }
 
-std::ostream& operator<<(std::ostream& os, const generate_report_reply& reply) {
-    fmt::print(os, "{{ transforms: {} }}", reply.report.transforms.size());
-    return os;
+fmt::iterator generate_report_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ transforms: {} }}", report.transforms.size());
 }
 
-std::ostream& operator<<(std::ostream& os, const offset_fetch_request& resp) {
-    fmt::print(
-      os,
+fmt::iterator offset_fetch_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ keys: {}, coordinator: {} }}",
-      resp.keys.size(),
-      resp.coordinator);
-    return os;
+      keys.size(),
+      coordinator);
 }
 
-std::ostream& operator<<(std::ostream& os, const offset_fetch_response& resp) {
-    fmt::print(
-      os,
+fmt::iterator offset_fetch_response::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ errc: {}, results: {} }}",
-      resp.errors.size(),
-      resp.results.size());
-    return os;
+      errors.size(),
+      results.size());
 }
 
-std::ostream&
-operator<<(std::ostream& os, const load_wasm_binary_request& req) {
-    fmt::print(os, "{{ offset: {}, timeout: {} }}", req.offset, req.timeout);
-    return os;
+fmt::iterator load_wasm_binary_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ offset: {}, timeout: {} }}", offset, timeout);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const load_wasm_binary_reply& reply) {
-    fmt::print(
-      os,
+fmt::iterator load_wasm_binary_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ data_size: {}, errc: {} }}",
-      reply.data()->size_bytes(),
-      reply.ec);
-    return os;
+      data()->size_bytes(),
+      ec);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const delete_wasm_binary_reply& reply) {
-    fmt::print(os, "{{ errc: {} }}", reply.ec);
-    return os;
+fmt::iterator delete_wasm_binary_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ errc: {} }}", ec);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const delete_wasm_binary_request& req) {
-    fmt::print(os, "{{ key: {}, timeout: {} }}", req.key, req.timeout);
-    return os;
+fmt::iterator delete_wasm_binary_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ key: {}, timeout: {} }}", key, timeout);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const store_wasm_binary_reply& reply) {
-    fmt::print(os, "{{ errc: {}, stored: {} }}", reply.ec, reply.stored);
-    return os;
+fmt::iterator store_wasm_binary_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ errc: {}, stored: {} }}", ec, stored);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const stored_wasm_binary_metadata& meta) {
-    fmt::print(os, "{{ key: {}, offset: {} }}", meta.key, meta.offset);
-    return os;
+fmt::iterator
+stored_wasm_binary_metadata::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ key: {}, offset: {} }}", key, offset);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const store_wasm_binary_request& req) {
-    fmt::print(
-      os,
+fmt::iterator store_wasm_binary_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ data_size: {}, timeout: {} }}",
-      req.data()->size_bytes(),
-      req.timeout);
-    return os;
+      data()->size_bytes(),
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& os, const produce_request& req) {
-    fmt::print(
-      os,
+fmt::iterator produce_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ topic_data: {}, timeout: {} }}",
-      fmt::join(req.topic_data, ", "),
-      req.timeout);
-    return os;
+      fmt::join(topic_data, ", "),
+      timeout);
 }
 
-std::ostream& operator<<(std::ostream& os, const produce_reply& reply) {
-    fmt::print(os, "{{ results: {} }}", fmt::join(reply.results, ", "));
-    return os;
+fmt::iterator produce_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ results: {} }}", fmt::join(results, ", "));
 }
 
-std::ostream&
-operator<<(std::ostream& os, const transformed_topic_data_result& result) {
-    fmt::print(os, "{{ errc: {}, tp: {} }}", result.err, result.tp);
-    return os;
+fmt::iterator
+transformed_topic_data_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ errc: {}, tp: {} }}", err, tp);
 }
 
-std::ostream& operator<<(std::ostream& os, const transformed_topic_data& data) {
-    fmt::print(
-      os, "{{ tp: {}, batches_size: {} }}", data.tp, data.batches.size());
-    return os;
+fmt::iterator transformed_topic_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ tp: {}, batches_size: {} }}", tp, batches.size());
 }
 
-std::ostream& operator<<(std::ostream& os, const list_commits_request& req) {
-    fmt::print(os, "{{ partition: {} }}", req.partition);
-    return os;
+fmt::iterator list_commits_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ partition: {} }}", partition);
 }
 
-std::ostream& operator<<(std::ostream& os, const list_commits_reply& reply) {
-    fmt::print(os, "{{ ec: {}, map_size: {} }}", reply.errc, reply.map.size());
-    return os;
+fmt::iterator list_commits_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ ec: {}, map_size: {} }}", errc, map.size());
 }
 
-std::ostream& operator<<(std::ostream& os, const delete_commits_request& req) {
-    fmt::print(
-      os,
+fmt::iterator delete_commits_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ partition: {}, transform_ids_size: {} }}",
-      req.partition,
-      req.ids.size());
-    return os;
+      partition,
+      ids.size());
 }
 
-std::ostream& operator<<(std::ostream& os, const delete_commits_reply& reply) {
-    fmt::print(os, "{{ ec: {} }}", reply.errc);
-    return os;
+fmt::iterator delete_commits_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ ec: {} }}", errc);
 }
 
 } // namespace transform::rpc

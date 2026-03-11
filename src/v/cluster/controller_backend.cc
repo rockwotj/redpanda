@@ -246,17 +246,15 @@ struct controller_backend::ntp_reconciliation_state {
         cur_operation->assignment = std::move(p_as);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{pending_notifies: {},  properties_changed_at: {}, removed_at: {}, "
           "cur_operation: {}}}",
-          rs.pending_notifies,
-          rs.properties_changed_at,
-          rs.removed_at,
-          rs.cur_operation);
-        return o;
+          pending_notifies,
+          properties_changed_at,
+          removed_at,
+          cur_operation);
     }
 };
 
@@ -2146,19 +2144,18 @@ controller_backend::split_voters_learners_for_force_reconfiguration(
     return std::make_pair(std::move(voters), std::move(learners));
 }
 
-std::ostream& operator<<(
-  std::ostream& o, const controller_backend::in_progress_operation& op) {
-    fmt::print(
-      o,
+fmt::iterator
+controller_backend::in_progress_operation::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{revision: {}, type: {}, assignment: {}, retries: {}, "
       "last_error: {} ({})}}",
-      op.revision,
-      op.type,
-      op.assignment,
-      op.retries,
-      op.last_error,
-      std::error_code{op.last_error}.message());
-    return o;
+      revision,
+      type,
+      assignment,
+      retries,
+      last_error,
+      std::error_code{last_error}.message());
 }
 
 } // namespace cluster

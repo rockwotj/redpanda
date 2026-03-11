@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -36,6 +37,8 @@ public:
 
     std::optional<std::chrono::milliseconds> retention_ms() const;
 
+    fmt::iterator format_to(fmt::iterator) const;
+
 private:
     recovery_request() = default;
 
@@ -45,7 +48,5 @@ private:
     std::optional<size_t> _retention_bytes;
     std::optional<std::chrono::milliseconds> _retention_ms;
 };
-
-std::ostream& operator<<(std::ostream&, const recovery_request&);
 
 } // namespace cloud_storage

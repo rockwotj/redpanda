@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/btree_map.h"
+#include "base/format_to.h"
 #include "model/fundamental.h"
 
 namespace storage {
@@ -99,8 +100,7 @@ public:
     static offset_translator_state from_bootstrap_state(
       model::ntp, const absl::btree_map<model::offset, int64_t>&);
 
-    friend std::ostream&
-    operator<<(std::ostream&, const offset_translator_state&);
+    fmt::iterator format_to(fmt::iterator) const;
 
 private:
     // Represents a non-data batch in the log - a batch that contributes to the

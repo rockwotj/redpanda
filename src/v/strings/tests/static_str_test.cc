@@ -12,13 +12,14 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 #include <boost/test/unit_test_suite.hpp>
-#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 #include <string_view>
 
 // for boost test
 std::ostream& operator<<(std::ostream& o, const static_str& s) {
-    return o << (std::string_view)s;
+    fmt::print(o, "{}", s);
+    return o;
 }
 
 using namespace std::string_view_literals;

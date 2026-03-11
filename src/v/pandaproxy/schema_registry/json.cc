@@ -241,15 +241,14 @@ bool operator==(
     return lhs.raw() == rhs.raw();
 }
 
-std::ostream& operator<<(std::ostream& os, const json_schema_definition& def) {
-    fmt::print(
-      os,
+fmt::iterator json_schema_definition::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "type: {}, definition: {}, references: {}, metadata: {}",
-      to_string_view(def.type()),
-      def().to_json(),
-      def.refs(),
-      def.meta());
-    return os;
+      to_string_view(type()),
+      (*this)().to_json(),
+      refs(),
+      meta());
 }
 
 schema_definition::raw_string json_schema_definition::raw() const {

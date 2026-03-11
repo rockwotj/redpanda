@@ -81,6 +81,7 @@ redpanda_cc_gtest(
     flaky = True,
     deps = [
         ":test_deps",
+        "//src/v/base",
         "//src/v/cluster_link:impl",
         "//src/v/cluster_link/model",
         "//src/v/kafka/data/rpc",

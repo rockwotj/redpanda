@@ -17,38 +17,42 @@
 
 namespace features {
 
-std::ostream& operator<<(std::ostream& os, license_required_feature f) {
+std::string_view format_as(license_required_feature f) {
     switch (f) {
     case license_required_feature::audit_logging:
-        return os << "audit_logging";
+        return "audit_logging";
     case license_required_feature::cloud_storage:
-        return os << "cloud_storage";
+        return "cloud_storage";
     case license_required_feature::partition_auto_balancing_continuous:
-        return os << "partition_auto_balancing_continuous";
+        return "partition_auto_balancing_continuous";
     case license_required_feature::core_balancing_continuous:
-        return os << "core_balancing_continuous";
+        return "core_balancing_continuous";
     case license_required_feature::gssapi:
-        return os << "gssapi";
+        return "gssapi";
     case license_required_feature::oidc:
-        return os << "oidc";
+        return "oidc";
     case license_required_feature::schema_id_validation:
-        return os << "schema_id_validation";
+        return "schema_id_validation";
     case license_required_feature::rbac:
-        return os << "rbac";
+        return "rbac";
     case license_required_feature::fips:
-        return os << "fips";
+        return "fips";
     case license_required_feature::datalake_iceberg:
-        return os << "datalake_iceberg";
+        return "datalake_iceberg";
     case license_required_feature::leadership_pinning:
-        return os << "leadership_pinning";
+        return "leadership_pinning";
     case license_required_feature::shadow_linking:
-        return os << "shadow_linking";
+        return "shadow_linking";
     case license_required_feature::cloud_topics:
-        return os << "cloud_topics";
+        return "cloud_topics";
     case license_required_feature::topic_deletion_disabled:
-        return os << "topic_deletion_disabled";
+        return "topic_deletion_disabled";
     }
     __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& os, license_required_feature f) {
+    return os << format_as(f);
 }
 
 void enterprise_feature_report::set(

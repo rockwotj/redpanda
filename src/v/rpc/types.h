@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/likely.h"
 #include "base/outcome.h"
 #include "base/seastarx.h"
@@ -35,7 +36,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <iosfwd>
 #include <limits>
 #include <type_traits>
 #include <vector>
@@ -242,7 +242,7 @@ struct header {
     /// \brief xxhash64
     uint64_t payload_checksum{0};
 
-    friend std::ostream& operator<<(std::ostream&, const header&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 static constexpr size_t size_of_rpc_header
@@ -481,6 +481,8 @@ struct transport_configuration {
     transport_version version{transport_version::v2};
 };
 
+std::string_view format_as(status);
 std::ostream& operator<<(std::ostream&, const status&);
+std::string_view format_as(transport_version);
 std::ostream& operator<<(std::ostream&, transport_version);
 } // namespace rpc

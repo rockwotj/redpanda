@@ -68,40 +68,42 @@ private:
     metrics::internal_metric_groups _metrics;
 };
 
-std::ostream& operator<<(
-  std::ostream& o, const shard_placement_table::shard_local_assignment& as) {
-    fmt::print(
-      o,
+fmt::iterator shard_placement_table::shard_local_assignment::format_to(
+  fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{group: {}, log_revision: {}, shard_revision: {}}}",
-      as.group,
-      as.log_revision,
-      as.shard_revision);
-    return o;
+      group,
+      log_revision,
+      shard_revision);
 }
 
-std::ostream&
-operator<<(std::ostream& o, shard_placement_table::hosted_status s) {
+std::string_view format_as(shard_placement_table::hosted_status s) {
     switch (s) {
     case shard_placement_table::hosted_status::receiving:
-        return o << "receiving";
+        return "receiving";
     case shard_placement_table::hosted_status::hosted:
-        return o << "hosted";
+        return "hosted";
     case shard_placement_table::hosted_status::obsolete:
-        return o << "obsolete";
+        return "obsolete";
     }
     __builtin_unreachable();
 }
 
-std::ostream& operator<<(
-  std::ostream& o, const shard_placement_table::shard_local_state& ls) {
-    fmt::print(
-      o,
+std::ostream&
+operator<<(std::ostream& o, shard_placement_table::hosted_status s) {
+    return o << format_as(s);
+}
+
+fmt::iterator
+shard_placement_table::shard_local_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{group: {}, log_revision: {}, status: {}, shard_revision: {}}}",
-      ls.group,
-      ls.log_revision,
-      ls.status,
-      ls.shard_revision);
-    return o;
+      group,
+      log_revision,
+      status,
+      shard_revision);
 }
 
 shard_placement_table::reconciliation_action

@@ -136,6 +136,31 @@ enum class describe_configs_type : int8_t {
 };
 
 std::ostream& operator<<(std::ostream&, describe_configs_type t);
+inline constexpr std::string_view format_as(describe_configs_type t) {
+    switch (t) {
+    case describe_configs_type::unknown:
+        return "{unknown}";
+    case describe_configs_type::boolean:
+        return "{boolean}";
+    case describe_configs_type::string:
+        return "{string}";
+    case describe_configs_type::int_type:
+        return "{int}";
+    case describe_configs_type::short_type:
+        return "{short}";
+    case describe_configs_type::long_type:
+        return "{long}";
+    case describe_configs_type::double_type:
+        return "{double}";
+    case describe_configs_type::list:
+        return "{list}";
+    case describe_configs_type::class_type:
+        return "{class}";
+    case describe_configs_type::password:
+        return "{password}";
+    }
+    return "{unsupported type}";
+}
 
 inline const kafka::protocol_type consumer_group_protocol_type("consumer");
 
@@ -156,6 +181,18 @@ enum class describe_client_quotas_match_type : int8_t {
 };
 
 std::ostream& operator<<(std::ostream&, describe_client_quotas_match_type t);
+inline constexpr std::string_view
+format_as(describe_client_quotas_match_type t) {
+    switch (t) {
+    case describe_client_quotas_match_type::exact_name:
+        return "{exact_name}";
+    case describe_client_quotas_match_type::default_name:
+        return "{default_name}";
+    case describe_client_quotas_match_type::any_specified_name:
+        return "{any_specified_name}";
+    }
+    return "{unsupported type}";
+}
 
 /*
  * The names of group states.
@@ -172,10 +209,40 @@ inline constexpr std::string_view group_state_name_dead = "Dead";
 inline constexpr generation_id unknown_generation_id(-1);
 
 std::ostream& operator<<(std::ostream& os, coordinator_type t);
+inline constexpr std::string_view format_as(coordinator_type t) {
+    switch (t) {
+    case coordinator_type::group:
+        return "{group}";
+    case coordinator_type::transaction:
+        return "{transaction}";
+    }
+    return "{unknown type}";
+}
 
 std::ostream& operator<<(std::ostream& os, config_resource_type t);
+inline constexpr std::string_view format_as(config_resource_type t) {
+    switch (t) {
+    case config_resource_type::topic:
+        return "{topic}";
+    case config_resource_type::broker:
+    case config_resource_type::broker_logger:
+        break;
+    }
+    return "{unknown type}";
+}
 
 std::ostream& operator<<(std::ostream& os, describe_configs_source s);
+inline constexpr std::string_view format_as(describe_configs_source s) {
+    switch (s) {
+    case describe_configs_source::topic:
+        return "{topic}";
+    case describe_configs_source::static_broker_config:
+        return "{static_broker_config}";
+    case describe_configs_source::default_config:
+        return "{default_config}";
+    }
+    return "{unknown type}";
+}
 
 /*
  * TODO this can be moved out of the protocol library and into the server if the
@@ -226,6 +293,19 @@ enum class config_resource_operation : int8_t {
 };
 
 std::ostream& operator<<(std::ostream& os, config_resource_operation);
+inline constexpr std::string_view format_as(config_resource_operation t) {
+    switch (t) {
+    case config_resource_operation::set:
+        return "set";
+    case config_resource_operation::append:
+        return "append";
+    case config_resource_operation::remove:
+        return "remove";
+    case config_resource_operation::subtract:
+        return "subtract";
+    }
+    return "unknown type";
+}
 
 using scram_user_name = named_type<ss::sstring, struct scram_user_name_tag>;
 
@@ -236,6 +316,17 @@ enum class scram_mechanism : int8_t {
 };
 
 std::ostream& operator<<(std::ostream& os, scram_mechanism);
+inline constexpr std::string_view format_as(scram_mechanism m) {
+    switch (m) {
+    case scram_mechanism::scram_sha_256:
+        return "SCRAM-SHA-256";
+    case scram_mechanism::scram_sha_512:
+        return "SCRAM-SHA-512";
+    case scram_mechanism::unknown:
+        return "unknown";
+    }
+    return "unsupported type";
+}
 
 using topic_authorized_operations
   = named_type<int32_t, struct topic_authorized_operations_tag>;

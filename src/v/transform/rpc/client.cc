@@ -173,9 +173,9 @@ template<typename T>
 requires outcome::is_basic_result_v<T>
 std::ostream& operator<<(std::ostream& os, T result) {
     if (result.has_value()) {
-        return fmt::print(os, "{{ value: {} }}", result.value());
+        fmt::print(os, "{{ value: {} }}", result.value());
     } else {
-        return fmt::print(os, "{{ error: {} }}", result.error());
+        fmt::print(os, "{{ error: {} }}", result.error());
     }
     return os;
 }

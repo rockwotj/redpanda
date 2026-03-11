@@ -12,6 +12,7 @@
 
 #include "absl/container/node_hash_map.h"
 #include "absl/container/node_hash_set.h"
+#include "base/format_to.h"
 #include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
@@ -324,7 +325,7 @@ public:
         return x;
     }
     constexpr explicit operator bool() const;
-    friend std::ostream& operator<<(std::ostream&, const partition_risk&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 struct partition_risk::c {
@@ -336,23 +337,22 @@ constexpr partition_risk::operator bool() const {
     return *this != partition_risk::c::no_risk;
 }
 
-std::ostream& operator<<(std::ostream& o, const partition_risk& r) {
+fmt::iterator partition_risk::format_to(fmt::iterator it) const {
     std::vector<std::string_view> parts;
-    if (r & cluster::partition_risk::c::rf1_offline) {
+    if (*this & cluster::partition_risk::c::rf1_offline) {
         parts.emplace_back("rf1_offline");
     }
-    if (r & cluster::partition_risk::c::full_acks_produce_unavailable) {
+    if (*this & cluster::partition_risk::c::full_acks_produce_unavailable) {
         parts.emplace_back("full_acks_produce_unavailable");
     }
-    if (r & cluster::partition_risk::c::unavailable) {
+    if (*this & cluster::partition_risk::c::unavailable) {
         parts.emplace_back("unavailable");
     }
-    if (r & cluster::partition_risk::c::acks1_data_loss) {
+    if (*this & cluster::partition_risk::c::acks1_data_loss) {
         parts.emplace_back("acks1_data_loss");
     }
 
-    fmt::print(o, "{{{}}}", fmt::join(parts, ", "));
-    return o;
+    return fmt::format_to(it, "{{{}}}", fmt::join(parts, ", "));
 }
 
 void record_risks_in_report(

@@ -55,8 +55,7 @@ public:
         model::revision_id log_revision;
         model::shard_revision_id shard_revision;
 
-        friend std::ostream&
-        operator<<(std::ostream&, const shard_local_assignment&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     enum class hosted_status {
@@ -102,8 +101,7 @@ public:
           : shard_local_state(
               as.group, as.log_revision, status, as.shard_revision) {}
 
-        friend std::ostream&
-        operator<<(std::ostream&, const shard_local_state&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     enum class reconciliation_action {
@@ -126,8 +124,6 @@ public:
         /// required reconciliation action for this NTP on this shard.
         reconciliation_action get_reconciliation_action(
           std::optional<model::revision_id> expected_log_revision) const;
-
-        friend std::ostream& operator<<(std::ostream&, const placement_state&);
 
         fmt::iterator format_to(fmt::iterator) const;
 
@@ -310,6 +306,7 @@ private:
     std::unique_ptr<probe> _probe;
 };
 
+std::string_view format_as(shard_placement_table::hosted_status);
 std::ostream& operator<<(std::ostream&, shard_placement_table::hosted_status);
 
 /// Enum with all key types in the shard_placement key space. All keys in this

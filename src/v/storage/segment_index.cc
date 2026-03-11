@@ -258,11 +258,17 @@ ss::future<> segment_index::flush_to_file(ss::file backing_file) {
     co_await out.flush();
 }
 
-std::ostream& operator<<(std::ostream& o, const segment_index& i) {
-    return o << "{file:" << i.path() << ", offsets:" << i.base_offset()
-             << ", index:" << i._state << ", step:" << i._step
-             << ", needs_persistence:" << i._needs_persistence << "}";
+fmt::iterator segment_index::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{file:{}, offsets:{}, index:{}, step:{}, needs_persistence:{}}}",
+      path(),
+      base_offset(),
+      _state,
+      _step,
+      _needs_persistence);
 }
+
 std::ostream& operator<<(std::ostream& o, const segment_index_ptr& i) {
     if (i) {
         return o << "{ptr=" << *i << "}";

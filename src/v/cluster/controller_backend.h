@@ -13,6 +13,7 @@
 
 #include "absl/container/btree_map.h"
 #include "absl/container/node_hash_map.h"
+#include "base/format_to.h"
 #include "base/outcome.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -232,8 +233,7 @@ public:
         uint64_t retries = 0;
         cluster::errc last_error = errc::success;
 
-        friend std::ostream&
-        operator<<(std::ostream&, const in_progress_operation&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     std::optional<in_progress_operation>

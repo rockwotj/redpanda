@@ -55,7 +55,7 @@ public:
 
     friend bool operator==(const legacy_entity_key&, const legacy_entity_key&)
       = default;
-    friend std::ostream& operator<<(std::ostream&, const legacy_entity_key&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     template<typename H>
     friend H AbslHashValue(H h, const legacy_entity_key& e) {
@@ -73,9 +73,8 @@ public:
     }
 };
 
-std::ostream& operator<<(std::ostream& os, const legacy_entity_key& key) {
-    fmt::print(os, "{{parts: {}}}", key.parts);
-    return os;
+fmt::iterator legacy_entity_key::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{parts: {}}}", parts);
 }
 
 TEST(client_quota_serde, round_trip) {

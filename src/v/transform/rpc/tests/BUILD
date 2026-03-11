@@ -7,6 +7,7 @@ redpanda_cc_gtest(
     cpu = 1,
     memory = "256MiB",
     deps = [
+        "//src/v/base",
         "//src/v/bytes",
         "//src/v/cluster",
         "//src/v/config",

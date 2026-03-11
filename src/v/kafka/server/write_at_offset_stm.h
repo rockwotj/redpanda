@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "cluster/state_machine_registry.h"
 #include "raft/persisted_stm.h"
 #include "raft/replicate.h"
@@ -187,8 +188,8 @@ private:
     struct term_offset {
         kafka::offset offset;
         model::term_id in_sync_term;
+        fmt::iterator format_to(fmt::iterator) const;
     };
-    friend std::ostream& operator<<(std::ostream&, const term_offset&);
 
     std::optional<term_offset> _inflight_last_offset;
     ssx::mutex _sync_lock;

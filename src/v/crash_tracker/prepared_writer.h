@@ -71,6 +71,7 @@ public:
 
 private:
     enum class state { uninitialized, initialized, filled, written, released };
+    friend std::string_view format_as(state);
     friend std::ostream& operator<<(std::ostream&, state);
 
     // Returns true on success, false on failure

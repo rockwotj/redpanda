@@ -61,116 +61,125 @@ outbound_migration outbound_migration::copy() const {
     };
 }
 
-std::ostream& operator<<(std::ostream& o, state state) {
+std::string_view format_as(state state) {
     switch (state) {
     case state::planned:
-        return o << "planned";
+        return "planned";
     case state::preparing:
-        return o << "preparing";
+        return "preparing";
     case state::prepared:
-        return o << "prepared";
+        return "prepared";
     case state::executing:
-        return o << "executing";
+        return "executing";
     case state::executed:
-        return o << "executed";
+        return "executed";
     case state::cut_over:
-        return o << "cut_over";
+        return "cut_over";
     case state::finished:
-        return o << "finished";
+        return "finished";
     case state::canceling:
-        return o << "canceling";
+        return "canceling";
     case state::cancelled:
-        return o << "cancelled";
+        return "cancelled";
     case state::deleted:
-        return o << "deleted";
+        return "deleted";
     }
+    return "unknown";
+}
+
+std::ostream& operator<<(std::ostream& o, state s) {
+    return o << format_as(s);
+}
+
+std::string_view format_as(migrated_replica_status status) {
+    switch (status) {
+    case migrated_replica_status::waiting_for_rpc:
+        return "waiting_for_rpc";
+    case migrated_replica_status::waiting_for_controller_update:
+        return "waiting_for_controller_update";
+    case migrated_replica_status::can_run:
+        return "can_run";
+    case migrated_replica_status::done:
+        return "done";
+    }
+    return "unknown";
 }
 
 std::ostream& operator<<(std::ostream& o, migrated_replica_status status) {
-    switch (status) {
-    case migrated_replica_status::waiting_for_rpc:
-        return o << "waiting_for_rpc";
-    case migrated_replica_status::waiting_for_controller_update:
-        return o << "waiting_for_controller_update";
-    case migrated_replica_status::can_run:
-        return o << "can_run";
-    case migrated_replica_status::done:
-        return o << "done";
+    return o << format_as(status);
+}
+
+std::string_view format_as(migrated_resource_state state) {
+    switch (state) {
+    case migrated_resource_state::non_restricted:
+        return "non_restricted";
+    case migrated_resource_state::metadata_locked:
+        return "restricted";
+    case migrated_resource_state::read_only:
+        return "read_only";
+    case migrated_resource_state::create_only:
+        return "create_only";
+    case migrated_resource_state::fully_blocked:
+        return "fully_blocked";
     }
+    return "unknown";
 }
 
 std::ostream& operator<<(std::ostream& o, migrated_resource_state state) {
-    switch (state) {
-    case migrated_resource_state::non_restricted:
-        return o << "non_restricted";
-    case migrated_resource_state::metadata_locked:
-        return o << "restricted";
-    case migrated_resource_state::read_only:
-        return o << "read_only";
-    case migrated_resource_state::create_only:
-        return o << "create_only";
-    case migrated_resource_state::fully_blocked:
-        return o << "fully_blocked";
-    }
+    return o << format_as(state);
 }
 
-std::ostream& operator<<(std::ostream& o, const inbound_topic& topic) {
-    fmt::print(
-      o,
+fmt::iterator inbound_topic::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{source_topic_name: {}, alias: {}, cloud_storage_location: {}}}",
-      topic.source_topic_name,
-      topic.alias,
-      topic.cloud_storage_location);
-    return o;
+      source_topic_name,
+      alias,
+      cloud_storage_location);
 }
 
-std::ostream& operator<<(std::ostream& o, const cloud_storage_location& l) {
-    fmt::print(o, "{{hint: {}}}", l.hint);
-    return o;
+fmt::iterator cloud_storage_location::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{hint: {}}}", hint);
 }
 
-std::ostream& operator<<(std::ostream& o, const copy_target& t) {
-    fmt::print(o, "{{bucket: {}}}", t.bucket);
-    return o;
+fmt::iterator copy_target::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{bucket: {}}}", bucket);
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_location& tl) {
-    fmt::print(
-      o, "{{remote_topic: {}, location: {}}}", tl.remote_topic, tl.location);
-    return o;
+fmt::iterator topic_location::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{remote_topic: {}, location: {}}}", remote_topic, location);
 }
 
-std::ostream& operator<<(std::ostream& o, const inbound_migration& dm) {
-    fmt::print(
-      o,
+fmt::iterator inbound_migration::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{topics: {}, consumer_groups: {}, auto_advance: {}}}",
-      fmt::join(dm.topics, ", "),
-      fmt::join(dm.groups, ", "),
-      dm.auto_advance);
-    return o;
+      fmt::join(topics, ", "),
+      fmt::join(groups, ", "),
+      auto_advance);
 }
 
-std::ostream& operator<<(std::ostream& o, const outbound_migration& dm) {
-    fmt::print(
-      o,
+fmt::iterator outbound_migration::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{topics: {}, consumer_groups: {}, copy_to: {}, auto_advance: {}, "
       "topic_locations: {}}}",
-      fmt::join(dm.topics, ", "),
-      fmt::join(dm.groups, ", "),
-      dm.copy_to,
-      dm.auto_advance,
-      fmt::join(dm.topic_locations, ", "));
-    return o;
+      fmt::join(topics, ", "),
+      fmt::join(groups, ", "),
+      copy_to,
+      auto_advance,
+      fmt::join(topic_locations, ", "));
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_work& tw) {
-    fmt::print(
-      o,
+fmt::iterator topic_work::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{migration: {}, sought_state: {}, info: {}}}",
-      tw.migration_id,
-      tw.sought_state,
+      migration_id,
+      sought_state,
       ss::visit(
-        tw.info,
+        info,
         [&](const inbound_topic_work_info& itwi) {
             return ssx::sformat(
               "{{inbound; source: {}, cloud_storage_location: {}}}",
@@ -180,112 +189,104 @@ std::ostream& operator<<(std::ostream& o, const topic_work& tw) {
         [&](const outbound_topic_work_info& otwi) {
             return ssx::sformat("{{outbound; copy_to: {}}}", otwi.copy_to);
         }));
-    return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const migration_metadata& m) {
-    fmt::print(
-      o,
+fmt::iterator migration_metadata::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{id: {}, migration: {}, state: {}, created_timestamp: {}, "
       "completed_timestamp: {}, revision_id: {}}}",
-      m.id,
-      print_migration(m.migration),
-      m.state,
-      m.created_timestamp,
-      m.completed_timestamp,
-      m.revision_id);
-    return o;
+      id,
+      print_migration(migration),
+      state,
+      created_timestamp,
+      completed_timestamp,
+      revision_id);
 }
 
-std::ostream& operator<<(std::ostream& o, const data_migration_ntp_state& r) {
-    fmt::print(
-      o,
+fmt::iterator data_migration_ntp_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ntp: {}, migration: {}, sought_state: {}}}",
-      r.ntp,
-      r.migration,
-      r.state);
-    return o;
+      ntp,
+      migration,
+      state);
 }
 
-std::ostream& operator<<(std::ostream& o, const create_migration_cmd_data& d) {
-    fmt::print(
-      o,
+fmt::iterator
+create_migration_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{id: {}, migration: {}, op_timestamp: {}, "
       "fill_outbound_topic_locations: {}}}",
-      d.id,
-      print_migration(d.migration),
-      d.op_timestamp,
-      d.fill_outbound_topic_locations);
-    return o;
+      id,
+      print_migration(migration),
+      op_timestamp,
+      fill_outbound_topic_locations);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const update_migration_state_cmd_data& d) {
-    fmt::print(
-      o,
+fmt::iterator
+update_migration_state_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{id: {}, requested_state: {}, op_timestamp: {}}}",
-      d.id,
-      d.requested_state,
-      d.op_timestamp);
-    return o;
+      id,
+      requested_state,
+      op_timestamp);
 }
 
-std::ostream& operator<<(std::ostream& o, const remove_migration_cmd_data& d) {
-    fmt::print(o, "{{id: {}}}", d.id);
-    return o;
+fmt::iterator
+remove_migration_cmd_data::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{id: {}}}", id);
 }
 
-std::ostream& operator<<(std::ostream& o, const create_migration_request& r) {
-    fmt::print(o, "{{migration: {}}}", print_migration(r.migration));
-    return o;
+fmt::iterator
+create_migration_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{migration: {}}}", print_migration(migration));
 }
 
-std::ostream& operator<<(std::ostream& o, const create_migration_reply& r) {
-    fmt::print(o, "{{id: {}, error_code: {}}}", r.id, r.ec);
-    return o;
+fmt::iterator create_migration_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{id: {}, error_code: {}}}", id, ec);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const update_migration_state_request& r) {
-    fmt::print(o, "{{id: {}, state: {}}}", r.id, r.state);
-    return o;
+fmt::iterator
+update_migration_state_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{id: {}, state: {}}}", id, state);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const update_migration_state_reply& r) {
-    fmt::print(o, "{{error_code: {}}}", r.ec);
-    return o;
+fmt::iterator
+update_migration_state_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{error_code: {}}}", ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const remove_migration_request& r) {
-    fmt::print(o, "{{id: {}}}", r.id);
-    return o;
+fmt::iterator
+remove_migration_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{id: {}}}", id);
 }
 
-std::ostream& operator<<(std::ostream& o, const remove_migration_reply& r) {
-    fmt::print(o, "{{error_code: {}}}", r.ec);
-    return o;
+fmt::iterator remove_migration_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{error_code: {}}}", ec);
 }
 
-std::ostream& operator<<(std::ostream& o, const check_ntp_states_request& r) {
-    fmt::print(o, "{{sought_states: {}}}", r.sought_states);
-    return o;
+fmt::iterator
+check_ntp_states_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{sought_states: {}}}", sought_states);
 }
 
-std::ostream& operator<<(std::ostream& o, const check_ntp_states_reply& r) {
-    fmt::print(o, "{{actual_states: {}}}", r.actual_states);
-    return o;
+fmt::iterator
+check_ntp_states_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{actual_states: {}}}", actual_states);
 }
 
-std::ostream& operator<<(std::ostream& o, const entities_status& es) {
-    fmt::print(
-      o,
+fmt::iterator entities_status::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{groups: {}}}",
       fmt::join(
         std::views::transform(
-          es.groups, [](const group_offsets& g) { return g.group_id; }),
+          groups, [](const group_offsets& g) { return g.group_id; }),
         ", "));
-    return o;
 }
 
 } // namespace cluster::data_migrations

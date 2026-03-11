@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -195,9 +196,8 @@ public:
         return tp <=> other.tp;
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const ktp& t) {
-        os << t.to_ntp();
-        return os;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return to_ntp().format_to(it);
     }
 
 protected:

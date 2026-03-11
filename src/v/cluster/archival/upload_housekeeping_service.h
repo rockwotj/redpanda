@@ -48,6 +48,21 @@ enum class housekeeping_state {
     stopped,
 };
 
+constexpr std::string_view format_as(housekeeping_state s) {
+    switch (s) {
+    case housekeeping_state::idle:
+        return "idle";
+    case housekeeping_state::active:
+        return "active";
+    case housekeeping_state::pause:
+        return "pause";
+    case housekeeping_state::draining:
+        return "draining";
+    case housekeeping_state::stopped:
+        return "stopped";
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, housekeeping_state s);
 
 /// Controls housekeeping jobs

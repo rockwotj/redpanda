@@ -209,8 +209,7 @@ std::string_view error_code_to_str(error_code error) {
 }
 
 std::ostream& operator<<(std::ostream& o, error_code code) {
-    return o << "{ error_code: " << error_code_to_str(code) << " ["
-             << (int16_t)code << "] }";
+    return o << format_as(code);
 }
 
 std::error_code make_error_code(kafka::error_code ec) {

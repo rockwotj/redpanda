@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include <string_view>
 #include <system_error>
 
 namespace storage::experimental::mvlog {
@@ -54,9 +55,22 @@ inline std::error_code make_error_code(errc e) noexcept {
     return {static_cast<int>(e), error_category()};
 }
 
+inline std::string_view format_as(errc e) {
+    switch (e) {
+    case errc::none:
+        return "none";
+    case errc::broken_data_invariant:
+        return "broken_data_invariant";
+    case errc::checksum_mismatch:
+        return "checksum_mismatch";
+    case errc::short_read:
+        return "short_read";
+    }
+    return "unknown";
+}
+
 inline std::ostream& operator<<(std::ostream& o, errc e) {
-    o << error_category().message(static_cast<int>(e));
-    return o;
+    return o << format_as(e);
 }
 
 } // namespace storage::experimental::mvlog

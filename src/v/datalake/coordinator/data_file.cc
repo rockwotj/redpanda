@@ -11,17 +11,17 @@
 
 namespace datalake::coordinator {
 
-std::ostream& operator<<(std::ostream& o, const data_file& f) {
-    o << fmt::format(
+fmt::iterator data_file::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{remote_path: {}, row_count: {}, file_size_bytes: {}, hour_deprecated: "
       "{}, table_schema_id: {}, partition_spec_id: {}}}",
-      f.remote_path,
-      f.row_count,
-      f.file_size_bytes,
-      f.hour_deprecated,
-      f.table_schema_id,
-      f.partition_spec_id);
-    return o;
+      remote_path,
+      row_count,
+      file_size_bytes,
+      hour_deprecated,
+      table_schema_id,
+      partition_spec_id);
 }
 
 } // namespace datalake::coordinator

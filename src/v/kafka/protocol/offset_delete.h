@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 
 #include "kafka/protocol/schemata/offset_delete_request.h"
 #include "kafka/protocol/schemata/offset_delete_response.h"
@@ -32,10 +33,8 @@ struct offset_delete_request final {
     void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const offset_delete_request& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 
@@ -68,10 +67,8 @@ struct offset_delete_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const offset_delete_response& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 

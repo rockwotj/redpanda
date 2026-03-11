@@ -358,6 +358,7 @@ redpanda_cc_btest(
     deps = [
         ":compatibility_common",
         ":store_fixture",
+        "//src/v/base",
         "//src/v/pandaproxy/schema_registry:core",
         "//src/v/test_utils:seastar_boost",
         "//src/v/test_utils:test_env",

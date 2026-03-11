@@ -185,15 +185,7 @@ array<uint8_t> reader::slice_remainder() const {
 }
 
 std::ostream& operator<<(std::ostream& o, val_type vt) {
-    switch (vt) {
-    case val_type::i32:
-        o << "i32";
-        break;
-    case val_type::i64:
-        o << "i64";
-        break;
-    }
-    return o;
+    return o << format_as(vt);
 }
 
 } // namespace wasm::ffi

@@ -1193,25 +1193,36 @@ int64_t log_manager::compaction_backlog() const {
       });
 }
 
-std::ostream& operator<<(std::ostream& o, const log_config& c) {
-    o << "{base_dir:" << c.base_dir
-      << ", max_segment.size:" << c.max_segment_size()
-      << ", file_sanitize_config:" << c.file_config << ", retention_bytes:";
-    if (c.retention_bytes()) {
-        o << *(c.retention_bytes());
+fmt::iterator log_config::format_to(fmt::iterator it) const {
+    it = fmt::format_to(
+      it,
+      "{{base_dir:{}, max_segment.size:{}, file_sanitize_config:{}, "
+      "retention_bytes:",
+      base_dir,
+      max_segment_size(),
+      file_config);
+    if (retention_bytes()) {
+        it = fmt::format_to(it, "{}", *retention_bytes());
     } else {
-        o << "nullopt";
+        it = fmt::format_to(it, "nullopt");
     }
-    return o
-           << ", compaction_interval_ms:" << c.compaction_interval().count()
-           << ", log_retention_ms:"
-           << c.log_retention().value_or(std::chrono::milliseconds(-1)).count()
-           << ", with_cache:" << c.cache << ", reclaim_opts:" << c.reclaim_opts
-           << "}";
+    return fmt::format_to(
+      it,
+      ", compaction_interval_ms:{}, log_retention_ms:{}, with_cache:{}, "
+      "reclaim_opts:{}}}",
+      compaction_interval().count(),
+      log_retention().value_or(std::chrono::milliseconds(-1)).count(),
+      cache,
+      reclaim_opts);
 }
-std::ostream& operator<<(std::ostream& o, const log_manager& m) {
-    return o << "{config:" << m._config << ", logs.size:" << m._logs.size()
-             << ", cache:" << m._batch_cache << "}";
+
+fmt::iterator log_manager::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{config:{}, logs.size:{}, cache:{}}}",
+      _config,
+      _logs.size(),
+      _batch_cache);
 }
 
 ss::future<usage_report> log_manager::disk_usage() {

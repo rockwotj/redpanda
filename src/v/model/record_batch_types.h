@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <ostream>
+#include <string_view>
 #include <vector>
 
 namespace model {
@@ -65,6 +66,96 @@ enum class record_batch_type : int8_t {
     ct_read_replica_stm = 42, // cloud_topics::read_replica::*
     MAX = ct_read_replica_stm,
 };
+
+inline constexpr std::string_view format_as(record_batch_type bt) {
+    switch (bt) {
+    case record_batch_type::raft_data:
+        return "batch_type::raft_data";
+    case record_batch_type::raft_configuration:
+        return "batch_type::raft_configuration";
+    case record_batch_type::controller:
+        return "batch_type::controller";
+    case record_batch_type::kvstore:
+        return "batch_type::kvstore";
+    case record_batch_type::checkpoint:
+        return "batch_type::checkpoint";
+    case record_batch_type::topic_management_cmd:
+        return "batch_type::topic_management_cmd";
+    case record_batch_type::ghost_batch:
+        return "batch_type::ghost_batch";
+    case record_batch_type::id_allocator:
+        return "batch_type::id_allocator";
+    case record_batch_type::tx_prepare:
+        return "batch_type::tx_prepare";
+    case record_batch_type::tx_fence:
+        return "batch_type::tx_fence";
+    case record_batch_type::tm_update:
+        return "batch_type::tm_update";
+    case record_batch_type::user_management_cmd:
+        return "batch_type::user_management_cmd";
+    case record_batch_type::acl_management_cmd:
+        return "batch_type::acl_management_cmd";
+    case record_batch_type::group_prepare_tx:
+        return "batch_type::group_prepare_tx";
+    case record_batch_type::group_commit_tx:
+        return "batch_type::group_commit_tx";
+    case record_batch_type::group_abort_tx:
+        return "batch_type::group_abort_tx";
+    case record_batch_type::node_management_cmd:
+        return "batch_type::node_management_cmd";
+    case record_batch_type::data_policy_management_cmd:
+        return "batch_type::data_policy_management_cmd";
+    case record_batch_type::archival_metadata:
+        return "batch_type::archival_metadata";
+    case record_batch_type::cluster_config_cmd:
+        return "batch_type::cluster_config_cmd";
+    case record_batch_type::feature_update:
+        return "batch_type::feature_update";
+    case record_batch_type::cluster_bootstrap_cmd:
+        return "batch_type::cluster_bootstrap_cmd";
+    case record_batch_type::version_fence:
+        return "batch_type::version_fence";
+    case record_batch_type::tx_tm_hosted_trasactions:
+        return "batch_type::tx_tm_hosted_trasactions";
+    case record_batch_type::prefix_truncate:
+        return "batch_type::prefix_truncate";
+    case record_batch_type::plugin_update:
+        return "batch_type::plugin_update";
+    case record_batch_type::tx_registry:
+        return "batch_type::tx_registry";
+    case record_batch_type::cluster_recovery_cmd:
+        return "batch_type::cluster_recovery_cmd";
+    case record_batch_type::compaction_placeholder:
+        return "batch_type::compaction_placeholder";
+    case record_batch_type::role_management_cmd:
+        return "batch_type::role_management_cmd";
+    case record_batch_type::client_quota:
+        return "batch_type::client_quota";
+    case record_batch_type::data_migration_cmd:
+        return "batch_type::data_migration_cmd";
+    case record_batch_type::group_fence_tx:
+        return "batch_type::group_fence_tx";
+    case record_batch_type::partition_properties_update:
+        return "batch_type::partition_properties_update";
+    case record_batch_type::datalake_coordinator:
+        return "batch_type::datalake_coordinator";
+    case record_batch_type::ctp_placeholder:
+        return "batch_type::ctp_placeholder";
+    case record_batch_type::ctp_stm_command:
+        return "batch_type::ctp_stm_command";
+    case record_batch_type::datalake_translation_state:
+        return "datalake_translation_state";
+    case record_batch_type::cluster_link:
+        return "cluster_link";
+    case record_batch_type::group_block:
+        return "group_block";
+    case record_batch_type::l1_stm:
+        return "l1_stm";
+    case record_batch_type::ct_read_replica_stm:
+        return "ct_read_replica_stm";
+    }
+    return "batch_type::unknown";
+}
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
 

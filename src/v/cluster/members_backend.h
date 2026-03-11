@@ -2,6 +2,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/node_hash_set.h"
+#include "base/format_to.h"
 #include "cluster/fwd.h"
 #include "cluster/members_manager.h"
 #include "cluster/scheduling/types.h"
@@ -12,7 +13,6 @@
 #include <seastar/core/condition-variable.hh>
 
 #include <chrono>
-#include <iosfwd>
 namespace cluster {
 
 class members_backend {
@@ -37,8 +37,7 @@ public:
         // partition_balancer.
         cancellation_state state;
 
-        friend std::ostream&
-        operator<<(std::ostream&, const partition_reallocation&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
     /**
      * struct describing partition reallocation
@@ -127,6 +126,7 @@ private:
     metrics::public_metric_groups _metrics;
     config::binding<size_t> _max_concurrent_reallocations;
 };
+std::string_view format_as(members_backend::cancellation_state);
 std::ostream&
 operator<<(std::ostream&, const members_backend::cancellation_state&);
 

@@ -95,21 +95,25 @@ enum class managed_partition_event_t {
     shutdown,
 };
 
-std::ostream& operator<<(std::ostream& o, managed_partition_event_t e) {
+constexpr std::string_view format_as(managed_partition_event_t e) {
     switch (e) {
     case managed_partition_event_t::leadership_acquired:
-        return o << "leadership_acquired";
+        return "leadership_acquired";
     case managed_partition_event_t::leadership_lost:
-        return o << "leadership_lost";
+        return "leadership_lost";
     case managed_partition_event_t::archiver_started:
-        return o << "archiver_started";
+        return "archiver_started";
     case managed_partition_event_t::archiver_failure:
-        return o << "archiver_failure";
+        return "archiver_failure";
     case managed_partition_event_t::archiver_stopped:
-        return o << "archiver_stopped";
+        return "archiver_stopped";
     case managed_partition_event_t::shutdown:
-        return o << "shutdown";
+        return "shutdown";
     }
+}
+
+std::ostream& operator<<(std::ostream& o, managed_partition_event_t e) {
+    return o << format_as(e);
 }
 
 // This is a base class for all events that FSM can handle.
@@ -144,17 +148,21 @@ enum class managed_partition_state_t {
     stopping,
 };
 
-std::ostream& operator<<(std::ostream& o, managed_partition_state_t s) {
+constexpr std::string_view format_as(managed_partition_state_t s) {
     switch (s) {
     case managed_partition_state_t::passive:
-        return o << "passive";
+        return "passive";
     case managed_partition_state_t::active:
-        return o << "active";
+        return "active";
     case managed_partition_state_t::starting:
-        return o << "starting";
+        return "starting";
     case managed_partition_state_t::stopping:
-        return o << "stopping";
+        return "stopping";
     }
+}
+
+std::ostream& operator<<(std::ostream& o, managed_partition_state_t s) {
+    return o << format_as(s);
 }
 
 // This is how stat transitions happen:

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 
@@ -162,6 +163,8 @@ enum class s3_error_code {
     _unknown
 };
 
+std::string_view format_as(s3_error_code code);
+
 /// Operators to use with lexical_cast
 std::ostream& operator<<(std::ostream& o, s3_error_code code);
 std::istream& operator>>(std::istream& i, s3_error_code& code);
@@ -183,8 +186,7 @@ public:
     std::string_view request_id() const noexcept;
     std::string_view resource() const noexcept;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const rest_error_response& err);
+    fmt::iterator format_to(fmt::iterator) const;
 
 private:
     s3_error_code _code;

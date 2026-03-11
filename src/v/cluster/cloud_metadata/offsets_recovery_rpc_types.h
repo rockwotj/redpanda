@@ -9,12 +9,12 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/errc.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "serde/envelope.h"
-#include "ssx/sformat.h"
 #include "utils/retry_chain_node.h"
 
 namespace cluster::cloud_metadata {
@@ -38,14 +38,13 @@ struct offsets_recovery_request
     operator==(const offsets_recovery_request&, const offsets_recovery_request&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const offsets_recovery_request& r) {
-        o << ssx::sformat(
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{ntp: {}, bucket: {}, offsets_snapshot_paths: {}}}",
-          r.offsets_ntp,
-          r.bucket,
-          r.offsets_snapshot_paths);
-        return o;
+          offsets_ntp,
+          bucket,
+          offsets_snapshot_paths);
     }
 };
 
@@ -63,10 +62,8 @@ struct offsets_recovery_reply
     operator==(const offsets_recovery_reply&, const offsets_recovery_reply&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const offsets_recovery_reply& r) {
-        o << ssx::sformat("{{ec: {}}}", r.ec);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{ec: {}}}", ec);
     }
 };
 

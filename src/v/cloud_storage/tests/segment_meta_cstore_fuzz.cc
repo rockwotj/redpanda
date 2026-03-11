@@ -422,38 +422,10 @@ using cstore_operation = std::variant<
   serialize_op,
   deserialize_op>;
 
-// SIN SECTION
-// this is a sections of ODR sins to appease the daemons of the linker
-
-auto cloud_storage::operator<<(std::ostream& os, const segment_meta& s)
-  -> std::ostream& {
-    return os << fmt::format(
-             "{{is_compacted: {}, size_bytes: {}, base_offset: {}, "
-             "committed_offset: "
-             "{}, base_timestamp: {}, max_timestamp: {}, delta_offset: {}, "
-             "ntp_revision: {}, archiver_term: {}, segment_term: {}, "
-             "delta_offset_end: {}, sname_format: {}, metadata_size_hint: {}}}",
-             s.is_compacted,
-             s.size_bytes,
-             s.base_offset,
-             s.committed_offset,
-             s.base_timestamp,
-             s.max_timestamp,
-             s.delta_offset,
-             s.ntp_revision,
-             s.archiver_term,
-             s.segment_term,
-             s.delta_offset_end,
-             s.sname_format,
-             s.metadata_size_hint);
-}
-
-auto cloud_storage::operator<<(std::ostream& os, const segment_name_format& sn)
-  -> std::ostream& {
-    return os << fmt::format("{}", unsigned(sn));
-}
-
-// END OF SIN SECTION
+// The operator<< for segment_meta and segment_name_format are provided by
+// types.h/cc via format_to and format_as respectively. The blanket operator<<
+// in format_to.h handles segment_meta, while types.cc provides operator<< for
+// segment_name_format.
 
 template<>
 struct fmt::formatter<cstore_operation>

@@ -101,9 +101,8 @@ lock_manager::range_lock(const local_log_reader_config& cfg) {
       cfg.read_lock_deadline.value_or(ss::semaphore::clock::time_point::max()));
 }
 
-std::ostream& operator<<(std::ostream& o, const lock_manager::lease& l) {
-    fmt::print(o, "({})", l.range);
-    return o;
+fmt::iterator lock_manager::lease::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "({})", range);
 }
 
 } // namespace storage

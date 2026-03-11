@@ -127,14 +127,12 @@ segment_full_path segment_full_path::to_staging() const {
     }
 }
 
-std::ostream& operator<<(std::ostream& o, const partition_path& p) {
-    o << ss::format("{}_{}", p.ntp.path(), p.revision_id);
-    return o;
+fmt::iterator partition_path::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{}_{}", ntp.path(), revision_id);
 }
 
-std::ostream& operator<<(std::ostream& o, const segment_full_path& p) {
-    o << p.string();
-    return o;
+fmt::iterator segment_full_path::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{}", string());
 }
 
 } // namespace storage

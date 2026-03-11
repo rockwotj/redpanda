@@ -81,9 +81,8 @@ fetch_session::make_offset_commit_request() const {
     return res;
 }
 
-std::ostream& operator<<(std::ostream& os, const fetch_session& fs) {
-    fmt::print(os, "{{id={}, epoch={}}}", fs.id(), fs.epoch());
-    return os;
+fmt::iterator fetch_session::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{id={}, epoch={}}}", id(), epoch());
 }
 
 } // namespace kafka::client

@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 
 #include "base/seastarx.h"
 #include "kafka/protocol/schemata/create_partitions_request.h"
@@ -31,10 +32,8 @@ struct create_partitions_request final {
     void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const create_partitions_request& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 
@@ -83,10 +82,8 @@ struct create_partitions_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const create_partitions_response& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 

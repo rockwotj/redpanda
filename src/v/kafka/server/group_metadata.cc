@@ -335,18 +335,13 @@ iobuf maybe_unwrap_from_iobuf(iobuf buffer) {
 }
 } // namespace
 
-std::ostream& operator<<(std::ostream& o, const group_block_info& gbi) {
-    fmt::print(
-      o,
-      "{{is_blocked: {}, revision_id: {}}}",
-      gbi.is_blocked,
-      gbi.revision_id);
-    return o;
+fmt::iterator group_block_info::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{is_blocked: {}, revision_id: {}}}", is_blocked, revision_id);
 }
 
-std::ostream& operator<<(std::ostream& o, const group_block& block) {
-    fmt::print(o, "{{group_id: {}, info: {}}}", block.group_id, block.info);
-    return o;
+fmt::iterator group_block::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{group_id: {}, info: {}}}", group_id, info);
 }
 
 group_block::group_block(kafka::group_id group_id, group_block_info info)
@@ -421,105 +416,103 @@ offset_metadata_kv decode_offset_metadata(model::record record) {
 }
 } // namespace group_metadata_serializer
 
-std::ostream& operator<<(std::ostream& o, const member_state& v) {
-    fmt::print(
-      o,
+fmt::iterator member_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{id: {}, instance_id: {}, client_id: {}, client_host: {}, "
       "rebalance_timeout: {}, session_timeout: {}, subscription_size: {}, "
       "assignment_size: {}}}",
-      v.id,
-      v.instance_id,
-      v.client_id,
-      v.client_host,
-      v.rebalance_timeout,
-      v.session_timeout,
-      v.subscription.size_bytes(),
-      v.assignment.size_bytes());
-    return o;
+      id,
+      instance_id,
+      client_id,
+      client_host,
+      rebalance_timeout,
+      session_timeout,
+      subscription.size_bytes(),
+      assignment.size_bytes());
 }
-std::ostream& operator<<(std::ostream& o, const group_metadata_key& v) {
-    fmt::print(o, "{{group_id: {}}}", v.group_id);
-    return o;
+
+fmt::iterator group_metadata_key::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{group_id: {}}}", group_id);
 }
-std::ostream& operator<<(std::ostream& o, const group_metadata_value& v) {
-    fmt::print(
-      o,
+
+fmt::iterator group_metadata_value::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{protocol_type: {}, generation: {}, protocol: {}, leader: {}, "
       "state_timestamp: {}, member count: {}}}",
-      v.protocol_type,
-      v.generation,
-      v.protocol,
-      v.leader,
-      v.state_timestamp,
-      v.members.size());
-    return o;
+      protocol_type,
+      generation,
+      protocol,
+      leader,
+      state_timestamp,
+      members.size());
 }
-std::ostream& operator<<(std::ostream& o, const offset_metadata_key& v) {
-    fmt::print(
-      o,
+
+fmt::iterator offset_metadata_key::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{group_id: {}, topic: {}, partition: {}}}",
-      v.group_id,
-      v.topic,
-      v.partition);
-    return o;
+      group_id,
+      topic,
+      partition);
 }
-std::ostream& operator<<(std::ostream& o, const offset_metadata_value& v) {
-    fmt::print(
-      o,
+
+fmt::iterator offset_metadata_value::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{offset: {}, leader_epoch: {}, metadata: {}, commit_timestamp: {}, "
       "expiry_timestamp: {}}}",
-      v.offset,
-      v.leader_epoch,
-      v.metadata,
-      v.commit_timestamp,
-      v.expiry_timestamp);
-    return o;
+      offset,
+      leader_epoch,
+      metadata,
+      commit_timestamp,
+      expiry_timestamp);
 }
 namespace group_tx {
-std::ostream& operator<<(std::ostream& o, const offsets_metadata& md) {
-    fmt::print(
-      o,
+
+fmt::iterator offsets_metadata::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{group_id: {}, pid: {}, tx_seq: {}, offsets: {}}}",
-      md.group_id,
-      md.pid,
-      md.tx_seq,
-      fmt::join(md.offsets, ", "));
-    return o;
+      group_id,
+      pid,
+      tx_seq,
+      fmt::join(offsets, ", "));
 }
 
-std::ostream& operator<<(std::ostream& o, const partition_offset& po) {
-    fmt::print(
-      o,
+fmt::iterator partition_offset::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{partition: {}, offset: {}, leader_epoch: {}, metadata: {}}}",
-      po.tp,
-      po.offset,
-      po.leader_epoch,
-      po.metadata);
-    return o;
-}
-std::ostream& operator<<(std::ostream& o, const fence_metadata_v0& fence) {
-    fmt::print(o, "{{group_id: {}}}", fence.group_id);
-    return o;
-}
-std::ostream& operator<<(std::ostream& o, const fence_metadata_v1& fence) {
-    fmt::print(
-      o,
-      "{{group_id: {}, tx_seq: {}, tx_timeout: {} ms}}",
-      fence.group_id,
-      fence.tx_seq,
-      fence.transaction_timeout_ms.count());
-    return o;
+      tp,
+      offset,
+      leader_epoch,
+      metadata);
 }
 
-std::ostream& operator<<(std::ostream& o, const fence_metadata& fence) {
-    fmt::print(
-      o,
-      "{{tm_partition: {},  group_id: {}, tx_seq: {}, tx_timeout: {} ms}}",
-      fence.tm_partition,
-      fence.group_id,
-      fence.tx_seq,
-      fence.transaction_timeout_ms);
-    return o;
+fmt::iterator fence_metadata_v0::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{group_id: {}}}", group_id);
 }
+
+fmt::iterator fence_metadata_v1::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{group_id: {}, tx_seq: {}, tx_timeout: {} ms}}",
+      group_id,
+      tx_seq,
+      transaction_timeout_ms.count());
+}
+
+fmt::iterator fence_metadata::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{tm_partition: {},  group_id: {}, tx_seq: {}, tx_timeout: {} ms}}",
+      tm_partition,
+      group_id,
+      tx_seq,
+      transaction_timeout_ms);
+}
+
 } // namespace group_tx
 } // namespace kafka

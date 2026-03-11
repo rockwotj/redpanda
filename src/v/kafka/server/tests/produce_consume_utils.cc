@@ -33,9 +33,8 @@ namespace tests {
 
 static ss::logger test_log("produce_consume_logger");
 
-std::ostream& operator<<(std::ostream& o, const kv_t& kv) {
-    o << ssx::sformat("{{k=\"{}\", v=\"{}\"}}", kv.key, kv.val);
-    return o;
+fmt::iterator kv_t::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{k=\"{}\", v=\"{}\"}}", key, val);
 }
 
 model::record_batch batch_from_kvs(

@@ -852,7 +852,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
       _rtclog.debug,
       "Uploading topic manifest for {}, topic config {}",
       _parent.ntp(),
-      topic_cfg);
+      topic_cfg.get());
 
     auto replication_factor = cluster::replication_factor(
       _parent.raft()->config().current_config().voters.size());
@@ -2650,46 +2650,24 @@ ntp_archiver::maybe_truncate_manifest() {
 }
 
 std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind) {
-    switch (upload_kind) {
-    case segment_upload_kind::non_compacted:
-        fmt::print(os, "non-compacted");
-        break;
-    case segment_upload_kind::compacted:
-        fmt::print(os, "compacted");
-        break;
-    }
-    return os;
+    return os << format_as(upload_kind);
 }
 
 std::ostream& operator<<(std::ostream& os, flush_response fr) {
-    switch (fr) {
-    case flush_response::accepted:
-        fmt::print(os, "accepted");
-        break;
-    case flush_response::rejected:
-        fmt::print(os, "rejected");
-        break;
-    }
-    return os;
+    return os << format_as(fr);
+}
+
+fmt::iterator flush_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "response: {}, offset: {}", response, offset);
 }
 
 std::ostream& operator<<(std::ostream& os, flush_result fr) {
-    fmt::print(os, "response: {}, offset: {}", fr.response, fr.offset);
+    fmt::print(os, "{}", fr);
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, wait_result fr) {
-    switch (fr) {
-    case wait_result::not_in_progress:
-        return os << "not in progress";
-    case wait_result::complete:
-        return os << "complete";
-    case wait_result::lost_leadership:
-        return os << "lost leadership";
-    case wait_result::failed:
-        return os << "failed";
-    }
-    return os;
+    return os << format_as(fr);
 }
 
 ss::future<> ntp_archiver::housekeeping() {

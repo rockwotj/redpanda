@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
@@ -177,7 +178,9 @@ private:
     ss::future<> put();
 
     friend class segment_reader_handle;
-    friend std::ostream& operator<<(std::ostream&, const segment_reader&);
+
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**

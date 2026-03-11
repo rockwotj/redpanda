@@ -10,6 +10,7 @@
  */
 #include "cluster/health_monitor_types.h"
 
+#include "base/format_to.h"
 #include "cluster/drain_manager.h"
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
@@ -66,18 +67,17 @@ node_state::node_state(
   , _membership_state(membership_state)
   , _is_alive(is_alive) {}
 
-std::ostream& operator<<(std::ostream& o, const node_state& s) {
-    fmt::print(
-      o,
+fmt::iterator node_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{membership_state: {}, is_alive: {}}}",
-      s._membership_state,
-      s._is_alive);
-    return o;
+      _membership_state,
+      _is_alive);
 }
 
-std::ostream& operator<<(std::ostream& o, const node_liveness_report& nls) {
-    fmt::print(o, "{{node_id_to_last_seen: {}}}", nls.node_id_to_last_seen);
-    return o;
+fmt::iterator node_liveness_report::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{node_id_to_last_seen: {}}}", node_id_to_last_seen);
 }
 
 bool operator==(const node_liveness_report& a, const node_liveness_report& b) {
@@ -111,8 +111,8 @@ node_health_report node_health_report::copy() const {
     return ret;
 }
 
-std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
-    return o << node_health_report_serde{r};
+fmt::iterator node_health_report::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{}", node_health_report_serde{*this});
 }
 
 node_health_report_serde::node_health_report_serde(const node_health_report& hr)
@@ -168,17 +168,16 @@ partition_statuses_map_t copy_to_map(const partition_statuses_t& ps_vec) {
     return ret;
 }
 
-std::ostream& operator<<(std::ostream& o, const node_health_report_serde& r) {
-    fmt::print(
-      o,
+fmt::iterator node_health_report_serde::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{id: {}, topics: {}, local_state: {}, drain_status: {}, "
       "node_liveness_report {}}}",
-      r.id,
-      r.topics,
-      r.local_state,
-      r.drain_status,
-      r.node_liveness_report);
-    return o;
+      id,
+      topics,
+      local_state,
+      drain_status,
+      node_liveness_report);
 }
 
 bool operator==(
@@ -194,58 +193,48 @@ bool operator==(
            && a.node_liveness_report == b.node_liveness_report;
 }
 
-std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
-    fmt::print(
-      o,
+fmt::iterator cluster_health_report::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{raft0_leader: {}, node_states: {}, node_reports: {}, "
       "bytes_in_cloud_storage: {} }}",
-      r.raft0_leader,
-      r.node_states,
-      r.node_reports,
-      r.bytes_in_cloud_storage);
-    return o;
+      raft0_leader,
+      node_states,
+      node_reports,
+      bytes_in_cloud_storage);
 }
 
 std::ostream& operator<<(std::ostream& o, follower_status status) {
-    switch (status) {
-    case follower_status::in_sync:
-        return o << "in_sync";
-    case follower_status::out_of_sync:
-        return o << "out_of_sync";
-    case follower_status::down:
-        return o << "down";
-    }
+    return o << format_as(status);
 }
 
-std::ostream& operator<<(std::ostream& o, const followers_stats& ls) {
-    fmt::print(
-      o,
+fmt::iterator followers_stats::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{in_sync: {}, out_of_sync: {}, down: "
       "{}}}",
-      ls.in_sync,
-      ls.out_of_sync,
-      ls.down);
-    return o;
+      in_sync,
+      out_of_sync,
+      down);
 }
 
-std::ostream& operator<<(std::ostream& o, const partition_status& ps) {
-    fmt::print(
-      o,
+fmt::iterator partition_status::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{id: {}, term: {}, leader_id: {}, revision_id: {}, size_bytes: {}, "
       "reclaimable_size_bytes: {}, under_replicated: {}, shard: {}, "
       "followers_stats: {}, kafka_highwatermark: {}, ct_max_gc_epoch: {}}}",
-      ps.id,
-      ps.term,
-      ps.leader_id,
-      ps.revision_id,
-      ps.size_bytes,
-      ps.reclaimable_size_bytes,
-      ps.under_replicated_replicas,
-      ps.shard,
-      ps.followers_stats,
-      ps.high_watermark,
-      ps.cloud_topic_max_gc_eligible_epoch);
-    return o;
+      id,
+      term,
+      leader_id,
+      revision_id,
+      size_bytes,
+      reclaimable_size_bytes,
+      under_replicated_replicas,
+      shard,
+      followers_stats,
+      high_watermark,
+      cloud_topic_max_gc_eligible_epoch);
 }
 
 topic_status& topic_status::operator=(const topic_status& rhs) {
@@ -304,72 +293,63 @@ get_cluster_health_reply get_cluster_health_reply::copy() const {
     return reply;
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_status& tl) {
-    fmt::print(o, "{{topic: {}, partitions: {}}}", tl.tp_ns, tl.partitions);
-    return o;
+fmt::iterator topic_status::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{topic: {}, partitions: {}}}", tp_ns, partitions);
 }
 
-std::ostream& operator<<(std::ostream& o, const node_report_filter& s) {
-    fmt::print(
-      o,
+fmt::iterator node_report_filter::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{include_partitions: {}, ntp_filters: {}}}",
-      s.include_partitions,
-      s.ntp_filters);
-    return o;
+      include_partitions,
+      ntp_filters);
 }
 
-std::ostream& operator<<(std::ostream& o, const cluster_report_filter& s) {
-    fmt::print(
-      o, "{{per_node_filter: {}, nodes: {}}}", s.node_report_filter, s.nodes);
-    return o;
+fmt::iterator cluster_report_filter::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{per_node_filter: {}, nodes: {}}}", node_report_filter, nodes);
 }
 
-std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
-    fmt::print(o, "{{");
-    for (auto& [ns, tp_f] : filter.namespaces) {
-        fmt::print(o, "{{namespace: {}, topics: [", ns);
+fmt::iterator partitions_filter::format_to(fmt::iterator it) const {
+    it = fmt::format_to(it, "{{");
+    for (auto& [ns, tp_f] : namespaces) {
+        it = fmt::format_to(it, "{{namespace: {}, topics: [", ns);
         for (auto& [tp, p_f] : tp_f) {
-            fmt::print(o, "{{topic: {}, partitions: [", tp);
+            it = fmt::format_to(it, "{{topic: {}, partitions: [", tp);
             if (!p_f.empty()) {
-                auto it = p_f.begin();
-                fmt::print(o, "{}", *it);
-                ++it;
-                for (; it != p_f.end(); ++it) {
-                    fmt::print(o, ",{}", *it);
+                auto p_it = p_f.begin();
+                it = fmt::format_to(it, "{}", *p_it);
+                ++p_it;
+                for (; p_it != p_f.end(); ++p_it) {
+                    it = fmt::format_to(it, ",{}", *p_it);
                 }
             }
-            fmt::print(o, "] }},");
+            it = fmt::format_to(it, "] }},");
         }
-        fmt::print(o, "]}},");
+        it = fmt::format_to(it, "]}},");
     }
-    fmt::print(o, "}}");
-
-    return o;
+    return fmt::format_to(it, "}}");
 }
 
-std::ostream& operator<<(std::ostream& o, const get_node_health_request& r) {
-    fmt::print(o, "{{target_node_id: {}}}", r.get_target_node_id());
-    return o;
+fmt::iterator get_node_health_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{target_node_id: {}}}", get_target_node_id());
 }
 
-std::ostream& operator<<(std::ostream& o, const get_node_health_reply& r) {
-    fmt::print(o, "{{error: {}, report: {}}}", r.error, r.report);
-    return o;
+fmt::iterator get_node_health_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{error: {}, report: {}}}", error, report);
 }
 
-std::ostream& operator<<(std::ostream& o, const get_cluster_health_request& r) {
-    fmt::print(
-      o,
+fmt::iterator get_cluster_health_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{filter: {}, refresh: {}, decoded_version: {}}}",
-      r.filter,
-      r.refresh,
-      r.decoded_version);
-    return o;
+      filter,
+      refresh,
+      decoded_version);
 }
 
-std::ostream& operator<<(std::ostream& o, const get_cluster_health_reply& r) {
-    fmt::print(o, "{{error: {}, report: {}}}", r.error, r.report);
-    return o;
+fmt::iterator get_cluster_health_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{error: {}, report: {}}}", error, report);
 }
 
 void restart_risk_report::push(
@@ -382,26 +362,25 @@ void restart_risk_report::push(
     }
 }
 
-std::ostream& operator<<(std::ostream& o, const cluster_health_overview& ho) {
-    fmt::print(
-      o,
+fmt::iterator cluster_health_overview::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{controller_id: {}, nodes: {}, unhealthy_reasons: {}, nodes_down: {}, "
       "high_disk_usage_nodes: {}, nodes_in_recovery_mode: {}, "
       "bytes_in_cloud_storage: {}, leaderless_count: {}, "
       "under_replicated_count: {}, leaderless_partitions: {}, "
       "under_replicated_partitions: {}}}",
-      ho.controller_id,
-      ho.all_nodes,
-      ho.unhealthy_reasons,
-      ho.nodes_down,
-      ho.high_disk_usage_nodes,
-      ho.nodes_in_recovery_mode,
-      ho.bytes_in_cloud_storage,
-      ho.leaderless_count,
-      ho.under_replicated_count,
-      ho.leaderless_partitions,
-      ho.under_replicated_partitions);
-    return o;
+      controller_id,
+      all_nodes,
+      unhealthy_reasons,
+      nodes_down,
+      high_disk_usage_nodes,
+      nodes_in_recovery_mode,
+      bytes_in_cloud_storage,
+      leaderless_count,
+      under_replicated_count,
+      leaderless_partitions,
+      under_replicated_partitions);
 }
 
 } // namespace cluster

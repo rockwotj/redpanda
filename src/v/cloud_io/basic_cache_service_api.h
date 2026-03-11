@@ -20,6 +20,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <string_view>
 
 namespace cloud_io {
 
@@ -43,6 +44,17 @@ enum class [[nodiscard]] cache_element_status {
     not_available,
     in_progress,
 };
+
+inline constexpr std::string_view format_as(cache_element_status s) {
+    switch (s) {
+    case cache_element_status::available:
+        return "cache_element_available";
+    case cache_element_status::not_available:
+        return "cache_element_not_available";
+    case cache_element_status::in_progress:
+        return "cache_element_in_progress";
+    }
+}
 
 std::ostream& operator<<(std::ostream& o, cache_element_status);
 

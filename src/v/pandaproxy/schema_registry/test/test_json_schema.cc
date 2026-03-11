@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "absl/container/flat_hash_set.h"
+#include "base/format_to.h"
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
@@ -62,15 +63,13 @@ pps::compatibility_result check_compatible_verbose(
 struct error_test_case {
     ss::sstring def;
     pps::error_info err;
-    friend std::ostream&
-    operator<<(std::ostream& os, const error_test_case& e) {
-        fmt::print(
-          os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "def: {}, error_code: {}, error_message: {}",
-          e.def,
-          e.err.code(),
-          e.err.message());
-        return os;
+          def,
+          err.code(),
+          err.message());
     }
 };
 static const auto error_test_cases = std::to_array({

@@ -125,6 +125,7 @@ redpanda_test_cc_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
+        "//src/v/base",
         "//src/v/bytes:hash",
         "//src/v/bytes:iobuf",
         "//src/v/container:chunked_hash_map",

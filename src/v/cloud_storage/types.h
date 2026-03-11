@@ -64,7 +64,18 @@ enum class segment_name_format : int16_t {
     v3 = 3
 };
 
+inline constexpr std::string_view format_as(segment_name_format r) {
+    switch (r) {
+    case segment_name_format::v1:
+        return "{v1}";
+    case segment_name_format::v2:
+        return "{v2}";
+    case segment_name_format::v3:
+        return "{v3}";
+    }
+}
 std::ostream& operator<<(std::ostream& o, const segment_name_format& r);
+
 enum class manifest_version : int32_t {
     v1 = 1,
     v2 = 2,
@@ -166,8 +177,9 @@ struct segment_meta
           meta.delta_offset(),
           meta.delta_offset_end());
     }
+
+    fmt::iterator format_to(fmt::iterator) const;
 };
-std::ostream& operator<<(std::ostream& o, const segment_meta& r);
 
 enum class error_outcome {
     // Represent general failure that can't be handled and doesn't fit into
@@ -286,13 +298,22 @@ struct spillover_manifest_path_components
           c.base_ts(),
           c.last_ts());
     }
-};
 
-std::ostream&
-operator<<(std::ostream& o, const spillover_manifest_path_components& c);
+    fmt::iterator format_to(fmt::iterator) const;
+};
 
 enum class scrub_status : uint8_t { full, partial, failed };
 
+inline constexpr std::string_view format_as(scrub_status s) {
+    switch (s) {
+    case scrub_status::full:
+        return "{full}";
+    case scrub_status::partial:
+        return "{partial}";
+    case scrub_status::failed:
+        return "{failed}";
+    }
+}
 std::ostream& operator<<(std::ostream& o, const scrub_status&);
 
 enum class anomaly_type : int8_t {
@@ -304,6 +325,22 @@ enum class anomaly_type : int8_t {
     offset_overlap
 };
 
+inline constexpr std::string_view format_as(anomaly_type t) {
+    switch (t) {
+    case anomaly_type::missing_delta:
+        return "{missing_delta}";
+    case anomaly_type::non_monotonical_delta:
+        return "{non_monotonical_delta}";
+    case anomaly_type::end_delta_smaller:
+        return "{end_delta_smaller}";
+    case anomaly_type::committed_smaller:
+        return "{committed_smaller}";
+    case anomaly_type::offset_gap:
+        return "{offset_gap}";
+    case anomaly_type::offset_overlap:
+        return "{offset_overlap}";
+    }
+}
 std::ostream& operator<<(std::ostream& o, const anomaly_type&);
 
 struct anomaly_meta
@@ -320,9 +357,9 @@ struct anomaly_meta
     friend H AbslHashValue(H h, const anomaly_meta& am) {
         return H::combine(std::move(h), am.type, am.at);
     }
-};
 
-std::ostream& operator<<(std::ostream& o, const anomaly_meta&);
+    fmt::iterator format_to(fmt::iterator) const;
+};
 
 using segment_meta_anomalies = absl::node_hash_set<anomaly_meta>;
 
@@ -376,9 +413,9 @@ struct anomalies
     anomalies& operator+=(anomalies&&);
 
     friend bool operator==(const anomalies& lhs, const anomalies& rhs);
-};
 
-std::ostream& operator<<(std::ostream& o, const anomalies& a);
+    fmt::iterator format_to(fmt::iterator) const;
+};
 
 enum class upload_type {
     object,
@@ -409,6 +446,9 @@ constexpr std::string_view to_string(upload_type t) {
         return "inventory-configuration";
     }
 }
+inline constexpr std::string_view format_as(upload_type t) {
+    return to_string(t);
+}
 std::ostream& operator<<(std::ostream&, upload_type);
 
 enum class download_type { object, segment_index, inventory_report_manifest };
@@ -424,11 +464,25 @@ constexpr std::string_view to_string(download_type t) {
         return "inventory-report-manifest";
     }
 }
+inline constexpr std::string_view format_as(download_type t) {
+    return to_string(t);
+}
 
 std::ostream& operator<<(std::ostream&, download_type);
 
 enum class existence_check_type { object, segment, manifest };
 
+inline constexpr std::string_view format_as(existence_check_type e) {
+    switch (e) {
+        using enum existence_check_type;
+    case object:
+        return "object";
+    case segment:
+        return "segment";
+    case manifest:
+        return "manifest";
+    }
+}
 std::ostream& operator<<(std::ostream&, existence_check_type);
 
 class remote_probe;

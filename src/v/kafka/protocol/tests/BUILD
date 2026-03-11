@@ -55,6 +55,7 @@ redpanda_cc_btest(
         "field_parser_test.cc",
     ],
     deps = [
+        "//src/v/base",
         "//src/v/kafka/protocol",
         "//src/v/random:generators",
         "//src/v/test_utils:random_bytes",

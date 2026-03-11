@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -21,6 +22,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <limits>
+#include <string_view>
 
 class iobuf;
 class iobuf_parser;
@@ -28,6 +30,15 @@ class iobuf_parser;
 namespace model {
 
 enum class timestamp_type : uint8_t { create_time = 0, append_time = 1 };
+
+inline constexpr std::string_view format_as(timestamp_type ts) {
+    switch (ts) {
+    case timestamp_type::append_time:
+        return "LogAppendTime";
+    case timestamp_type::create_time:
+        return "CreateTime";
+    }
+}
 
 std::ostream& operator<<(std::ostream&, timestamp_type);
 std::istream& operator>>(std::istream&, timestamp_type&);
@@ -80,7 +91,12 @@ public:
         return lhs;
     }
 
-    friend std::ostream& operator<<(std::ostream&, timestamp);
+    fmt::iterator format_to(fmt::iterator it) const {
+        if (*this != missing()) {
+            return fmt::format_to(it, "{{timestamp: {}}}", _v);
+        }
+        return fmt::format_to(it, "{{timestamp: missing}}");
+    }
 
     // ADL helpers for interfacing with the serde library.
     friend void write_nested(iobuf& out, timestamp ts);

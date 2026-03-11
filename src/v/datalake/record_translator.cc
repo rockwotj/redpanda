@@ -123,15 +123,6 @@ std::unique_ptr<iceberg::struct_value> build_rp_struct(
 
 } // namespace
 
-std::ostream& operator<<(std::ostream& o, const record_translator::errc& e) {
-    switch (e) {
-    case record_translator::errc::translation_error:
-        return o << "record_translator::errc::translation_error";
-    case record_translator::errc::unexpected_schema:
-        return o << "record_translator::errc::unexpected_schema";
-    }
-}
-
 record_type
 default_translator::build_type(std::optional<resolved_type> val_type) {
     if (val_type.has_value()) {

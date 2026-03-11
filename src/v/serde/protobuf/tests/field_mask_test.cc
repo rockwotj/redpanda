@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/format_to.h"
 #include "gtest/gtest.h"
 #include "serde/protobuf/field_mask.h"
 #include "src/v/serde/protobuf/tests/codegen_test.proto.h"
@@ -169,16 +170,16 @@ TEST(FieldMaskValidationTest, Overlap) {
 }
 
 struct merge_test_case {
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", name);
+    }
+
     std::string name;
     std::string input;
     std::string update;
     std::string mask;
     std::string expected;
 };
-
-std::ostream& operator<<(std::ostream& os, const merge_test_case& tc) {
-    return os << tc.name;
-}
 
 class FieldMaskMergeParameterizedTest
   : public ::testing::TestWithParam<merge_test_case> {};

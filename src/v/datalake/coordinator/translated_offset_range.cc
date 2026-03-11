@@ -11,16 +11,16 @@
 
 namespace datalake::coordinator {
 
-std::ostream& operator<<(std::ostream& o, const translated_offset_range& r) {
-    o << fmt::format(
+fmt::iterator translated_offset_range::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{start_offset: {}, last_offset: {}, files: {}, dlq_files: {}, "
       "kafka_bytes_processed: {}}}",
-      r.start_offset,
-      r.last_offset,
-      r.files,
-      r.dlq_files,
-      r.kafka_bytes_processed);
-    return o;
+      start_offset,
+      last_offset,
+      files,
+      dlq_files,
+      kafka_bytes_processed);
 }
 
 } // namespace datalake::coordinator

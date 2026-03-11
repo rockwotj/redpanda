@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "features/fwd.h"
 #include "storage/batch_cache.h"
 #include "storage/file_sanitizer_types.h"
@@ -95,7 +96,8 @@ private:
 
     underlying_t _handles;
 
-    friend std::ostream& operator<<(std::ostream&, const segment_set&);
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 ss::future<segment_set> recover_segments(

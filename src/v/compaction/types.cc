@@ -18,40 +18,38 @@
 
 namespace compaction {
 
-std::ostream& operator<<(std::ostream& o, const compaction_config& c) {
-    fmt::print(
-      o,
+fmt::iterator compaction_config::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{max_removable_local_log_offset:{}, "
       "max_tombstone_remove_offset:{}, "
       "max_tx_end_remove_offset:{}, "
       "should_sanitize:{}, "
       "tombstone_retention_ms:{}, "
       "tx_retention_ms:{}}}",
-      c.max_removable_local_log_offset,
-      c.max_tombstone_remove_offset,
-      c.max_tx_end_remove_offset,
-      c.sanitizer_config,
-      c.tombstone_retention_ms,
-      c.tx_retention_ms);
-    return o;
+      max_removable_local_log_offset,
+      max_tombstone_remove_offset,
+      max_tx_end_remove_offset,
+      sanitizer_config,
+      tombstone_retention_ms,
+      tx_retention_ms);
 }
 
-std::ostream& operator<<(std::ostream& o, const stats& s) {
-    fmt::print(
-      o,
+fmt::iterator stats::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ batches_processed: {}, batches_discarded: {}, "
       "records_discarded: {}, expired_tombstones_discarded: {}, "
       "non_compactible_batches: {}{}}}",
-      s.batches_processed,
-      s.batches_discarded,
-      s.records_discarded,
-      s.expired_tombstones_discarded,
-      s.non_compactible_batches,
-      s.control_batches_discarded > 0
+      batches_processed,
+      batches_discarded,
+      records_discarded,
+      expired_tombstones_discarded,
+      non_compactible_batches,
+      control_batches_discarded > 0
         ? fmt::format(
-            ", control_batches_discarded: {}", s.control_batches_discarded)
+            ", control_batches_discarded: {}", control_batches_discarded)
         : "");
-    return o;
 }
 
 } // namespace compaction

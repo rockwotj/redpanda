@@ -18,6 +18,7 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <string_view>
 #include <variant>
 
 namespace cloud_storage {
@@ -86,9 +87,21 @@ inline std::ostream& operator<<(std::ostream& o, error_outcome e) {
 using inventory_config_id = named_type<ss::sstring, struct inventory_config>;
 
 enum class report_generation_frequency { daily };
+inline constexpr std::string_view format_as(report_generation_frequency rgf) {
+    switch (rgf) {
+    case report_generation_frequency::daily:
+        return "Daily";
+    }
+}
 std::ostream& operator<<(std::ostream&, report_generation_frequency);
 
 enum class report_format { csv };
+inline constexpr std::string_view format_as(report_format rf) {
+    switch (rf) {
+    case report_format::csv:
+        return "CSV";
+    }
+}
 std::ostream& operator<<(std::ostream&, report_format);
 
 // A string is used instead of a chrono type because the strings returned by the
@@ -115,6 +128,15 @@ enum class inventory_creation_result {
     already_exists,
 };
 
+inline constexpr std::string_view format_as(inventory_creation_result icr) {
+    switch (icr) {
+        using enum inventory_creation_result;
+    case success:
+        return "success";
+    case already_exists:
+        return "already-exists";
+    }
+}
 std::ostream& operator<<(std::ostream&, inventory_creation_result);
 
 template<typename R>

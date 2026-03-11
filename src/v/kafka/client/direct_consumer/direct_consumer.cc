@@ -491,22 +491,20 @@ void direct_consumer::on_metadata_update(const metadata_update&) {
 
 direct_consumer::~direct_consumer() = default;
 
-std::ostream&
-operator<<(std::ostream& o, const direct_consumer::configuration& cfg) {
-    fmt::print(
-      o,
+fmt::iterator
+direct_consumer::configuration::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ max_fetch_size: {}, partition_max_bytes: {}, reset_policy: {}, "
       "max_wait_time: {}ms, isolation_level: {}, max_buffered_bytes: {}, "
       "max_buffered_elements: {} , sessions_enabled: {}}}",
-      cfg.max_fetch_size,
-      cfg.partition_max_bytes,
-      cfg.reset_policy,
-      cfg.max_wait_time.count(),
-      cfg.isolation_level,
-      cfg.max_buffered_bytes,
-      cfg.max_buffered_elements,
-      cfg.with_sessions);
-
-    return o;
+      max_fetch_size,
+      partition_max_bytes,
+      reset_policy,
+      max_wait_time.count(),
+      isolation_level,
+      max_buffered_bytes,
+      max_buffered_elements,
+      with_sessions);
 }
 } // namespace kafka::client

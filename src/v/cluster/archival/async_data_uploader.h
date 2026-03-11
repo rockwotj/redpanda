@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/vassert.h"
 #include "cluster/partition.h"
 #include "model/fundamental.h"
@@ -63,6 +64,10 @@ struct inclusive_offset_range {
         auto cit = boost::make_counting_iterator<int64_t>(last() + 1);
         return boost::make_transform_iterator(cit, &detail::cast_to_offset);
     }
+
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "[{}-{}]", base, last);
+    }
 };
 
 /// Representation of the inclusive monotonic offset range limited by
@@ -82,11 +87,6 @@ struct size_limited_offset_range {
 
     bool operator<=>(const size_limited_offset_range&) const = default;
 };
-
-inline std::ostream& operator<<(std::ostream& o, inclusive_offset_range r) {
-    fmt::print(o, "[{}-{}]", r.base, r.last);
-    return o;
-}
 
 /// Result of the upload size calculation.
 /// Contains size of the region in bytes and locks.

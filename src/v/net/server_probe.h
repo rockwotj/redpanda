@@ -11,12 +11,11 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "metrics/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
-
-#include <iosfwd>
 
 namespace net {
 
@@ -88,7 +87,9 @@ private:
     uint32_t _method_not_found_errors = 0;
     uint32_t _requests_blocked_memory = 0;
     uint32_t _connections_wait_rate = 0;
-    friend std::ostream& operator<<(std::ostream& o, const server_probe& p);
+
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 }; // namespace net

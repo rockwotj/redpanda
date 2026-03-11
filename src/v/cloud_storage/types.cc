@@ -15,106 +15,57 @@
 
 namespace cloud_storage {
 
-std::ostream& operator<<(std::ostream& o, const segment_meta& s) {
-    fmt::print(
-      o,
+fmt::iterator segment_meta::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{is_compacted: {}, size_bytes: {}, base_offset: {}, committed_offset: "
       "{}, base_timestamp: {}, max_timestamp: {}, delta_offset: {}, "
       "ntp_revision: {}, archiver_term: {}, segment_term: {}, "
       "delta_offset_end: {}, sname_format: {}, metadata_size_hint: {}}}",
-      s.is_compacted,
-      s.size_bytes,
-      s.base_offset,
-      s.committed_offset,
-      s.base_timestamp,
-      s.max_timestamp,
-      s.delta_offset,
-      s.ntp_revision,
-      s.archiver_term,
-      s.segment_term,
-      s.delta_offset_end,
-      s.sname_format,
-      s.metadata_size_hint);
-    return o;
+      is_compacted,
+      size_bytes,
+      base_offset,
+      committed_offset,
+      base_timestamp,
+      max_timestamp,
+      delta_offset,
+      ntp_revision,
+      archiver_term,
+      segment_term,
+      delta_offset_end,
+      sname_format,
+      metadata_size_hint);
 }
 
 std::ostream& operator<<(std::ostream& o, const segment_name_format& r) {
-    switch (r) {
-    case segment_name_format::v1:
-        o << "{v1}";
-        break;
-    case segment_name_format::v2:
-        o << "{v2}";
-        break;
-    case segment_name_format::v3:
-        o << "{v3}";
-        break;
-    }
-    return o;
+    return o << format_as(r);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const spillover_manifest_path_components& c) {
-    fmt::print(
-      o,
+fmt::iterator
+spillover_manifest_path_components::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{base: {}, last: {}, base_kafka: {}, next_kafka: {}, base_ts: {}, "
       "last_ts: {}}}",
-      c.base,
-      c.last,
-      c.base_kafka,
-      c.next_kafka,
-      c.base_ts,
-      c.last_ts);
-    return o;
+      base,
+      last,
+      base_kafka,
+      next_kafka,
+      base_ts,
+      last_ts);
 }
 
 std::ostream& operator<<(std::ostream& o, const scrub_status& s) {
-    switch (s) {
-    case scrub_status::full:
-        o << "{full}";
-        break;
-    case scrub_status::partial:
-        o << "{partial}";
-        break;
-    case scrub_status::failed:
-        o << "{failed}";
-        break;
-    }
-    return o;
+    return o << format_as(s);
 }
 
 std::ostream& operator<<(std::ostream& o, const anomaly_type& t) {
-    switch (t) {
-    case anomaly_type::missing_delta:
-        o << "{missing_delta}";
-        break;
-    case anomaly_type::non_monotonical_delta:
-        o << "{non_monotonical_delta}";
-        break;
-    case anomaly_type::end_delta_smaller:
-        o << "{end_delta_smaller}";
-        break;
-    case anomaly_type::committed_smaller:
-        o << "{committed_smaller}";
-        break;
-    case anomaly_type::offset_gap:
-        o << "{offset_gap}";
-        break;
-    case anomaly_type::offset_overlap:
-        o << "{offset_overlap}";
-        break;
-    }
-    return o;
+    return o << format_as(t);
 }
 
-std::ostream& operator<<(std::ostream& o, const anomaly_meta& meta) {
-    fmt::print(
-      o,
-      "{{type: {}, at: {}, previous: {}}}",
-      meta.type,
-      meta.at,
-      meta.previous);
-    return o;
+fmt::iterator anomaly_meta::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{type: {}, at: {}, previous: {}}}", type, at, previous);
 }
 
 void scrub_segment_meta(
@@ -263,42 +214,32 @@ anomalies& anomalies::operator+=(anomalies&& other) {
     return *this;
 }
 
-std::ostream& operator<<(std::ostream& o, const anomalies& a) {
-    if (!a.has_value()) {
-        return o << "{}";
+fmt::iterator anomalies::format_to(fmt::iterator it) const {
+    if (!has_value()) {
+        return fmt::format_to(it, "{{}}");
     }
 
-    fmt::print(
-      o,
+    return fmt::format_to(
+      it,
       "{{missing_partition_manifest: {}, missing_spillover_manifests: {}, "
       "missing_segments: {}, segment_metadata_anomalies: {}}}",
-      a.missing_partition_manifest,
-      a.missing_spillover_manifests.size()
-        + a.num_discarded_missing_spillover_manifests,
-      a.missing_segments.size() + a.num_discarded_missing_segments,
-      a.segment_metadata_anomalies.size() + a.num_discarded_metadata_anomalies);
-
-    return o;
+      missing_partition_manifest,
+      missing_spillover_manifests.size()
+        + num_discarded_missing_spillover_manifests,
+      missing_segments.size() + num_discarded_missing_segments,
+      segment_metadata_anomalies.size() + num_discarded_metadata_anomalies);
 }
 
 std::ostream& operator<<(std::ostream& os, upload_type upload) {
-    return os << to_string(upload);
+    return os << format_as(upload);
 }
 
 std::ostream& operator<<(std::ostream& os, download_type download) {
-    return os << to_string(download);
+    return os << format_as(download);
 }
 
 std::ostream& operator<<(std::ostream& os, existence_check_type head) {
-    switch (head) {
-        using enum cloud_storage::existence_check_type;
-    case object:
-        return os << "object";
-    case segment:
-        return os << "segment";
-    case manifest:
-        return os << "manifest";
-    }
+    return os << format_as(head);
 }
 
 fmt::iterator cloud_log_reader_config::format_to(fmt::iterator it) const {

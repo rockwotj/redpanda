@@ -17,6 +17,7 @@ def generate_kafka_message_libs(name = "generate_kafka_messages_libs"):
             visibility = ["//visibility:public"],
             deps = [
                 ":protocol",
+                "//src/v/base",
                 "//src/v/kafka/protocol/schemata:" + message + "_request",
                 "//src/v/kafka/protocol/schemata:" + message + "_response",
             ],

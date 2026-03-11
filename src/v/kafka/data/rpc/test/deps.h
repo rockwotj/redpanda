@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/format_to.h"
 #include "config/mock_property.h"
 #include "kafka/data/rpc/client.h"
 #include "kafka/data/rpc/deps.h"
@@ -42,8 +43,8 @@ struct record_batches {
           other.underlying.end());
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const record_batches& b) {
-        return os << ss::format("{}", b.underlying);
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", underlying);
     }
 
     bool empty() const { return underlying.empty(); }

@@ -369,33 +369,34 @@ void server::setup_public_metrics() {
          .aggregate({sm::shard_label})});
 }
 
-std::ostream& operator<<(std::ostream& o, const server_configuration& c) {
-    o << "{";
-    for (auto& a : c.addrs) {
-        o << a;
+fmt::iterator server_configuration::format_to(fmt::iterator it) const {
+    it = fmt::format_to(it, "{{");
+    for (auto& a : addrs) {
+        it = fmt::format_to(it, "{}", a);
     }
-    o << ", max_service_memory_per_core: " << c.max_service_memory_per_core
-      << ", metrics_enabled:" << !c.disable_metrics
-      << ", listen_backlog:" << c.listen_backlog
-      << ", tcp_recv_buf:" << c.tcp_recv_buf
-      << ", tcp_send_buf:" << c.tcp_send_buf
-      << ", stream_recv_buf:" << c.stream_recv_buf;
-    return o << "}";
+    return fmt::format_to(
+      it,
+      ", max_service_memory_per_core: {}"
+      ", metrics_enabled:{}"
+      ", listen_backlog:{}"
+      ", tcp_recv_buf:{}"
+      ", tcp_send_buf:{}"
+      ", stream_recv_buf:{}}}",
+      max_service_memory_per_core,
+      !disable_metrics,
+      listen_backlog,
+      tcp_recv_buf,
+      tcp_send_buf,
+      stream_recv_buf);
 }
 
-std::ostream& operator<<(std::ostream& os, const server_endpoint& ep) {
-    /**
-     * We use simmillar syntax to kafka to indicate if endpoint is secured f.e.:
-     *
-     * SECURED://127.0.0.1:9092
-     */
-    fmt::print(
-      os,
+fmt::iterator server_endpoint::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{{}://{}:{}}}",
-      ep.name,
-      ep.addr,
-      ep.credentials ? "SECURED" : "PLAINTEXT");
-    return os;
+      name,
+      addr,
+      credentials ? "SECURED" : "PLAINTEXT");
 }
 
 } // namespace net

@@ -10,6 +10,7 @@
  */
 #include "types.h"
 
+#include "base/format_to.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
 
@@ -20,29 +21,27 @@
 
 namespace cluster::node {
 
-std::ostream&
-operator<<(std::ostream& o, const local_state::log_data_state& s) {
-    fmt::print(
-      o,
+fmt::iterator
+local_state::log_data_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{target: {} current: {} reclaimable: {}}}",
-      human::bytes(s.data_target_size),
-      human::bytes(s.data_current_size),
-      human::bytes(s.data_reclaimable_size));
-    return o;
+      human::bytes(data_target_size),
+      human::bytes(data_current_size),
+      human::bytes(data_reclaimable_size));
 }
 
-std::ostream& operator<<(std::ostream& o, const local_state& s) {
-    fmt::print(
-      o,
+fmt::iterator local_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{redpanda_version: {}, uptime: {}, data_disk: {}, cache_disk: {} log "
       "data {}, recovery_mode_enabled: {}}}",
-      s.redpanda_version,
-      s.uptime,
-      s.data_disk,
-      s.cache_disk,
-      s.log_data_size,
-      s.recovery_mode_enabled);
-    return o;
+      redpanda_version,
+      uptime,
+      data_disk,
+      cache_disk,
+      log_data_size,
+      recovery_mode_enabled);
 }
 
 void local_state::serde_read(iobuf_parser& in, const serde::header& h) {

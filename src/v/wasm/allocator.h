@@ -11,6 +11,7 @@
 #pragma once
 
 #include "absl/container/btree_set.h"
+#include "base/format_to.h"
 #include "base/seastarx.h"
 
 #include <seastar/core/aligned_buffer.hh>
@@ -120,7 +121,7 @@ struct stack_bounds {
     uint8_t* bottom;
 
     auto operator<=>(const stack_bounds&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const stack_bounds&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**

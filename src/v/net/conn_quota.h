@@ -11,6 +11,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/hash/hash.h"
+#include "base/format_to.h"
 #include "base/oncore.h"
 #include "base/seastarx.h"
 #include "base/vassert.h"
@@ -125,13 +126,12 @@ private:
         // do reclaims (would happen if multiple incoming connections
         // on the same shard when available==0)
         ssx::mutex reclaim_lock{"conn_quota::reclaim_lock"};
-    };
 
-    friend std::ostream& operator<<(std::ostream& o, const home_allowance& ha) {
-        fmt::print(
-          o, "{{ {}/{} reclaim={}}}", ha.available, ha.max, ha.reclaim);
-        return o;
-    }
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(
+              it, "{{ {}/{} reclaim={}}}", available, max, reclaim);
+        }
+    };
 
     /**
      * State on a non-home core for an address: records how many tokens

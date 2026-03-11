@@ -13,6 +13,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "compaction/key_offset_map.h"
@@ -127,7 +128,7 @@ struct log_config {
         return std::nullopt;
     }
 
-    friend std::ostream& operator<<(std::ostream& o, const log_config&);
+    fmt::iterator format_to(fmt::iterator) const;
 }; // namespace storage
 
 /**
@@ -364,9 +365,10 @@ private:
     ss::gate _gate;
     ss::abort_source _abort_source;
 
-    friend std::ostream& operator<<(std::ostream&, const log_manager&);
-
     friend class testing_details::log_manager_accessor;
+
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 } // namespace storage

@@ -418,11 +418,10 @@ ss::future<> write_at_offset_stm::do_apply(const model::record_batch& b) {
     }
     co_return;
 }
-std::ostream&
-operator<<(std::ostream& o, const write_at_offset_stm::term_offset& to) {
-    fmt::print(
-      o, "{{offset: {}, in_sync_term: {}}}", to.offset, to.in_sync_term);
-    return o;
+fmt::iterator
+write_at_offset_stm::term_offset::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{offset: {}, in_sync_term: {}}}", offset, in_sync_term);
 }
 
 ss::future<raft::local_snapshot_applied>

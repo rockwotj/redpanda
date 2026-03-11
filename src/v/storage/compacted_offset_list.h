@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/vassert.h"
 #include "model/fundamental.h"
 
@@ -36,17 +37,19 @@ public:
     bool contains(model::offset) const;
     void add(model::offset);
 
+public:
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "{{base:{}, logical_offsets_cardinality: {}, offset_mem_bytes: {}}}",
+          _base,
+          _to_keep.cardinality(),
+          _to_keep.getSizeInBytes());
+    }
+
 private:
     model::offset _base;
     roaring::Roaring _to_keep;
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const compacted_offset_list& l) {
-        return o << "{base:" << l._base << ", logical_offsets_cardinality: "
-                 << l._to_keep.cardinality()
-                 << ", offset_mem_bytes: " << l._to_keep.getSizeInBytes()
-                 << "}";
-    }
 };
 
 inline void compacted_offset_list::add(model::offset o) {

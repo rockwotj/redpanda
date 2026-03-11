@@ -103,6 +103,9 @@ private:
     size_t _decompressed_bytes_processed = 0;
 };
 
+constexpr std::string_view
+format_as(translation_probe::invalid_record_cause cause);
+
 std::ostream&
 operator<<(std::ostream& os, translation_probe::invalid_record_cause cause);
 

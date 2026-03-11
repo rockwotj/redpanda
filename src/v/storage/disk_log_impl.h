@@ -329,7 +329,7 @@ private:
     friend class disk_log_builder;  // for tests
     friend ::storage_e2e_fixture;
     friend ::reupload_fixture; // for tests
-    friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
+    friend std::ostream& operator<<(std::ostream&, const disk_log_impl&);
 
     ss::future<model::record_batch_reader>
       make_unchecked_reader(local_log_reader_config);

@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/format_to.h"
 #include "cloud_topics/tests/cluster_fixture.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/tests/cluster_metadata_utils.h"
@@ -47,11 +48,12 @@ struct test_params {
     bool unstable_controller{false};
     bool unstable_metastore{false};
 
-    friend std::ostream& operator<<(std::ostream& os, const test_params& p) {
-        return os << fmt::format(
-                 "controller_{}_metastore_{}",
-                 p.unstable_controller ? "unstable" : "stable",
-                 p.unstable_metastore ? "unstable" : "stable");
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "controller_{}_metastore_{}",
+          unstable_controller ? "unstable" : "stable",
+          unstable_metastore ? "unstable" : "stable");
     }
 };
 
@@ -376,7 +378,7 @@ INSTANTIATE_TEST_SUITE_P(
     test_params{.unstable_controller = true, .unstable_metastore = false},
     test_params{.unstable_controller = false, .unstable_metastore = true},
     test_params{.unstable_controller = true, .unstable_metastore = true}),
-  [](const auto& info) { return fmt::to_string(info.param); });
+  [](const auto& info) { return fmt::format("{}", info.param); });
 
 TEST_F(CloudTopicsClusterRecoveryTest, TestRecoveryWithExistingTopic) {
     ASSERT_NO_FATAL_FAILURE(create_cloud_topic().get());

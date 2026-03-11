@@ -21,6 +21,9 @@
 #include "datalake/fwd.h"
 #include "model/fundamental.h"
 
+#include <ostream>
+#include <string_view>
+
 namespace datalake::coordinator {
 
 // Public interface that provides access to the coordinator STM. Conceptually,
@@ -187,6 +190,37 @@ private:
     ensure_table_map_t in_flight_main_;
     ensure_table_map_t in_flight_dlq_;
 };
-std::ostream& operator<<(std::ostream&, coordinator::errc);
+constexpr std::string_view format_as(coordinator::errc e) {
+    switch (e) {
+    case coordinator::errc::not_leader:
+        return "coordinator::errc::not_leader";
+    case coordinator::errc::shutting_down:
+        return "coordinator::errc::shutting_down";
+    case coordinator::errc::stm_apply_error:
+        return "coordinator::errc::stm_apply_error";
+    case coordinator::errc::revision_mismatch:
+        return "coordinator::errc::revision_mismatch";
+    case coordinator::errc::incompatible_schema:
+        return "coordinator::errc::incompatible_schema";
+    case coordinator::errc::timedout:
+        return "coordinator::errc::timedout";
+    case coordinator::errc::failed:
+        return "coordinator::errc::failed";
+    }
+}
+inline std::ostream& operator<<(std::ostream& os, coordinator::errc e) {
+    return os << format_as(e);
+}
 
 } // namespace datalake::coordinator
+
+template<>
+struct fmt::formatter<datalake::coordinator::coordinator::errc>
+  : fmt::formatter<std::string_view> {
+    auto format(
+      datalake::coordinator::coordinator::errc e,
+      fmt::format_context& ctx) const {
+        return fmt::formatter<std::string_view>::format(
+          datalake::coordinator::format_as(e), ctx);
+    }
+};

@@ -83,23 +83,22 @@ bool adjacent_segment_run::maybe_add_segment(
     return false;
 }
 
-std::ostream& operator<<(std::ostream& os, const adjacent_segment_run& run) {
+fmt::iterator adjacent_segment_run::format_to(fmt::iterator it) const {
     std::vector<ss::sstring> names;
-    names.reserve(run.segments.size());
+    names.reserve(segments.size());
     std::transform(
-      run.segments.begin(),
-      run.segments.end(),
+      segments.begin(),
+      segments.end(),
       std::back_inserter(names),
       [](const cloud_storage::remote_segment_path& rsp) {
           return rsp().native();
       });
-    fmt::print(
-      os,
+    return fmt::format_to(
+      it,
       "{{meta: {}, num_segments: {}, segments: {}}}",
-      run.meta,
-      run.num_segments,
+      meta,
+      num_segments,
       names);
-    return os;
 }
 
 } // namespace archival

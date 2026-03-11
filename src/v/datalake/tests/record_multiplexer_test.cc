@@ -7,6 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#include "base/format_to.h"
 #include "container/chunked_circular_buffer.h"
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/record_multiplexer.h"
@@ -102,18 +103,15 @@ struct records_param {
     size_t num_records() const { return records_per_hr() * hrs; }
     size_t records_per_hr() const { return records_per_batch * batches_per_hr; }
 
-    friend std::ostream& operator<<(std::ostream&, const records_param&);
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "{{records_per_batch: {}, batches_per_hr: {}, hrs: {}}}",
+          records_per_batch,
+          batches_per_hr,
+          hrs);
+    }
 };
-
-std::ostream& operator<<(std::ostream& os, const records_param& rp) {
-    fmt::print(
-      os,
-      "{{records_per_batch: {}, batches_per_hr: {}, hrs: {}}}",
-      rp.records_per_batch,
-      rp.batches_per_hr,
-      rp.hrs);
-    return os;
-}
 
 class RecordMultiplexerTestBase
   : public datalake::tests::catalog_and_registry_fixture {

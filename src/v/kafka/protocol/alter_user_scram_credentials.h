@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/format_to.h"
 #include "kafka/protocol/schemata/alter_user_scram_credentials_request.h"
 #include "kafka/protocol/schemata/alter_user_scram_credentials_response.h"
 #include "kafka/protocol/wire.h"
@@ -24,9 +25,8 @@ struct alter_user_scram_credentials_request final {
     void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
-    friend std::ostream& operator<<(
-      std::ostream& os, const alter_user_scram_credentials_request& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 struct alter_user_scram_credentials_response final {
@@ -38,9 +38,8 @@ struct alter_user_scram_credentials_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-    friend std::ostream& operator<<(
-      std::ostream& os, const alter_user_scram_credentials_response& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 } // namespace kafka

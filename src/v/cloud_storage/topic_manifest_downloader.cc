@@ -34,18 +34,7 @@ bool bin_manifest_filter(
 } // namespace
 
 std::ostream& operator<<(std::ostream& os, find_topic_manifest_outcome o) {
-    switch (o) {
-    case find_topic_manifest_outcome::success:
-        os << "find_topic_manifest_outcome::success";
-        break;
-    case find_topic_manifest_outcome::no_matching_manifest:
-        os << "find_topic_manifest_outcome::no_matching_manifest";
-        break;
-    case find_topic_manifest_outcome::multiple_matching_manifests:
-        os << "find_topic_manifest_outcome::multiple_matching_manifests";
-        break;
-    }
-    return os;
+    return os << format_as(o);
 }
 
 topic_manifest_downloader::topic_manifest_downloader(

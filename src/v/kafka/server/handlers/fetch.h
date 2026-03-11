@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/format_to.h"
 #include "cluster/rm_stm.h"
 #include "container/chunked_vector.h"
 #include "container/intrusive_list_helpers.h"
@@ -238,26 +239,25 @@ struct fetch_config {
       abort_source;
     model::opt_client_address_t client_address;
 
-    friend std::ostream& operator<<(std::ostream& o, const fetch_config& cfg) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "max_batch_size": {}, "strict_max_bytes": {}, "skip_read": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}, "abortable": {}, "aborted": {}, "client_address": {}}})",
-          cfg.start_offset,
-          cfg.max_offset,
-          cfg.isolation_level,
-          cfg.max_bytes,
-          cfg.max_batch_size,
-          cfg.strict_max_bytes,
-          cfg.skip_read,
-          cfg.current_leader_epoch,
-          cfg.read_from_follower,
-          cfg.consumer_rack_id,
-          cfg.abort_source.has_value(),
-          cfg.abort_source.has_value()
-            ? cfg.abort_source.value().get().abort_requested()
+          start_offset,
+          max_offset,
+          isolation_level,
+          max_bytes,
+          max_batch_size,
+          strict_max_bytes,
+          skip_read,
+          current_leader_epoch,
+          read_from_follower,
+          consumer_rack_id,
+          abort_source.has_value(),
+          abort_source.has_value()
+            ? abort_source.value().get().abort_requested()
             : false,
-          cfg.client_address.value_or(model::client_address_t{}));
-        return o;
+          client_address.value_or(model::client_address_t{}));
     }
 };
 
@@ -270,10 +270,8 @@ struct ntp_fetch_config {
 
     const model::ktp& ktp() const { return _ktp; }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const ntp_fetch_config& ntp_fetch) {
-        fmt::print(o, R"({{"{}": {}}})", ntp_fetch.ktp(), ntp_fetch.cfg);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, R"({{"{}": {}}})", ktp(), cfg);
     }
 };
 
@@ -399,9 +397,8 @@ struct shard_fetch {
     chunked_vector<op_context::response_placeholder_ptr> responses;
     op_context::latency_point start_time;
 
-    friend std::ostream& operator<<(std::ostream& o, const shard_fetch& sf) {
-        fmt::print(o, "{}", sf.requests);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", requests);
     }
 };
 
@@ -425,23 +422,23 @@ struct fetch_plan {
         }
     }
 
-    friend std::ostream& operator<<(std::ostream& o, const fetch_plan& plan) {
-        fmt::print(o, "{{[");
-        if (!plan.fetches_per_shard.empty()) {
-            fmt::print(
-              o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        it = fmt::format_to(it, "{{[");
+        if (!fetches_per_shard.empty()) {
+            it = fmt::format_to(
+              it,
               R"({{"shard": 0, "requests": [{}]}})",
-              plan.fetches_per_shard[0]);
-            for (size_t i = 1; i < plan.fetches_per_shard.size(); ++i) {
-                fmt::print(
-                  o,
+              fetches_per_shard[0]);
+            for (size_t i = 1; i < fetches_per_shard.size(); ++i) {
+                it = fmt::format_to(
+                  it,
                   R"(, {{"shard": {}, "requests": [{}]}})",
                   i,
-                  plan.fetches_per_shard[i]);
+                  fetches_per_shard[i]);
             }
         }
-        fmt::print(o, "]}}");
-        return o;
+        it = fmt::format_to(it, "]}}");
+        return it;
     }
 };
 

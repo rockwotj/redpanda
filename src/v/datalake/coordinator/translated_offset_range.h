@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "container/chunked_vector.h"
 #include "datalake/coordinator/data_file.h"
 #include "model/fundamental.h"
@@ -56,8 +57,8 @@ struct translated_offset_range
         }
         return range;
     }
-};
 
-std::ostream& operator<<(std::ostream& o, const translated_offset_range& r);
+    fmt::iterator format_to(fmt::iterator) const;
+};
 
 } // namespace datalake::coordinator

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cluster/namespaced_cache.h"
 #include "cluster/rm_stm_types.h"
 #include "cluster/types.h"
@@ -51,6 +52,7 @@ enum class request_state : uint8_t {
     completed = 2
 };
 
+std::string_view format_as(request_state);
 std::ostream& operator<<(std::ostream&, request_state);
 
 /// A request for a given sequence range, both inclusive.
@@ -82,7 +84,7 @@ public:
 
     bool operator==(const request&) const;
 
-    friend std::ostream& operator<<(std::ostream&, const request&);
+    fmt::iterator format_to(fmt::iterator) const;
 
 private:
     request_state _state{request_state::initialized};
@@ -128,7 +130,7 @@ public:
     void shutdown();
 
     bool operator==(const requests&) const;
-    friend std::ostream& operator<<(std::ostream&, const requests&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     const request_queue& inflight_requests() const {
         return _inflight_requests;
@@ -188,7 +190,7 @@ public:
     ~producer_state() noexcept = default;
     bool operator==(const producer_state& other) const;
 
-    friend std::ostream& operator<<(std::ostream& o, const producer_state&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     /// Runs the passed async function under the op_lock scope.
 

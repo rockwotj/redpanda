@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/format_to.h"
 #include "cluster_link/link.h"
 #include "cluster_link/model/types.h"
 #include "cluster_link/task.h"
@@ -108,10 +109,9 @@ private:
 struct test_parameters {
     bool is_locked_to_controller;
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const test_parameters& tp) {
-        return os << "{is_locked_to_controller: " << tp.is_locked_to_controller
-                  << "}";
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it, "{{is_locked_to_controller: {}}}", is_locked_to_controller);
     }
 };
 

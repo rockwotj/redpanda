@@ -24,17 +24,6 @@ partition_state partition_state::copy() const {
     return result;
 }
 
-std::ostream& operator<<(std::ostream& o, topic_state::lifecycle_state_t s) {
-    switch (s) {
-    case topic_state::lifecycle_state_t::live:
-        return o << "live";
-    case topic_state::lifecycle_state_t::closed:
-        return o << "closed";
-    case topic_state::lifecycle_state_t::purged:
-        return o << "purged";
-    }
-}
-
 topic_state topic_state::copy() const {
     topic_state result;
     result.revision = revision;

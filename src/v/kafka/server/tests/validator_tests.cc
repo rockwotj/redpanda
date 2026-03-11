@@ -24,15 +24,13 @@ using namespace kafka;
 struct test_validator_data {
     std::vector<createable_topic_config> configs;
     bool is_valid;
-    friend std::ostream&
-    operator<<(std::ostream& os, const test_validator_data& d) {
-        fmt::print(os, "configs: {}, expect valid: {}", d.configs, d.is_valid);
-        return os;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "configs: {}, expect valid: {}", configs, is_valid);
     }
 };
 
 std::ostream& operator<<(std::ostream& os, subject_name_strategy sns) {
-    return os << to_string_view(sns);
+    return os << format_as(sns);
 }
 
 static const auto sns_data = std::to_array(

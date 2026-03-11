@@ -21,50 +21,48 @@
 namespace pandaproxy::schema_registry {
 
 std::ostream& operator<<(std::ostream& os, const schema_type& v) {
-    return os << to_string_view(v);
+    return os << format_as(v);
 }
 
 std::ostream& operator<<(std::ostream& os, const output_format& v) {
-    return os << to_string_view(v);
+    return os << format_as(v);
 }
 
 std::ostream& operator<<(std::ostream& os, const reference_format& v) {
-    return os << to_string_view(v);
+    return os << format_as(v);
 }
 
-std::ostream& operator<<(std::ostream& os, const seq_marker& v) {
-    if (v.seq.has_value() && v.node.has_value()) {
-        fmt::print(
-          os,
+fmt::iterator seq_marker::format_to(fmt::iterator it) const {
+    if (seq.has_value() && node.has_value()) {
+        return fmt::format_to(
+          it,
           "seq={} node={} version={} key_type={}",
-          *v.seq,
-          *v.node,
-          v.version,
-          to_string_view(v.key_type));
+          *seq,
+          *node,
+          version,
+          to_string_view(key_type));
     } else {
-        fmt::print(
-          os,
+        return fmt::format_to(
+          it,
           "unsequenced version={} key_type={}",
-          v.version,
-          to_string_view(v.key_type));
+          version,
+          to_string_view(key_type));
     }
-    return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const schema_definition& def) {
-    fmt::print(
-      os,
+fmt::iterator schema_definition::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "type: {}, definition: {}, references: {}, metadata: {}",
-      to_string_view(def.type()),
+      to_string_view(type()),
       // TODO BP: Prevent this linearization
-      to_string(def.shared_raw()),
-      def.refs(),
-      def.meta());
-    return os;
+      to_string(shared_raw()),
+      refs(),
+      meta());
 }
 
 std::ostream& operator<<(std::ostream& os, const schema_reference& ref) {
-    fmt::print(os, "{:l}", ref);
+    fmt::print(os, "{}", ref);
     return os;
 }
 
@@ -73,14 +71,13 @@ bool operator<(const schema_reference& lhs, const schema_reference& rhs) {
            < std::tie(rhs.name, rhs.sub, rhs.version);
 }
 
-std::ostream& operator<<(std::ostream& os, const subject_schema& schema) {
-    fmt::print(os, "subject: {}, {}", schema.sub(), schema.def());
-    return os;
+fmt::iterator subject_schema::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "subject: {}, {}", sub(), def());
 }
 
-std::ostream& operator<<(std::ostream& os, const compatibility_result& res) {
-    fmt::print(os, "is_compat: {}, messages: {}", res.is_compat, res.messages);
-    return os;
+fmt::iterator compatibility_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "is_compat: {}, messages: {}", is_compat, messages);
 }
 
 fmt::iterator schema_metadata::format_to(fmt::iterator it) const {

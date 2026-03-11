@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/vassert.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -38,6 +39,26 @@ enum class avro_incompatibility_type {
     unknown,
 };
 
+constexpr std::string_view format_as(avro_incompatibility_type t) {
+    switch (t) {
+    case avro_incompatibility_type::name_mismatch:
+        return "NAME_MISMATCH";
+    case avro_incompatibility_type::fixed_size_mismatch:
+        return "FIXED_SIZE_MISMATCH";
+    case avro_incompatibility_type::missing_enum_symbols:
+        return "MISSING_ENUM_SYMBOLS";
+    case avro_incompatibility_type::reader_field_missing_default_value:
+        return "READER_FIELD_MISSING_DEFAULT_VALUE";
+    case avro_incompatibility_type::type_mismatch:
+        return "TYPE_MISMATCH";
+    case avro_incompatibility_type::missing_union_branch:
+        return "MISSING_UNION_BRANCH";
+    case avro_incompatibility_type::unknown:
+        return "UNKNOWN";
+    }
+    __builtin_unreachable();
+}
+
 /**
  * avro_incompatibility - A single incompatibility between Avro schemas.
  *
@@ -64,10 +85,9 @@ public:
 
     ss::sstring describe() const;
 
-private:
-    friend std::ostream&
-    operator<<(std::ostream& os, const avro_incompatibility& v);
+    fmt::iterator format_to(fmt::iterator it) const;
 
+private:
     friend bool
     operator==(const avro_incompatibility&, const avro_incompatibility&)
       = default;
@@ -96,6 +116,30 @@ enum class proto_incompatibility_type {
     unknown,
 };
 
+constexpr std::string_view format_as(proto_incompatibility_type t) {
+    switch (t) {
+    case proto_incompatibility_type::message_removed:
+        return "MESSAGE_REMOVED";
+    case proto_incompatibility_type::field_kind_changed:
+        return "FIELD_KIND_CHANGED";
+    case proto_incompatibility_type::field_scalar_kind_changed:
+        return "FIELD_SCALAR_KIND_CHANGED";
+    case proto_incompatibility_type::field_named_type_changed:
+        return "FIELD_NAMED_TYPE_CHANGED";
+    case proto_incompatibility_type::required_field_added:
+        return "REQUIRED_FIELD_ADDED";
+    case proto_incompatibility_type::required_field_removed:
+        return "REQUIRED_FIELD_REMOVED";
+    case proto_incompatibility_type::oneof_field_removed:
+        return "ONEOF_FIELD_REMOVED";
+    case proto_incompatibility_type::multiple_fields_moved_to_oneof:
+        return "MULTIPLE_FIELDS_MOVED_TO_ONEOF";
+    case proto_incompatibility_type::unknown:
+        return "UNKNOWN";
+    }
+    __builtin_unreachable();
+}
+
 /**
  * proto_incompatibility - A single incompatibility between Protobuf schemas.
  *
@@ -117,10 +161,9 @@ public:
     ss::sstring describe() const;
     Type type() const { return _type; }
 
-private:
-    friend std::ostream&
-    operator<<(std::ostream& os, const proto_incompatibility& v);
+    fmt::iterator format_to(fmt::iterator it) const;
 
+private:
     friend bool
     operator==(const proto_incompatibility&, const proto_incompatibility&)
       = default;
@@ -195,6 +238,133 @@ enum class json_incompatibility_type {
     unknown,
 };
 
+// NOLINTBEGIN(bugprone-branch-clone)
+constexpr std::string_view format_as(json_incompatibility_type t) {
+    switch (t) {
+    case json_incompatibility_type::type_narrowed:
+        return "TYPE_NARROWED";
+    case json_incompatibility_type::type_changed:
+        return "TYPE_CHANGED";
+    case json_incompatibility_type::max_length_added:
+        return "MAX_LENGTH_ADDED";
+    case json_incompatibility_type::max_length_decreased:
+        return "MAX_LENGTH_DECREASED";
+    case json_incompatibility_type::min_length_added:
+        return "MIN_LENGTH_ADDED";
+    case json_incompatibility_type::min_length_increased:
+        return "MIN_LENGTH_INCREASED";
+    case json_incompatibility_type::pattern_added:
+        return "PATTERN_ADDED";
+    case json_incompatibility_type::pattern_changed:
+        return "PATTERN_CHANGED";
+    case json_incompatibility_type::maximum_added:
+        return "MAXIMUM_ADDED";
+    case json_incompatibility_type::maximum_decreased:
+        return "MAXIMUM_DECREASED";
+    case json_incompatibility_type::minimum_added:
+        return "MINIMUM_ADDED";
+    case json_incompatibility_type::minimum_increased:
+        return "MINIMUM_INCREASED";
+    case json_incompatibility_type::exclusive_maximum_added:
+        return "EXCLUSIVE_MAXIMUM_ADDED";
+    case json_incompatibility_type::exclusive_maximum_decreased:
+        return "EXCLUSIVE_MAXIMUM_DECREASED";
+    case json_incompatibility_type::exclusive_minimum_added:
+        return "EXCLUSIVE_MINIMUM_ADDED";
+    case json_incompatibility_type::exclusive_minimum_increased:
+        return "EXCLUSIVE_MINIMUM_INCREASED";
+    case json_incompatibility_type::multiple_of_added:
+        return "MULTIPLE_OF_ADDED";
+    case json_incompatibility_type::multiple_of_expanded:
+        return "MULTIPLE_OF_EXPANDED";
+    case json_incompatibility_type::multiple_of_changed:
+        return "MULTIPLE_OF_CHANGED";
+    case json_incompatibility_type::required_attribute_added:
+        return "REQUIRED_ATTRIBUTE_ADDED";
+    case json_incompatibility_type::max_properties_added:
+        return "MAX_PROPERTIES_ADDED";
+    case json_incompatibility_type::max_properties_decreased:
+        return "MAX_PROPERTIES_DECREASED";
+    case json_incompatibility_type::min_properties_added:
+        return "MIN_PROPERTIES_ADDED";
+    case json_incompatibility_type::min_properties_increased:
+        return "MIN_PROPERTIES_INCREASED";
+    case json_incompatibility_type::additional_properties_removed:
+        return "ADDITIONAL_PROPERTIES_REMOVED";
+    case json_incompatibility_type::additional_properties_narrowed:
+        return "ADDITIONAL_PROPERTIES_NARROWED";
+    case json_incompatibility_type::dependency_array_added:
+        return "DEPENDENCY_ARRAY_ADDED";
+    case json_incompatibility_type::dependency_array_extended:
+        return "DEPENDENCY_ARRAY_EXTENDED";
+    case json_incompatibility_type::dependency_array_changed:
+        return "DEPENDENCY_ARRAY_CHANGED";
+    case json_incompatibility_type::dependency_schema_added:
+        return "DEPENDENCY_SCHEMA_ADDED";
+    case json_incompatibility_type::property_added_to_open_content_model:
+        return "PROPERTY_ADDED_TO_OPEN_CONTENT_MODEL";
+    case json_incompatibility_type::
+      required_property_added_to_unopen_content_model:
+        return "REQUIRED_PROPERTY_ADDED_TO_UNOPEN_CONTENT_MODEL";
+    case json_incompatibility_type::property_removed_from_closed_content_model:
+        return "PROPERTY_REMOVED_FROM_CLOSED_CONTENT_MODEL";
+    case json_incompatibility_type::
+      property_removed_not_covered_by_partially_open_content_model:
+        return "PROPERTY_REMOVED_NOT_COVERED_BY_PARTIALLY_OPEN_CONTENT_MODEL";
+    case json_incompatibility_type::
+      property_added_not_covered_by_partially_open_content_model:
+        return "PROPERTY_ADDED_NOT_COVERED_BY_PARTIALLY_OPEN_CONTENT_MODEL";
+    case json_incompatibility_type::reserved_property_removed:
+        return "RESERVED_PROPERTY_REMOVED";
+    case json_incompatibility_type::reserved_property_conflicts_with_property:
+        return "RESERVED_PROPERTY_CONFLICTS_WITH_PROPERTY";
+    case json_incompatibility_type::max_items_added:
+        return "MAX_ITEMS_ADDED";
+    case json_incompatibility_type::max_items_decreased:
+        return "MAX_ITEMS_DECREASED";
+    case json_incompatibility_type::min_items_added:
+        return "MIN_ITEMS_ADDED";
+    case json_incompatibility_type::min_items_increased:
+        return "MIN_ITEMS_INCREASED";
+    case json_incompatibility_type::unique_items_added:
+        return "UNIQUE_ITEMS_ADDED";
+    case json_incompatibility_type::additional_items_removed:
+        return "ADDITIONAL_ITEMS_REMOVED";
+    case json_incompatibility_type::additional_items_narrowed:
+        return "ADDITIONAL_ITEMS_NARROWED";
+    case json_incompatibility_type::item_added_to_open_content_model:
+        return "ITEM_ADDED_TO_OPEN_CONTENT_MODEL";
+    case json_incompatibility_type::item_removed_from_closed_content_model:
+        return "ITEM_REMOVED_FROM_CLOSED_CONTENT_MODEL";
+    case json_incompatibility_type::
+      item_removed_not_covered_by_partially_open_content_model:
+        return "ITEM_REMOVED_NOT_COVERED_BY_PARTIALLY_OPEN_CONTENT_MODEL";
+    case json_incompatibility_type::
+      item_added_not_covered_by_partially_open_content_model:
+        return "ITEM_ADDED_NOT_COVERED_BY_PARTIALLY_OPEN_CONTENT_MODEL";
+    case json_incompatibility_type::enum_array_narrowed:
+        return "ENUM_ARRAY_NARROWED";
+    case json_incompatibility_type::enum_array_changed:
+        return "ENUM_ARRAY_CHANGED";
+    case json_incompatibility_type::combined_type_changed:
+        return "COMBINED_TYPE_CHANGED";
+    case json_incompatibility_type::product_type_extended:
+        return "PRODUCT_TYPE_EXTENDED";
+    case json_incompatibility_type::sum_type_extended:
+        return "SUM_TYPE_EXTENDED";
+    case json_incompatibility_type::sum_type_narrowed:
+        return "SUM_TYPE_NARROWED";
+    case json_incompatibility_type::combined_type_subschemas_changed:
+        return "COMBINED_TYPE_SUBSCHEMAS_CHANGED";
+    case json_incompatibility_type::not_type_extended:
+        return "NOT_TYPE_EXTENDED";
+    case json_incompatibility_type::unknown:
+        return "UNKNOWN";
+    }
+    __builtin_unreachable();
+}
+// NOLINTEND(bugprone-branch-clone)
+
 /**
  * json_incompatibility - A single incompatibility between JSON schemas.
  *
@@ -216,8 +386,7 @@ public:
     ss::sstring describe() const;
     Type type() const { return _type; }
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const json_incompatibility& v);
+    fmt::iterator format_to(fmt::iterator it) const;
 
     friend bool
     operator==(const json_incompatibility&, const json_incompatibility&)

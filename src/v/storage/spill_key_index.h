@@ -11,6 +11,7 @@
 
 #pragma once
 #include "absl/container/node_hash_map.h"
+#include "base/format_to.h"
 #include "bytes/bytes.h"
 #include "compaction/key.h"
 #include "hashing/crc32c.h"
@@ -160,7 +161,8 @@ private:
     crc::crc32c _crc;
     ss::gate _gate;
 
-    friend std::ostream& operator<<(std::ostream&, const spill_key_index&);
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 } // namespace storage::internal

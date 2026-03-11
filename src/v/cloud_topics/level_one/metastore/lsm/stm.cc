@@ -45,17 +45,6 @@ void maybe_log_update_error(
       o,
       r.error());
 }
-
-std::string_view to_string_view(stm::errc e) {
-    switch (e) {
-    case stm::errc::not_leader:
-        return "stm::errc::not_leader";
-    case stm::errc::raft_error:
-        return "stm::errc::raft_error";
-    case stm::errc::shutting_down:
-        return "stm::errc::shutting_down";
-    }
-}
 } // namespace
 
 stm::stm(
@@ -269,12 +258,4 @@ void lsm_stm_factory::create(
     raft->log()->stm_manager()->add_stm(std::move(s));
 }
 
-std::ostream& operator<<(std::ostream& os, stm::errc e) {
-    return os << to_string_view(e);
-}
-
 } // namespace cloud_topics::l1
-
-auto format_as(cloud_topics::l1::stm::errc e) {
-    return cloud_topics::l1::to_string_view(e);
-}

@@ -14,6 +14,7 @@
 // important to keep dependencies small because this type is used
 // in the log readers and throughout the code where segment_set.h is used
 // if it becomes large, consider making it a pimpl class
+#include "base/format_to.h"
 #include "container/chunked_vector.h"
 #include "storage/fwd.h"
 #include "storage/segment_set.h"
@@ -37,7 +38,7 @@ public:
         segment_set range;
         chunked_vector<ss::rwlock::holder> locks;
 
-        friend std::ostream& operator<<(std::ostream&, const lease&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     ss::future<std::unique_ptr<lease>> range_lock(const timequery_config& cfg);

@@ -73,14 +73,13 @@ log_gap_analysis make_log_gap_analysis(
     return ga;
 }
 
-std::ostream& operator<<(std::ostream& o, const log_gap_analysis& a) {
-    fmt::print(
-      o,
+fmt::iterator log_gap_analysis::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{first_gap_start:{}, last_gap_end:{}, num_gaps:{}}}",
-      a.first_gap_start,
-      a.last_gap_end,
-      a.num_gaps);
-    return o;
+      first_gap_start,
+      last_gap_end,
+      num_gaps);
 }
 
 } // namespace storage

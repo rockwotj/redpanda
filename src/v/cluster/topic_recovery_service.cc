@@ -71,24 +71,22 @@ constexpr int status_log_size{5};
 
 namespace cloud_storage {
 
-std::ostream& operator<<(std::ostream& os, const init_recovery_result& result) {
-    fmt::print(
-      os,
+fmt::iterator init_recovery_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{status_code: {}, message: {}}}",
-      static_cast<int>(result.status_code),
-      result.message);
-    return os;
+      static_cast<int>(status_code),
+      message);
 }
 
-std::ostream& operator<<(std::ostream& os, const topic_download_counts& tds) {
-    fmt::print(
-      os,
+fmt::iterator topic_download_counts::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{pending_downloads: {}, successful_downloads: {}, failed_downloads: "
       "{}}}",
-      tds.pending_downloads,
-      tds.successful_downloads,
-      tds.failed_downloads);
-    return os;
+      pending_downloads,
+      successful_downloads,
+      failed_downloads);
 }
 
 static ss::sstring get_value_or_throw(
@@ -585,42 +583,19 @@ void topic_recovery_service::populate_recovery_status() {
     }
 }
 
-std::ostream&
-operator<<(std::ostream& os, const topic_recovery_service::state& state) {
-    switch (state) {
-    case topic_recovery_service::state::inactive:
-        os << "inactive";
-        break;
-    case topic_recovery_service::state::starting:
-        os << "starting";
-        break;
-    case topic_recovery_service::state::scanning_bucket:
-        os << "scanning_bucket";
-        break;
-    case topic_recovery_service::state::creating_topics:
-        os << "creating_topics";
-        break;
-    case topic_recovery_service::state::recovering_data:
-        os << "recovering_data";
-        break;
-    }
-    return os;
-}
-
-std::ostream&
-operator<<(std::ostream& os, const topic_recovery_service::recovery_status& r) {
+fmt::iterator
+topic_recovery_service::recovery_status::format_to(fmt::iterator it) const {
     std::string request = "none";
-    if (r.request.has_value()) {
-        request = fmt::format("{}", r.request);
+    if (this->request.has_value()) {
+        request = fmt::format("{}", this->request);
     }
 
-    fmt::print(
-      os,
+    return fmt::format_to(
+      it,
       "{{state: {}, topics being downloaded: {}, recovery request: {}}}",
-      r.state,
-      r.download_counts.size(),
+      state,
+      download_counts.size(),
       request);
-    return os;
 }
 
 } // namespace cloud_storage

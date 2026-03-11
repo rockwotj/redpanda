@@ -437,17 +437,19 @@ offset_translator_state offset_translator_state::from_bootstrap_state(
     return state;
 }
 
-std::ostream&
-operator<<(std::ostream& os, const offset_translator_state& state) {
-    const auto& map = state._last_offset2batch;
-
-    if (map.empty()) {
-        return os << "{empty}";
+fmt::iterator
+offset_translator_state::format_to(fmt::iterator it) const {
+    if (_last_offset2batch.empty()) {
+        return fmt::format_to(it, "{{empty}}");
     }
 
-    return os << "{base offset/delta: " << map.begin()->first << "/"
-              << map.begin()->second.next_delta << ", map size: " << map.size()
-              << ", last delta: " << map.rbegin()->second.next_delta << "}";
+    return fmt::format_to(
+      it,
+      "{{base offset/delta: {}/{}, map size: {}, last delta: {}}}",
+      _last_offset2batch.begin()->first,
+      _last_offset2batch.begin()->second.next_delta,
+      _last_offset2batch.size(),
+      _last_offset2batch.rbegin()->second.next_delta);
 }
 
 } // namespace storage

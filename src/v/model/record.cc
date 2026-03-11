@@ -67,10 +67,8 @@ record_batch_iterator::record_batch_iterator(int32_t rc, iobuf_parser p)
   : _record_count(rc)
   , _parser(std::move(p)) {}
 
-std::ostream& operator<<(std::ostream& os, const tx_range& range) {
-    fmt::print(
-      os, "pid: {}, range: [{}, {}]", range.pid, range.first, range.last);
-    return os;
+fmt::iterator tx_range::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "pid: {}, range: [{}, {}]", pid, first, last);
 }
 
 void record_batch_header::reset_size_checksum_metadata(const iobuf& records) {

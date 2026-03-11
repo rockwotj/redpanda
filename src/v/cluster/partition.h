@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cluster/archival/archival_metadata_stm.h"
@@ -473,7 +474,8 @@ private:
 
     bool _started{false};
 
-    friend std::ostream& operator<<(std::ostream& o, const partition& x);
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 } // namespace cluster
 namespace std {

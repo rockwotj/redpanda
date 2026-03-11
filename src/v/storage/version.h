@@ -40,8 +40,16 @@ inline ss::sstring to_string(record_version_type version) {
     throw std::runtime_error("Wrong record version");
 }
 
+inline std::string_view format_as(record_version_type v) {
+    switch (v) {
+    case record_version_type::v1:
+        return "v1";
+    }
+    __builtin_unreachable();
+}
+
 inline std::ostream& operator<<(std::ostream& o, record_version_type v) {
-    return o << to_string(v);
+    return o << format_as(v);
 }
 
 } // namespace storage

@@ -134,17 +134,15 @@ void recovery_request::parse_request_body(const ss::sstring& body) {
     }
 }
 
-std::ostream& operator<<(std::ostream& os, const recovery_request& r) {
-    fmt::print(
-      os,
+fmt::iterator recovery_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{topic_names_pattern: {}, retention_bytes: {}, retention_ms: {}}}",
-      r.topic_names_pattern().value_or("none"),
-      r.retention_bytes().has_value()
-        ? std::to_string(r.retention_bytes().value())
-        : "none",
-      r.retention_ms().has_value() ? std::to_string(r.retention_ms()->count())
-                                   : "none");
-    return os;
+      topic_names_pattern().value_or("none"),
+      retention_bytes().has_value() ? std::to_string(retention_bytes().value())
+                                    : "none",
+      retention_ms().has_value() ? std::to_string(retention_ms()->count())
+                                 : "none");
 }
 
 } // namespace cloud_storage

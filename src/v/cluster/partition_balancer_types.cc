@@ -10,6 +10,7 @@
 
 #include "cluster/partition_balancer_types.h"
 
+#include "base/format_to.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
 
@@ -32,19 +33,18 @@ double node_disk_space::final_used_ratio() const {
     return double(used + assigned - released) / total;
 }
 
-std::ostream& operator<<(std::ostream& o, const node_disk_space& d) {
-    fmt::print(
-      o,
+fmt::iterator node_disk_space::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{total: {}, used: {}, assigned: {}, released: {}; "
       "used ratios: orig: {:.4}, peak: {:.4}, final: {:.4}}}",
-      human::bytes(d.total),
-      human::bytes(d.used),
-      human::bytes(d.assigned),
-      human::bytes(d.released),
-      d.original_used_ratio(),
-      d.peak_used_ratio(),
-      d.final_used_ratio());
-    return o;
+      human::bytes(total),
+      human::bytes(used),
+      human::bytes(assigned),
+      human::bytes(released),
+      original_used_ratio(),
+      peak_used_ratio(),
+      final_used_ratio());
 }
 
 partition_balancer_violations::unavailable_node::unavailable_node(
@@ -52,10 +52,10 @@ partition_balancer_violations::unavailable_node::unavailable_node(
   : id(id)
   , unavailable_since(unavailable_since) {}
 
-std::ostream& operator<<(
-  std::ostream& o, const partition_balancer_violations::unavailable_node& u) {
-    fmt::print(o, "{{ id: {} since: {} }}", u.id, u.unavailable_since);
-    return o;
+fmt::iterator
+partition_balancer_violations::unavailable_node::format_to(
+  fmt::iterator it) const {
+    return fmt::format_to(it, "{{ id: {} since: {} }}", id, unavailable_since);
 }
 
 partition_balancer_violations::full_node::full_node(
@@ -63,11 +63,10 @@ partition_balancer_violations::full_node::full_node(
   : id(id)
   , disk_used_percent(disk_used_percent) {}
 
-std::ostream&
-operator<<(std::ostream& o, const partition_balancer_violations::full_node& f) {
-    fmt::print(
-      o, "{{ id: {} disk_used_percent: {} }}", f.id, f.disk_used_percent);
-    return o;
+fmt::iterator
+partition_balancer_violations::full_node::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ id: {} disk_used_percent: {} }}", id, disk_used_percent);
 }
 
 partition_balancer_violations::partition_balancer_violations(
@@ -112,109 +111,56 @@ partition_balancer_overview_reply::copy() const {
     return copy;
 }
 
-std::ostream&
-operator<<(std::ostream& o, const partition_balancer_violations& v) {
-    fmt::print(
-      o,
+fmt::iterator partition_balancer_violations::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ unavailable_nodes: {} full_nodes: {} }}",
-      v.unavailable_nodes,
-      v.full_nodes);
-    return o;
+      unavailable_nodes,
+      full_nodes);
 }
 
 std::ostream& operator<<(std::ostream& os, partition_balancer_status status) {
-    switch (status) {
-    case partition_balancer_status::off:
-        os << "off";
-        break;
-    case partition_balancer_status::starting:
-        os << "starting";
-        break;
-    case partition_balancer_status::ready:
-        os << "ready";
-        break;
-    case partition_balancer_status::in_progress:
-        os << "in_progress";
-        break;
-    case partition_balancer_status::stalled:
-        os << "stalled";
-        break;
-    }
-    return os;
+    return os << format_as(status);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const partition_balancer_overview_request&) {
-    fmt::print(o, "{{}}");
-    return o;
+fmt::iterator
+partition_balancer_overview_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{}}");
 }
 
-std::ostream&
-operator<<(std::ostream& o, const partition_balancer_overview_reply& rep) {
-    fmt::print(
-      o,
+fmt::iterator
+partition_balancer_overview_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ error: {} last_tick_time: {} status: {} violations: {}, "
       "partitions_pending_force_recovery: {}, "
       "decommission_reallocation_failures_count: {}, reallocation_failures: "
       "{}}}",
-      rep.error,
-      rep.last_tick_time,
-      rep.status,
-      rep.violations,
-      rep.partitions_pending_force_recovery_count,
-      rep.decommission_realloc_failures.size(),
-      fmt::join(rep.reallocation_failures | std::views::values, ", "));
-    return o;
+      error,
+      last_tick_time,
+      status,
+      violations,
+      partitions_pending_force_recovery_count,
+      decommission_realloc_failures.size(),
+      fmt::join(reallocation_failures | std::views::values, ", "));
 }
 
 std::ostream& operator<<(std::ostream& o, change_reason reason) {
-    switch (reason) {
-    case change_reason::rack_constraint_repair:
-        return o << "rack_constraint_repair";
-    case change_reason::partition_count_rebalancing:
-        return o << "partition_count_rebalancing";
-    case change_reason::node_decommissioning:
-        return o << "node_decommissioning";
-    case change_reason::node_unavailable:
-        return o << "node_unavailable";
-    case change_reason::disk_full:
-        return o << "disk_full";
-    }
+    return o << format_as(reason);
 }
 
 std::ostream& operator<<(std::ostream& o, reallocation_error err) {
-    switch (err) {
-    case reallocation_error::missing_partition_size_info:
-        return o << "Missing partition size information, all replicas may be "
-                    "offline";
-    case reallocation_error::no_eligible_node_found:
-        return o << "No eligible node found to move replica";
-    case reallocation_error::over_partition_fd_limit:
-        return o << "Over the total partition file descriptor limit";
-    case reallocation_error::over_partition_memory_limit:
-        return o << "Over the total partition memory limit";
-    case reallocation_error::over_partition_core_limit:
-        return o << "Over the partition per core limit";
-    case reallocation_error::no_quorum:
-        return o << "No quorum, majority of replicas are offline";
-    case reallocation_error::reconfiguration_in_progress:
-        return o << "Non cancellable reconfiguration in progress";
-    case reallocation_error::partition_disabled:
-        return o << "Partition is disabled";
-    case reallocation_error::unknown_error:
-        return o << "Unknown error or error not reported";
-    }
+    return o << format_as(err);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const reallocation_failure_details& details) {
-    fmt::print(
-      o,
+fmt::iterator
+reallocation_failure_details::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{replica_to_move: {}, reason: {}, error: {}}}",
-      details.replica_to_move,
-      details.reason,
-      details.error);
-    return o;
+      replica_to_move,
+      reason,
+      error);
 }
 
 } // namespace cluster

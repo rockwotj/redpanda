@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 #include "absl/container/btree_set.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/errors.h"
@@ -47,10 +48,8 @@ struct list_offsets_request final {
         model::topic_partition tp(t, id);
         return tp_dups.find(tp) != tp_dups.end();
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const list_offsets_request& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 
@@ -109,10 +108,8 @@ struct list_offsets_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const list_offsets_response& r) {
-        return os << r.data;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", data);
     }
 };
 

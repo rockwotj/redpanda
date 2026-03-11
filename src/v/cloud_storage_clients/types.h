@@ -18,6 +18,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <string_view>
 #include <system_error>
 
 namespace cloud_storage_clients {
@@ -75,13 +76,17 @@ inline std::error_code make_error_code(error_outcome e) noexcept {
 
 enum class s3_url_style { virtual_host = 0, path };
 
-inline std::ostream& operator<<(std::ostream& os, const s3_url_style& us) {
+inline constexpr std::string_view format_as(s3_url_style us) {
     switch (us) {
     case s3_url_style::virtual_host:
-        return os << "virtual_host";
+        return "virtual_host";
     case s3_url_style::path:
-        return os << "path";
+        return "path";
     }
+}
+
+inline std::ostream& operator<<(std::ostream& os, const s3_url_style& us) {
+    return os << format_as(us);
 }
 
 inline std::optional<s3_url_style>

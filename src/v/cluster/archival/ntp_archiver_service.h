@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 #include "cloud_io/cache_service.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
@@ -47,6 +48,15 @@ class archiver_fixture;
 using namespace std::chrono_literals;
 
 enum class segment_upload_kind { compacted, non_compacted };
+
+constexpr std::string_view format_as(segment_upload_kind upload_kind) {
+    switch (upload_kind) {
+    case segment_upload_kind::non_compacted:
+        return "non-compacted";
+    case segment_upload_kind::compacted:
+        return "compacted";
+    }
+}
 
 std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind);
 
@@ -97,6 +107,15 @@ private:
 // re-dispatched to the partition leader by caller.
 enum class flush_response { rejected, accepted };
 
+constexpr std::string_view format_as(flush_response fr) {
+    switch (fr) {
+    case flush_response::accepted:
+        return "accepted";
+    case flush_response::rejected:
+        return "rejected";
+    }
+}
+
 std::ostream& operator<<(std::ostream& os, flush_response fr);
 
 struct flush_result {
@@ -104,6 +123,8 @@ struct flush_result {
     // The inclusive offset which the archiver will flush() to, if response is
     // accepted.
     std::optional<model::offset> offset;
+
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 std::ostream& operator<<(std::ostream& os, flush_result fr);
@@ -112,6 +133,19 @@ std::ostream& operator<<(std::ostream& os, flush_result fr);
 // the flush needs to be retried (in case of a leadership change during
 // flush())
 enum class wait_result { not_in_progress, complete, lost_leadership, failed };
+
+constexpr std::string_view format_as(wait_result wr) {
+    switch (wr) {
+    case wait_result::not_in_progress:
+        return "not in progress";
+    case wait_result::complete:
+        return "complete";
+    case wait_result::lost_leadership:
+        return "lost leadership";
+    case wait_result::failed:
+        return "failed";
+    }
+}
 
 std::ostream& operator<<(std::ostream& os, wait_result wr);
 

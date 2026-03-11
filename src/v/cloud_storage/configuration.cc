@@ -198,16 +198,15 @@ configuration::get_bucket_config() {
     }
 }
 
-std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
-    fmt::print(
-      o,
+fmt::iterator configuration::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{connection_limit: {}, client_config: {}, "
       "bucket_name: {}, cloud_credentials_source: {}}}",
-      cfg.connection_limit,
-      cfg.client_config,
-      cfg.bucket_name,
-      cfg.cloud_credentials_source);
-    return o;
+      connection_limit,
+      client_config,
+      bucket_name,
+      cloud_credentials_source);
 }
 
 }; // namespace cloud_storage

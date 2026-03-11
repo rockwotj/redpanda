@@ -729,27 +729,30 @@ ss::future<std::error_code> members_backend::remove_from_raft0(
       raft::vnode(id, raft0_revision), revision);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const members_backend::partition_reallocation& r) {
-    fmt::print(
-      o,
+fmt::iterator
+members_backend::partition_reallocation::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{current: {}, new: {}, state: {}}}",
-      r.current_replica_set,
-      r.new_replica_set,
-      r.state);
-    return o;
+      current_replica_set,
+      new_replica_set,
+      state);
 }
-std::ostream&
-operator<<(std::ostream& o, const members_backend::cancellation_state& state) {
+
+std::string_view format_as(members_backend::cancellation_state state) {
     switch (state) {
     case members_backend::cancellation_state::request_cancel:
-        return o << "request_cancel";
+        return "request_cancel";
     case members_backend::cancellation_state::cancelled:
-        return o << "cancelled";
+        return "cancelled";
     case members_backend::cancellation_state::finished:
-        return o << "finished";
+        return "finished";
     }
-
     __builtin_unreachable();
+}
+
+std::ostream&
+operator<<(std::ostream& o, const members_backend::cancellation_state& state) {
+    return o << format_as(state);
 }
 } // namespace cluster

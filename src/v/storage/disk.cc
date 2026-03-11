@@ -14,20 +14,18 @@
 #include "utils/human.h"
 
 #include <fmt/core.h>
-#include <fmt/ostream.h>
 
 namespace storage {
 
-std::ostream& operator<<(std::ostream& o, const disk& d) {
-    fmt::print(
-      o,
+fmt::iterator disk::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{path: {}, free: {}, total: {}, alert: {}, fsid: {}}}",
-      d.path,
-      human::bytes(d.free),
-      human::bytes(d.total),
-      d.alert,
-      d.fsid);
-    return o;
+      path,
+      human::bytes(free),
+      human::bytes(total),
+      alert,
+      fsid);
 }
 
 } // namespace storage

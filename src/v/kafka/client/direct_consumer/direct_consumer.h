@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "container/chunked_hash_map.h"
 #include "kafka/client/cluster.h"
@@ -67,7 +68,7 @@ public:
         size_t max_buffered_elements{10};
         // fetch sessions enabled by default
         fetch_sessions_enabled with_sessions{fetch_sessions_enabled::yes};
-        friend std::ostream& operator<<(std::ostream&, const configuration&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     direct_consumer(

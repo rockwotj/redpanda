@@ -131,17 +131,6 @@ checked<schema_update_required, schema_manager::errc> apply_evolution_rules(
 
 } // namespace
 
-std::ostream& operator<<(std::ostream& o, const schema_manager::errc& e) {
-    switch (e) {
-    case schema_manager::errc::not_supported:
-        return o << "schema_manager::errc::not_supported";
-    case schema_manager::errc::failed:
-        return o << "schema_manager::errc::failed";
-    case schema_manager::errc::shutting_down:
-        return o << "schema_manager::errc::shutting_down";
-    }
-}
-
 bool schema_manager::table_info::fill_registered_ids(
   iceberg::struct_type& type) {
     return iceberg::try_fill_field_ids(schema.schema_struct, type)

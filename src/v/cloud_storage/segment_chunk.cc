@@ -13,14 +13,7 @@
 namespace cloud_storage {
 
 std::ostream& operator<<(std::ostream& os, chunk_state c) {
-    switch (c) {
-    case chunk_state::not_available:
-        return os << "not available";
-    case chunk_state::download_in_progress:
-        return os << "download in progress";
-    case chunk_state::hydrated:
-        return os << "hydrated";
-    }
+    return os << format_as(c);
 }
 
 std::strong_ordering

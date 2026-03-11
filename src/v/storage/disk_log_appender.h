@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "storage/log_appender.h"
 
 #include <seastar/core/rwlock.hh>
@@ -58,7 +59,8 @@ private:
     model::term_id _last_term;
     size_t _byte_size{0};
 
-    friend std::ostream& operator<<(std::ostream&, const disk_log_appender&);
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 } // namespace storage

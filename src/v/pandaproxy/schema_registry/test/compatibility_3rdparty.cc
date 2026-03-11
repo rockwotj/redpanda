@@ -31,7 +31,7 @@ namespace pps = pandaproxy::schema_registry;
 namespace pandaproxy::schema_registry {
 
 std::ostream& operator<<(std::ostream& os, mode m) {
-    return os << to_string_view(m);
+    return os << format_as(m);
 }
 
 } // namespace pandaproxy::schema_registry

@@ -160,18 +160,21 @@ private:
 };
 
 enum class lifecycle_status { created, active, inactive, destroyed };
-std::ostream& operator<<(std::ostream& os, lifecycle_status s) {
+inline constexpr std::string_view format_as(lifecycle_status s) {
     switch (s) {
     case lifecycle_status::created:
-        return os << "lifecycle::created";
+        return "lifecycle::created";
     case lifecycle_status::active:
-        return os << "lifecycle::active";
+        return "lifecycle::active";
     case lifecycle_status::inactive:
-        return os << "lifecycle::inactive";
+        return "lifecycle::inactive";
     case lifecycle_status::destroyed:
-        return os << "lifecycle::destroyed";
+        return "lifecycle::destroyed";
     }
-    return os << "lifecycle::unknown";
+    return "lifecycle::unknown";
+}
+std::ostream& operator<<(std::ostream& os, lifecycle_status s) {
+    return os << format_as(s);
 }
 
 class processor_tracker : public processor_factory {

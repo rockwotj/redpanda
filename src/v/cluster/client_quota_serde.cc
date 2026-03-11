@@ -24,83 +24,70 @@
 
 namespace cluster::client_quota {
 
-std::ostream&
-operator<<(std::ostream& os, const entity_key::part::client_id_default_match&) {
-    fmt::print(os, "client_id_default_match{{}}");
-    return os;
+fmt::iterator
+entity_key::part::client_id_default_match::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "client_id_default_match{{}}");
 }
 
-std::ostream&
-operator<<(std::ostream& os, const entity_key::part::client_id_match& c) {
-    fmt::print(os, "client_id_match{{value:{}}}", c.value);
-    return os;
+fmt::iterator
+entity_key::part::client_id_match::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "client_id_match{{value:{}}}", value);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const entity_key::part::user_default_match&) {
-    fmt::print(os, "user_default_match{{}}");
-    return os;
+fmt::iterator
+entity_key::part::user_default_match::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "user_default_match{{}}");
 }
 
-std::ostream&
-operator<<(std::ostream& os, const entity_key::part::user_match& u) {
-    fmt::print(os, "user_match{{value:{}}}", u.value);
-    return os;
+fmt::iterator
+entity_key::part::user_match::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "user_match{{value:{}}}", value);
 }
 
-std::ostream& operator<<(
-  std::ostream& os, const entity_key::part::client_id_prefix_match& c) {
-    fmt::print(os, "client_id_prefix_match{{value:{}}}", c.value);
-    return os;
+fmt::iterator
+entity_key::part::client_id_prefix_match::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "client_id_prefix_match{{value:{}}}", value);
 }
 
-std::ostream& operator<<(std::ostream& os, const entity_key::part& part) {
-    fmt::print(os, "{}", part.part);
-    return os;
+fmt::iterator entity_key::part::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{}", part);
 }
 
-std::ostream& operator<<(std::ostream& os, const entity_key::part_v0& part) {
-    fmt::print(os, "{}", part.part);
-    return os;
+fmt::iterator entity_key::part_v0::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{}", part);
 }
 
-std::ostream& operator<<(std::ostream& os, const entity_key::part_t& part) {
-    fmt::print(os, "{}", part.part);
-    return os;
+fmt::iterator entity_key::part_t::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{}", part);
 }
 
-std::ostream& operator<<(std::ostream& os, const entity_key& key) {
-    fmt::print(os, "{{parts: {}}}", key.parts);
-    return os;
+fmt::iterator entity_key::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{parts: {}}}", parts);
 }
 
-std::ostream& operator<<(std::ostream& os, const entity_value& value) {
-    fmt::print(
-      os,
+fmt::iterator entity_value::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{producer_byte_rate: {}, consumer_byte_rate: {}, "
       "controller_mutation_rate: {}}}",
-      value.producer_byte_rate,
-      value.consumer_byte_rate,
-      value.controller_mutation_rate);
-    return os;
+      producer_byte_rate,
+      consumer_byte_rate,
+      controller_mutation_rate);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const entity_value_diff::entry& entry) {
-    switch (entry.op) {
+fmt::iterator
+entity_value_diff::entry::format_to(fmt::iterator it) const {
+    switch (op) {
     case entity_value_diff::operation::upsert:
-        fmt::print(
-          os, "upsert: {}={}", to_string_view(entry.type), entry.value);
-        return os;
+        return fmt::format_to(
+          it, "upsert: {}={}", to_string_view(type), value);
     case entity_value_diff::operation::remove:
-        fmt::print(os, "remove: {}", to_string_view(entry.type));
-        return os;
+        return fmt::format_to(it, "remove: {}", to_string_view(type));
     }
 }
 
-std::ostream& operator<<(std::ostream& os, const entity_value_diff& value) {
-    fmt::print(os, "{}", value.entries);
-    return os;
+fmt::iterator entity_value_diff::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{}", entries);
 }
 
 bool operator==(

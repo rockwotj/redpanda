@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_storage/remote_label.h"
 #include "cluster/remote_topic_properties.h"
 #include "model/compression.h"
@@ -259,7 +260,7 @@ struct topic_properties
 
     storage::ntp_config::default_overrides get_ntp_cfg_overrides() const;
 
-    friend std::ostream& operator<<(std::ostream&, const topic_properties&);
+    fmt::iterator format_to(fmt::iterator) const;
     auto serde_fields() {
         return std::tie(
           compression,

@@ -72,71 +72,35 @@ std::ostream& operator<<(std::ostream& os, const tracker_key& k) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, client_quota_type quota_type) {
-    switch (quota_type) {
-    case client_quota_type::produce_quota:
-        return os << "produce_quota";
-    case client_quota_type::fetch_quota:
-        return os << "fetch_quota";
-    case client_quota_type::partition_mutation_quota:
-        return os << "partition_mutation_quota";
-    }
+std::ostream& operator<<(std::ostream& os, client_quota_type qt) {
+    return os << format_as(qt);
 }
 
-std::ostream& operator<<(std::ostream& os, const client_quota_limits& l) {
-    fmt::print(
-      os,
+fmt::iterator client_quota_limits::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "limits{{produce_limit: {}, fetch_limit: {}, "
       "partition_mutation_limit: {}}}",
-      l.produce_limit,
-      l.fetch_limit,
-      l.partition_mutation_limit);
-    return os;
+      produce_limit,
+      fetch_limit,
+      partition_mutation_limit);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const client_quota_request_ctx& ctx) {
-    fmt::print(
-      os,
+fmt::iterator client_quota_request_ctx::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{quota_type: {}, user: {}, client_id: {}}}",
-      ctx.q_type,
-      ctx.user,
-      ctx.client_id);
-    return os;
+      q_type,
+      user,
+      client_id);
 }
 
 std::ostream& operator<<(std::ostream& os, client_quota_rule r) {
-    switch (r) {
-    case client_quota_rule::not_applicable:
-        return os << "not_applicable";
-    case client_quota_rule::kafka_client_default:
-        return os << "kafka_client_default";
-    case client_quota_rule::kafka_client_prefix:
-        return os << "kafka_client_prefix";
-    case client_quota_rule::kafka_client_id:
-        return os << "kafka_client_id";
-    case client_quota_rule::kafka_user_default:
-        return os << "kafka_user_default";
-    case client_quota_rule::kafka_user_default_client_default:
-        return os << "kafka_user_default_client_default";
-    case client_quota_rule::kafka_user_default_client_prefix:
-        return os << "kafka_user_default_client_prefix";
-    case client_quota_rule::kafka_user_default_client_id:
-        return os << "kafka_user_default_client_id";
-    case client_quota_rule::kafka_user:
-        return os << "kafka_user";
-    case client_quota_rule::kafka_user_client_default:
-        return os << "kafka_user_client_default";
-    case client_quota_rule::kafka_user_client_prefix:
-        return os << "kafka_user_client_prefix";
-    case client_quota_rule::kafka_user_client_id:
-        return os << "kafka_user_client_id";
-    }
+    return os << format_as(r);
 }
 
-std::ostream& operator<<(std::ostream& os, client_quota_value value) {
-    fmt::print(os, "{{limit: {}, rule: {}}}", value.limit, value.rule);
-    return os;
+fmt::iterator client_quota_value::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{limit: {}, rule: {}}}", limit, rule);
 }
 
 client_quota_translator::client_quota_translator(

@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "base/outcome.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
@@ -30,7 +31,18 @@ enum class update_key : uint8_t {
     topic_lifecycle_update = 2,
     reset_topic_state = 3,
 };
-std::ostream& operator<<(std::ostream&, const update_key&);
+inline constexpr std::string_view format_as(update_key u) {
+    switch (u) {
+    case update_key::add_files:
+        return "update_key::add_files";
+    case update_key::mark_files_committed:
+        return "update_key::mark_files_committed";
+    case update_key::topic_lifecycle_update:
+        return "update_key::topic_lifecycle_update";
+    case update_key::reset_topic_state:
+        return "update_key::reset_topic_state";
+    }
+}
 
 using stm_update_error = named_type<ss::sstring, struct update_error_tag>;
 
@@ -49,7 +61,7 @@ struct add_files_update
     checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error>
     apply(topics_state&, model::offset);
-    friend std::ostream& operator<<(std::ostream&, const add_files_update&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     model::topic_partition tp;
     model::revision_id topic_revision;
@@ -81,8 +93,7 @@ struct mark_files_committed_update
 
     checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error> apply(topics_state&);
-    friend std::ostream&
-    operator<<(std::ostream&, const mark_files_committed_update&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     model::topic_partition tp;
     model::revision_id topic_revision;
@@ -111,8 +122,7 @@ struct topic_lifecycle_update
     checked<bool, stm_update_error> can_apply(const topics_state&);
     checked<bool, stm_update_error> apply(topics_state&);
 
-    friend std::ostream&
-    operator<<(std::ostream&, const topic_lifecycle_update&);
+    fmt::iterator format_to(fmt::iterator) const;
 
     model::topic topic;
     model::revision_id revision;
@@ -140,8 +150,17 @@ struct reset_topic_state_update
     checked<void, stm_update_error> can_apply(const topics_state&);
     checked<void, stm_update_error> apply(topics_state&);
 
-    friend std::ostream&
-    operator<<(std::ostream&, const reset_topic_state_update&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 } // namespace datalake::coordinator
+
+template<>
+struct fmt::formatter<datalake::coordinator::update_key>
+  : fmt::formatter<std::string_view> {
+    auto format(
+      datalake::coordinator::update_key e, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string_view>::format(
+          datalake::coordinator::format_as(e), ctx);
+    }
+};

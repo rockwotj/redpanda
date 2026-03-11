@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "config/property.h"
 #include "metrics/metrics.h"
 #include "net/conn_quota.h"
@@ -64,7 +65,7 @@ struct server_endpoint {
     explicit server_endpoint(ss::socket_address addr)
       : server_endpoint("", addr) {}
 
-    friend std::ostream& operator<<(std::ostream&, const server_endpoint&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 struct config_connection_rate_bindings {
@@ -100,7 +101,7 @@ struct server_configuration {
     explicit server_configuration(ss::sstring n)
       : name(std::move(n)) {}
 
-    friend std::ostream& operator<<(std::ostream&, const server_configuration&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 class server {

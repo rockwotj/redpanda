@@ -9,15 +9,13 @@
  */
 #include "datalake/base_types.h"
 
-#include <fmt/core.h>
 namespace datalake {
-std::ostream& operator<<(std::ostream& o, const local_file_metadata& f_meta) {
-    fmt::print(
-      o,
+fmt::iterator local_file_metadata::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{relative_path: {}, size_bytes: {}, row_count: {}}}",
-      f_meta.path,
-      f_meta.size_bytes,
-      f_meta.row_count);
-    return o;
+      path,
+      size_bytes,
+      row_count);
 }
 } // namespace datalake

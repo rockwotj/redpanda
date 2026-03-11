@@ -141,15 +141,13 @@ public:
 
         auto serde_fields() { return std::tie(id, ranges, transactions); }
 
-        friend std::ostream&
-        operator<<(std::ostream& o, const draining_txs& txes) {
-            fmt::print(
-              o,
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(
+              it,
               "{{ id: {}, ranges: {}, transactions: {} }}",
-              txes.id,
-              txes.ranges,
-              txes.transactions.size());
-            return o;
+              id,
+              ranges,
+              transactions.size());
         }
     };
 
@@ -195,18 +193,16 @@ public:
               draining);
         }
 
-        friend std::ostream&
-        operator<<(std::ostream& o, const locally_hosted_txs& txes) {
-            fmt::print(
-              o,
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(
+              it,
               "{{ inited: {}, hash ranges: {}, excluded: {}, included: {}, "
               "draining: {} }}",
-              txes.inited,
-              txes.hash_ranges,
-              txes.excluded_transactions.size(),
-              txes.included_transactions.size(),
-              txes.draining);
-            return o;
+              inited,
+              hash_ranges,
+              excluded_transactions.size(),
+              included_transactions.size(),
+              draining);
         }
     };
 

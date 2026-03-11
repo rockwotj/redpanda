@@ -11,6 +11,8 @@
 #include "storage/mvlog/entry_stream.h"
 #include "storage/mvlog/reader_outcome.h"
 
+#include <string_view>
+
 namespace storage::experimental::mvlog {
 
 class batch_collector;
@@ -27,6 +29,17 @@ enum class collect_stream_outcome {
     // desired offset.
     stop,
 };
+inline constexpr std::string_view format_as(collect_stream_outcome out) {
+    switch (out) {
+    case collect_stream_outcome::buffer_full:
+        return "collect_stream_outcome::buffer_full";
+    case collect_stream_outcome::end_of_stream:
+        return "collect_stream_outcome::end_of_stream";
+    case collect_stream_outcome::stop:
+        return "collect_stream_outcome::stop";
+    }
+    return "collect_stream_outcome::unknown";
+}
 std::ostream& operator<<(std::ostream&, collect_stream_outcome);
 
 // Parses and collects the record batches from the given entry stream.

@@ -38,6 +38,8 @@
 #include <memory>
 #include <stdexcept>
 #include <string_view>
+
+#include "base/format_to.h"
 #include <vector>
 
 namespace transform {
@@ -55,10 +57,8 @@ struct committed_offset {
     friend bool operator==(const committed_offset&, const committed_offset&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const committed_offset& co) {
-        fmt::print(os, "{}/{}@{}", co.id(), co.partition(), co.offset());
-        return os;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}/{}@{}", id(), partition(), offset());
     }
 
     /**

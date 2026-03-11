@@ -540,7 +540,7 @@ void partition_manager::check_partitions_shutdown_state() {
               "partition {} shutdown takes longer than expected, current "
               "shutdown stage: {} time since last update: {} seconds",
               state.partition->ntp(),
-              state.stage,
+              format_as(state.stage),
               (now - state.last_update_timestamp) / 1s);
         }
     }
@@ -561,11 +561,14 @@ uint64_t partition_manager::upload_backlog_size() const {
     return size;
 }
 
-std::ostream& operator<<(std::ostream& o, const partition_manager& pm) {
-    return o << "{shard:" << ss::this_shard_id() << ", mngr:{}"
-             << pm._storage.log_mgr()
-             << ", ntp_table.size:" << pm._ntp_table.size()
-             << ", raft_table.size:" << pm._raft_table.size() << "}";
+fmt::iterator partition_manager::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{shard:{}, mngr:{{}}{}, ntp_table.size:{}, raft_table.size:{}}}",
+      ss::this_shard_id(),
+      _storage.log_mgr(),
+      _ntp_table.size(),
+      _raft_table.size());
 }
 
 ss::future<size_t> partition_manager::non_log_disk_size_bytes() const {
@@ -606,25 +609,25 @@ partition_manager::get_cloud_cache_disk_usage_target() const {
       [](auto acc, auto update) { return acc + update; });
 }
 
-std::ostream& operator<<(
-  std::ostream& o, const partition_manager::partition_shutdown_stage& stage) {
+constexpr std::string_view
+format_as(partition_manager::partition_shutdown_stage stage) {
     switch (stage) {
     case partition_manager::partition_shutdown_stage::shutdown_requested:
-        return o << "shutdown_requested";
+        return "shutdown_requested";
     case partition_manager::partition_shutdown_stage::stopping_raft:
-        return o << "stopping_raft";
+        return "stopping_raft";
     case partition_manager::partition_shutdown_stage::removing_raft:
-        return o << "removing_raft";
+        return "removing_raft";
     case partition_manager::partition_shutdown_stage::stopping_partition:
-        return o << "stopping_partition";
+        return "stopping_partition";
     case partition_manager::partition_shutdown_stage::removing_persistent_state:
-        return o << "removing_persistent_state";
+        return "removing_persistent_state";
     case partition_manager::partition_shutdown_stage::stopping_storage:
-        return o << "stopping_storage";
+        return "stopping_storage";
     case partition_manager::partition_shutdown_stage::removing_storage:
-        return o << "removing_storage";
+        return "removing_storage";
     case partition_manager::partition_shutdown_stage::finalizing_remote_storage:
-        return o << "finalizing_remote_storage";
+        return "finalizing_remote_storage";
     }
 }
 

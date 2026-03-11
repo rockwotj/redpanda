@@ -161,9 +161,9 @@ private:
               status);
             return *revision_id;
         }
-    };
 
-    friend std::ostream& operator<<(std::ostream&, const replica_work_state&);
+        fmt::iterator format_to(fmt::iterator) const;
+    };
 
     struct topic_work_result {
         model::topic_namespace nt;

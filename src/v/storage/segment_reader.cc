@@ -194,16 +194,8 @@ ss::future<> segment_reader::close() {
     }
 }
 
-std::ostream& operator<<(std::ostream& os, const segment_reader& seg) {
-    return os << "{" << seg.filename() << ", (" << seg.file_size()
-              << " bytes)}";
-}
-
-std::ostream& operator<<(std::ostream& os, const segment_reader_ptr& seg) {
-    if (seg) {
-        return os << *seg;
-    }
-    return os << "{{log_segment: null}}";
+fmt::iterator segment_reader::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{{}, ({} bytes)}}", filename(), file_size());
 }
 
 segment_reader_handle::segment_reader_handle(segment_reader* parent)

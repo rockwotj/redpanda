@@ -475,14 +475,13 @@ transport::~transport() {
       *this);
 }
 
-std::ostream& operator<<(std::ostream& o, const transport& t) {
-    fmt::print(
-      o,
+fmt::iterator transport::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "(server:{}, _correlations:{}, _correlation_idx:{})",
-      t.server_address(),
-      t._correlations.size(),
-      t._correlation_idx);
-    return o;
+      server_address(),
+      _correlations.size(),
+      _correlation_idx);
 }
 
 std::vector<ss::metrics::metric_definition> client_probe::defs(
@@ -583,22 +582,31 @@ std::vector<ss::metrics::metric_definition> client_probe::defs(
     return ret;
 }
 
-std::ostream& operator<<(std::ostream& o, const client_probe& p) {
-    o << "{"
-      << " requests_sent: " << p._requests
-      << ", requests_pending: " << p._requests_pending
-      << ", requests_completed: " << p._requests_completed
-      << ", request_errors: " << p._request_errors
-      << ", request_timeouts: " << p._request_timeouts
-      << ", in_bytes: " << p._in_bytes << ", out_bytes: " << p._out_bytes
-      << ", connects: " << p._connects << ", connections: " << p._connections
-      << ", connection_errors: " << p._connection_errors
-      << ", read_dispatch_errors: " << p._read_dispatch_errors
-      << ", corrupted_headers: " << p._corrupted_headers
-      << ", server_correlation_errors: " << p._server_correlation_errors
-      << ", client_correlation_errors: " << p._client_correlation_errors
-      << ", requests_blocked_memory: " << p._requests_blocked_memory << " }";
-    return o;
+fmt::iterator client_probe::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{ requests_sent: {}, requests_pending: {}, "
+      "requests_completed: {}, request_errors: {}, "
+      "request_timeouts: {}, in_bytes: {}, out_bytes: {}, "
+      "connects: {}, connections: {}, connection_errors: {}, "
+      "read_dispatch_errors: {}, corrupted_headers: {}, "
+      "server_correlation_errors: {}, client_correlation_errors: {}, "
+      "requests_blocked_memory: {} }}",
+      _requests,
+      _requests_pending,
+      _requests_completed,
+      _request_errors,
+      _request_timeouts,
+      _in_bytes,
+      _out_bytes,
+      _connects,
+      _connections,
+      _connection_errors,
+      _read_dispatch_errors,
+      _corrupted_headers,
+      _server_correlation_errors,
+      _client_correlation_errors,
+      _requests_blocked_memory);
 }
 
 } // namespace rpc

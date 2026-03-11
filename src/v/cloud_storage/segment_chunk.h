@@ -16,6 +16,8 @@
 #include <seastar/core/expiring_fifo.hh>
 #include <seastar/core/file.hh>
 
+#include <string_view>
+
 namespace storage {
 struct log_reader_config;
 }
@@ -30,6 +32,16 @@ enum class chunk_state {
     hydrated,
 };
 
+inline constexpr std::string_view format_as(chunk_state c) {
+    switch (c) {
+    case chunk_state::not_available:
+        return "not available";
+    case chunk_state::download_in_progress:
+        return "download in progress";
+    case chunk_state::hydrated:
+        return "hydrated";
+    }
+}
 std::ostream& operator<<(std::ostream& os, chunk_state);
 
 struct segment_chunk {

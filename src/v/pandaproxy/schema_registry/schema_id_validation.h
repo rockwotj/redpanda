@@ -16,6 +16,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <iostream>
+#include <string_view>
 
 namespace pandaproxy::schema_registry {
 
@@ -39,8 +40,12 @@ constexpr std::string_view to_string_view(schema_id_validation_mode m) {
     }
 }
 
+inline constexpr std::string_view format_as(schema_id_validation_mode e) {
+    return to_string_view(e);
+}
+
 inline std::ostream& operator<<(std::ostream& o, schema_id_validation_mode m) {
-    return o << to_string_view(m);
+    return o << format_as(m);
 }
 
 inline std::istream& operator>>(std::istream& i, schema_id_validation_mode& m) {

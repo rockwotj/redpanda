@@ -145,10 +145,11 @@ void stack_allocator::deallocate(stack_memory mem) {
     _memory_pool.push_back(std::move(mem));
 }
 
-std::ostream& operator<<(std::ostream& os, const stack_bounds& bounds) {
-    return os << ss::format(
-             "{{.top = {}, .bottom = {}}}",
-             fmt::ptr(bounds.top),
-             fmt::ptr(bounds.bottom));
+fmt::iterator stack_bounds::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{.top = {}, .bottom = {}}}",
+      fmt::ptr(top),
+      fmt::ptr(bottom));
 }
 } // namespace wasm

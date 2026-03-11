@@ -1583,18 +1583,17 @@ members_manager::handle_configuration_update_request(
     }
 }
 
-std::ostream&
-operator<<(std::ostream& o, const members_manager::node_update& u) {
-    fmt::print(
-      o,
+fmt::iterator
+members_manager::node_update::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{node_id: {}, type: {}, offset: {}, update_raft0: {}, "
       "decom_upd_revision: {}}}",
-      u.id,
-      u.type,
-      u.offset,
-      u.need_raft0_update,
-      u.decommission_update_revision);
-    return o;
+      id,
+      type,
+      offset,
+      need_raft0_update,
+      decommission_update_revision);
 }
 
 ss::future<>

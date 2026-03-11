@@ -2323,15 +2323,14 @@ ss::future<errc> backend::topic_scoped_work_state::future() {
     return _promise.get_shared_future();
 }
 
-std::ostream&
-operator<<(std::ostream& os, const backend::replica_work_state& rws) {
-    fmt::print(
-      os,
+fmt::iterator
+backend::replica_work_state::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{sought_state: {}, shard: {}, status: {}}}",
-      rws.sought_state,
-      rws.shard,
-      rws.status);
-    return os;
+      sought_state,
+      shard,
+      status);
 }
 
 chunked_vector<partition_assignment>

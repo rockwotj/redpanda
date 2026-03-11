@@ -22,7 +22,6 @@
 
 #include <chrono>
 #include <exception>
-#include <iosfwd>
 
 namespace net {
 
@@ -75,8 +74,6 @@ private:
         _ca.reset();
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const tls_certificate_probe& p);
 };
 
 ss::future<ss::shared_ptr<ss::tls::server_credentials>>

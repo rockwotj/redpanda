@@ -41,19 +41,17 @@ struct foo {
 
 struct bar {
     foo f;
-};
 
-std::ostream& operator<<(std::ostream& os, const bar& b) {
-    return os << "{f: " << b.f << "}";
-}
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{f: {}}}", f);
+    }
+};
 
 TEST(Formatter, InsideNamespacedFormatTo) {
     ns::foo f{.a = "bar", .b = 3};
     EXPECT_EQ("hello: {a: bar, b: 3}", fmt::format("hello: {}", f)) << f;
     ns::bar b{.f = f};
-    EXPECT_EQ(
-      "world: {f: {a: bar, b: 3}}", fmt::format("world: {}", fmt::streamed(b)))
-      << b;
+    EXPECT_EQ("world: {f: {a: bar, b: 3}}", fmt::format("world: {}", b)) << b;
 }
 
 } // namespace ns

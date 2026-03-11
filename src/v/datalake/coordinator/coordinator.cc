@@ -80,25 +80,6 @@ coordinator::maybe_add_waiter(
     return std::nullopt;
 }
 
-std::ostream& operator<<(std::ostream& o, coordinator::errc e) {
-    switch (e) {
-    case coordinator::errc::not_leader:
-        return o << "coordinator::errc::not_leader";
-    case coordinator::errc::shutting_down:
-        return o << "coordinator::errc::shutting_down";
-    case coordinator::errc::stm_apply_error:
-        return o << "coordinator::errc::stm_apply_error";
-    case coordinator::errc::revision_mismatch:
-        return o << "coordinator::errc::revision_mismatch";
-    case coordinator::errc::incompatible_schema:
-        return o << "coordinator::errc::incompatible_schema";
-    case coordinator::errc::timedout:
-        return o << "coordinator::errc::timedout";
-    case coordinator::errc::failed:
-        return o << "coordinator::errc::failed";
-    }
-}
-
 void coordinator::start() {
     ssx::spawn_with_gate(gate_, [this] { return run_until_abort(); });
 }

@@ -7,6 +7,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
         "//src/v/model",
         "//src/v/serde",
         "//src/v/serde:uuid",

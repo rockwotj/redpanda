@@ -19,6 +19,7 @@
 
 #include <expected>
 #include <ostream>
+#include <string_view>
 
 namespace cloud_topics::l1 {
 
@@ -63,14 +64,19 @@ private:
     io* io_;
 };
 
-inline std::ostream& operator<<(std::ostream& o, db_garbage_collector::errc e) {
+inline constexpr std::string_view
+format_as(db_garbage_collector::errc e) {
     switch (e) {
     case db_garbage_collector::errc::db_needs_reopen:
-        return o << "db_needs_reopen";
+        return "db_needs_reopen";
     case db_garbage_collector::errc::io_error:
-        return o << "io_error";
+        return "io_error";
     }
-    return o << "unknown";
+    return "unknown";
+}
+
+inline std::ostream& operator<<(std::ostream& o, db_garbage_collector::errc e) {
+    return o << format_as(e);
 }
 
 } // namespace cloud_topics::l1

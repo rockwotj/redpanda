@@ -38,33 +38,46 @@ auto& get_mac() {
 } // namespace
 
 namespace crypto {
-std::ostream& operator<<(std::ostream& os, digest_type type) {
+std::string_view format_as(digest_type type) {
     switch (type) {
     case digest_type::MD5:
-        return os << "MD5";
+        return "MD5";
     case digest_type::SHA256:
-        return os << "SHA256";
+        return "SHA256";
     case digest_type::SHA512:
-        return os << "SHA512";
+        return "SHA512";
     }
+    return "unknown";
+}
 
-    return os;
+std::ostream& operator<<(std::ostream& os, digest_type type) {
+    return os << format_as(type);
+}
+
+std::string_view format_as(key_type type) {
+    switch (type) {
+    case key_type::RSA:
+        return "RSA";
+    }
+    return "unknown";
 }
 
 std::ostream& operator<<(std::ostream& os, key_type type) {
+    return os << format_as(type);
+}
+
+std::string_view format_as(format_type type) {
     switch (type) {
-    case key_type::RSA:
-        return os << "RSA";
+    case format_type::PEM:
+        return "PEM";
+    case format_type::DER:
+        return "DER";
     }
+    return "unknown";
 }
 
 std::ostream& operator<<(std::ostream& os, format_type type) {
-    switch (type) {
-    case format_type::PEM:
-        return os << "PEM";
-    case format_type::DER:
-        return os << "DER";
-    }
+    return os << format_as(type);
 }
 
 namespace internal {

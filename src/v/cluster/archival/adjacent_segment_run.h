@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
@@ -43,8 +44,8 @@ struct adjacent_segment_run {
       const cloud_storage::segment_meta& s,
       size_t max_size,
       const cloud_storage::remote_path_provider& path_provider);
-};
 
-std::ostream& operator<<(std::ostream& o, const adjacent_segment_run& run);
+    fmt::iterator format_to(fmt::iterator) const;
+};
 
 } // namespace archival

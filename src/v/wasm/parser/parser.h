@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "container/chunked_vector.h"
@@ -43,7 +44,7 @@ struct function_signature {
     std::vector<val_type> results;
 
     bool operator==(const function_signature&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const function_signature&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 } // namespace wasm
 
@@ -59,7 +60,7 @@ struct limits {
     uint32_t max = std::numeric_limits<uint32_t>::max();
 
     bool operator==(const limits&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const limits&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**
@@ -69,7 +70,7 @@ struct function {
     function_signature signature;
 
     bool operator==(const function&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const function&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**
@@ -80,7 +81,7 @@ struct table {
     limits limits;
 
     bool operator==(const table&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const table&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**
@@ -90,7 +91,7 @@ struct memory {
     limits limits;
 
     bool operator==(const memory&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const memory&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**
@@ -101,7 +102,7 @@ struct global {
     bool is_mutable;
 
     bool operator==(const global&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const global&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 } // namespace declaration
@@ -125,7 +126,7 @@ struct module_import {
     import_description description;
 
     bool operator==(const module_import&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const module_import&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**
@@ -146,7 +147,7 @@ struct module_export {
     export_description description;
 
     bool operator==(const module_export&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const module_export&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**
@@ -157,7 +158,7 @@ struct module_declarations {
     chunked_vector<module_import> imports;
 
     bool operator==(const module_declarations&) const = default;
-    friend std::ostream& operator<<(std::ostream&, const module_declarations&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**

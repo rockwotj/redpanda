@@ -36,39 +36,21 @@ datalake_usage_api::usage_stats& datalake_usage_api::usage_stats::operator=(
     return *this;
 }
 
-std::ostream& operator<<(
-  std::ostream& os, const datalake_usage_api::stats_missing_reason& r) {
-    switch (r) {
-    case datalake_usage_api::stats_missing_reason::none:
-        return os << "none";
-    case datalake_usage_api::stats_missing_reason::feature_disabled:
-        return os << "feature_disabled";
-    case datalake_usage_api::stats_missing_reason::collection_error:
-        return os << "collection_error";
-    case datalake_usage_api::stats_missing_reason::not_controller_leader:
-        return os << "not_controller_leader";
-    }
-}
-
-std::ostream&
-operator<<(std::ostream& os, const datalake_usage_api::topic_usage& u) {
-    fmt::print(
-      os,
+fmt::iterator datalake_usage_api::topic_usage::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ topic: {} revision: {} kafka_bytes_processed: {} }}",
-      u.topic,
-      u.revision,
-      u.kafka_bytes_processed);
-    return os;
+      topic,
+      revision,
+      kafka_bytes_processed);
 }
 
-std::ostream&
-operator<<(std::ostream& os, const datalake_usage_api::usage_stats& u) {
-    fmt::print(
-      os,
+fmt::iterator datalake_usage_api::usage_stats::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ topic_stats: {}, missing_stats_reason: {} }}",
-      u.topic_stats,
-      u.missing_reason);
-    return os;
+      topic_stats,
+      missing_reason);
 }
 
 } // namespace kafka

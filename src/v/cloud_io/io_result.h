@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <string_view>
 
 namespace cloud_io {
 
@@ -21,12 +22,39 @@ enum class [[nodiscard]] download_result : int32_t {
     failed,
 };
 
+inline constexpr std::string_view format_as(download_result r) {
+    switch (r) {
+    case download_result::success:
+        return "{success}";
+    case download_result::notfound:
+        return "{key_not_found}";
+    case download_result::timedout:
+        return "{timed_out}";
+    case download_result::failed:
+        return "{failed}";
+    }
+}
+
 enum class [[nodiscard]] upload_result : int32_t {
     success,
     timedout,
     failed,
     cancelled,
 };
+
+inline constexpr std::string_view format_as(upload_result r) {
+    switch (r) {
+    case upload_result::success:
+        return "{success}";
+    case upload_result::timedout:
+        return "{timed_out}";
+    case upload_result::failed:
+        return "{failed}";
+    case upload_result::cancelled:
+        return "{cancelled}";
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, const download_result& r);
 std::ostream& operator<<(std::ostream& o, const upload_result& r);
 

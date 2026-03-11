@@ -14,137 +14,119 @@
 
 namespace datalake::coordinator {
 
-std::ostream& operator<<(std::ostream& o, const errc& errc) {
-    switch (errc) {
+std::string_view format_as(errc e) {
+    switch (e) {
     case errc::ok:
-        o << "errc::ok";
-        break;
+        return "errc::ok";
     case errc::coordinator_topic_not_exists:
-        o << "errc::coordinator_topic_not_exists";
-        break;
+        return "errc::coordinator_topic_not_exists";
     case errc::not_leader:
-        o << "errc::not_leader";
-        break;
+        return "errc::not_leader";
     case errc::timeout:
-        o << "errc::timeout";
-        break;
+        return "errc::timeout";
     case errc::fenced:
-        o << "errc::fenced";
-        break;
+        return "errc::fenced";
     case errc::stale:
-        o << "errc::stale";
-        break;
+        return "errc::stale";
     case errc::concurrent_requests:
-        o << "errc::concurrent_requests";
-        break;
+        return "errc::concurrent_requests";
     case errc::revision_mismatch:
-        o << "errc::revision_mismatch";
-        break;
+        return "errc::revision_mismatch";
     case errc::incompatible_schema:
-        o << "errc::incompatible_schema";
-        break;
+        return "errc::incompatible_schema";
     case errc::failed:
-        o << "errc::failed";
-        break;
+        return "errc::failed";
     }
-    return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const ensure_table_exists_reply& r) {
-    fmt::print(o, "{{errc: {}}}", r.errc);
-    return o;
+fmt::iterator ensure_table_exists_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{errc: {}}}", errc);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const ensure_table_exists_request& r) {
-    fmt::print(
-      o, "{{topic: {}, topic_revision: {}}}", r.topic, r.topic_revision);
-    return o;
+fmt::iterator ensure_table_exists_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{topic: {}, topic_revision: {}}}", topic, topic_revision);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const add_translated_data_files_reply& reply) {
-    fmt::print(o, "{{errc: {}}}", reply.errc);
-    return o;
+fmt::iterator
+ensure_dlq_table_exists_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{errc: {}}}", errc);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const add_translated_data_files_request& request) {
-    fmt::print(
-      o,
+fmt::iterator
+ensure_dlq_table_exists_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{topic: {}, topic_revision: {}}}", topic, topic_revision);
+}
+
+fmt::iterator
+add_translated_data_files_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{errc: {}}}", errc);
+}
+
+fmt::iterator
+add_translated_data_files_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{partition: {}, topic_revision: {}, files: {}, translation term: {}}}",
-      request.tp,
-      request.topic_revision,
-      request.ranges,
-      request.translator_term);
-    return o;
+      tp,
+      topic_revision,
+      ranges,
+      translator_term);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const fetch_latest_translated_offset_reply& reply) {
-    fmt::print(
-      o, "{{errc: {}, offset: {}}}", reply.errc, reply.last_added_offset);
-    return o;
+fmt::iterator
+fetch_latest_translated_offset_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{errc: {}, offset: {}}}", errc, last_added_offset);
 }
 
-std::ostream& operator<<(
-  std::ostream& o, const fetch_latest_translated_offset_request& request) {
-    fmt::print(
-      o,
-      "{{partition: {}, topic_revision: {}}}",
-      request.tp,
-      request.topic_revision);
-    return o;
+fmt::iterator
+fetch_latest_translated_offset_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{partition: {}, topic_revision: {}}}", tp, topic_revision);
 }
 
-std::ostream& operator<<(std::ostream& o, const per_topic_usage_stats& stats) {
-    fmt::print(
-      o,
+fmt::iterator per_topic_usage_stats::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{topic: {}, revision: {}, total_kafka_bytes_processed: {}}}",
-      stats.topic,
-      stats.revision,
-      stats.total_kafka_bytes_processed);
-    return o;
+      topic,
+      revision,
+      total_kafka_bytes_processed);
 }
 
-std::ostream& operator<<(std::ostream& o, const datalake_usage_stats& stats) {
-    fmt::print(o, "{{topic_usages: {} }}", stats.topic_usages);
-    return o;
+fmt::iterator datalake_usage_stats::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{topic_usages: {} }}", topic_usages);
 }
 
-std::ostream& operator<<(std::ostream& o, const usage_stats_reply& resp) {
-    fmt::print(o, "{{errc: {}, stats: {}}}", resp.errc, resp.stats);
-    return o;
+fmt::iterator usage_stats_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{errc: {}, stats: {}}}", errc, stats);
 }
 
-std::ostream& operator<<(std::ostream& o, const usage_stats_request& req) {
-    fmt::print(o, "{{coordinator_partition: {}}}", req.coordinator_partition);
-    return o;
+fmt::iterator usage_stats_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{coordinator_partition: {}}}", coordinator_partition);
 }
 
-std::ostream& operator<<(std::ostream& o, const get_topic_state_reply& reply) {
-    fmt::print(
-      o,
+fmt::iterator get_topic_state_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{errc: {}, topic_states size: {}}}",
-      reply.errc,
-      reply.topic_states.size());
-    return o;
+      errc,
+      topic_states.size());
 }
 
-std::ostream&
-operator<<(std::ostream& o, const get_topic_state_request& request) {
-    fmt::print(
-      o,
+fmt::iterator get_topic_state_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{coordinator_partition: {}, topics_filter: {}}}",
-      request.coordinator_partition,
-      request.topics_filter);
-    return o;
+      coordinator_partition,
+      topics_filter);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const reset_topic_state_reply& reply) {
-    fmt::print(o, "{{errc: {}}}", reply.errc);
-    return o;
+fmt::iterator reset_topic_state_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{errc: {}}}", errc);
 }
 
 } // namespace datalake::coordinator

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
 
@@ -39,7 +40,7 @@ public:
 
         friend bool operator==(const topic_usage&, const topic_usage&)
           = default;
-        friend std::ostream& operator<<(std::ostream& os, const topic_usage& u);
+        fmt::iterator format_to(fmt::iterator) const;
 
         auto serde_fields() {
             return std::tie(topic, revision, kafka_bytes_processed);
@@ -57,7 +58,23 @@ public:
         not_controller_leader = 3,
     };
 
-    friend std::ostream& operator<<(std::ostream&, const stats_missing_reason&);
+    friend constexpr std::string_view
+    format_as(stats_missing_reason r) {
+        switch (r) {
+        case stats_missing_reason::none:
+            return "none";
+        case stats_missing_reason::feature_disabled:
+            return "feature_disabled";
+        case stats_missing_reason::collection_error:
+            return "collection_error";
+        case stats_missing_reason::not_controller_leader:
+            return "not_controller_leader";
+        }
+    }
+    friend std::ostream&
+    operator<<(std::ostream& os, const stats_missing_reason& r) {
+        return os << format_as(r);
+    }
 
     /**
      * Usage statistics for a datalake
@@ -80,7 +97,7 @@ public:
 
         friend bool operator==(const usage_stats&, const usage_stats&)
           = default;
-        friend std::ostream& operator<<(std::ostream& os, const usage_stats& u);
+        fmt::iterator format_to(fmt::iterator) const;
 
         auto serde_fields() { return std::tie(topic_stats, missing_reason); }
     };

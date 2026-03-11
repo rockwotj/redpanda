@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "kafka/client/api_types.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
@@ -31,8 +32,7 @@ struct api_version_range {
 
     bool is_supported(api_version v) const { return v >= min && v <= max; }
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const api_version_range& r);
+    fmt::iterator format_to(fmt::iterator) const;
 
     friend bool
     operator==(const api_version_range& lhs, const api_version_range& rhs)

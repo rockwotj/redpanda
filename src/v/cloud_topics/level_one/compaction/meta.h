@@ -21,6 +21,7 @@
 #include <seastar/core/sharded.hh>
 
 #include <memory>
+#include <string_view>
 
 namespace cloud_topics::l1 {
 
@@ -125,17 +126,21 @@ enum class compaction_job_state {
     hard_stop
 };
 
-inline std::ostream& operator<<(std::ostream& o, compaction_job_state s) {
+inline constexpr std::string_view format_as(compaction_job_state s) {
     switch (s) {
     case compaction_job_state::idle:
-        return o << "idle";
+        return "idle";
     case compaction_job_state::running:
-        return o << "running";
+        return "running";
     case compaction_job_state::soft_stop:
-        return o << "soft_stop";
+        return "soft_stop";
     case compaction_job_state::hard_stop:
-        return o << "hard_stop";
+        return "hard_stop";
     }
+}
+
+inline std::ostream& operator<<(std::ostream& o, compaction_job_state s) {
+    return o << format_as(s);
 }
 
 } // namespace cloud_topics::l1

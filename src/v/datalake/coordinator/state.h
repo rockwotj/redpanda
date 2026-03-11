@@ -102,8 +102,6 @@ struct topic_state
         // TODO: GC purged topic states
         purged,
     };
-    friend std::ostream&
-    operator<<(std::ostream&, topic_state::lifecycle_state_t);
 
     bool has_pending_entries() const;
     bool has_pending_main_entries() const;
@@ -130,6 +128,17 @@ struct topic_state
     // etc.
 };
 
+inline constexpr std::string_view format_as(topic_state::lifecycle_state_t s) {
+    switch (s) {
+    case topic_state::lifecycle_state_t::live:
+        return "live";
+    case topic_state::lifecycle_state_t::closed:
+        return "closed";
+    case topic_state::lifecycle_state_t::purged:
+        return "purged";
+    }
+}
+
 // Tracks the state of each topic.
 struct topics_state
   : public serde::
@@ -148,3 +157,14 @@ struct topics_state
 };
 
 } // namespace datalake::coordinator
+
+template<>
+struct fmt::formatter<datalake::coordinator::topic_state::lifecycle_state_t>
+  : fmt::formatter<std::string_view> {
+    auto format(
+      datalake::coordinator::topic_state::lifecycle_state_t e,
+      fmt::format_context& ctx) const {
+        return fmt::formatter<std::string_view>::format(
+          datalake::coordinator::format_as(e), ctx);
+    }
+};

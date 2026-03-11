@@ -264,6 +264,7 @@ redpanda_cc_library(
         "partition_state_override.h",
     ],
     deps = [
+        "//src/v/base",
         "//src/v/model",
         "//src/v/serde",
         "@fmt",
@@ -300,6 +301,7 @@ redpanda_cc_library(
     deps = [
         ":partition_state_override",
         ":translated_offset_range",
+        "//src/v/base",
         "//src/v/datalake:schema_identifier",
         "//src/v/datalake:types",
         "//src/v/datalake/coordinator:state",

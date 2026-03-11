@@ -238,16 +238,14 @@ struct workload_parameters {
     int num_rolls;
     tx_types tx_workload_type;
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const workload_parameters& params) {
-        fmt::print(
-          os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{groups: {}, tx_per_group: {}, rolls: {}, tx_workload_type: {}}}",
-          params.num_groups,
-          params.num_tx_per_group,
-          params.num_rolls,
-          static_cast<int>(params.tx_workload_type));
-        return os;
+          num_groups,
+          num_tx_per_group,
+          num_rolls,
+          static_cast<int>(tx_workload_type));
     }
 };
 

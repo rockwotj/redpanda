@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cluster/commands.h"
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
@@ -99,7 +100,7 @@ public:
         friend bool operator==(const node_update&, const node_update&)
           = default;
 
-        friend std::ostream& operator<<(std::ostream&, const node_update&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     using uuid_map_t = absl::flat_hash_map<model::node_uuid, model::node_id>;

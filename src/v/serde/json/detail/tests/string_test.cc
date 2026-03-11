@@ -23,6 +23,7 @@
  * the License.
  */
 
+#include "base/format_to.h"
 #include "serde/json/detail/string.h"
 
 #include <gtest/gtest.h>
@@ -33,24 +34,27 @@
 using namespace serde::json::detail;
 
 struct test_case {
+    fmt::iterator format_to(fmt::iterator it) const {
+        // Don't print the input string as it's generally not valid UTF-8
+        // and it breaks test reports.
+        it = fmt::format_to(
+          it,
+          ", expected_err: {}, expected_pos: {}",
+          static_cast<int>(expected_err),
+          expected_pos);
+
+        if (!expected_output.empty()) {
+            it = fmt::format_to(it, ", expected_output: {}", expected_output);
+        }
+
+        return it;
+    }
+
     std::string_view input;
     string_parser::result expected_err;
     size_t expected_pos;
     std::string_view expected_output;
 };
-
-std::ostream& operator<<(std::ostream& os, const test_case& tc) {
-    // Don't print the input string as it's generally not valid UTF-8
-    // and it breaks test reports.
-    os << ", expected_err: " << static_cast<int>(tc.expected_err)
-       << ", expected_pos: " << tc.expected_pos;
-
-    if (!tc.expected_output.empty()) {
-        return os << ", expected_output: " << tc.expected_output;
-    }
-
-    return os;
-}
 
 class string_parse_test : public testing::TestWithParam<test_case> {};
 

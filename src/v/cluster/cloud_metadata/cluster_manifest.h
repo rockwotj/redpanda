@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cloud_storage/base_manifest.h"
@@ -95,12 +96,12 @@ struct cluster_metadata_manifest
                  other.offsets_snapshots_by_partition);
     }
 
+    fmt::iterator format_to(fmt::iterator) const;
+
 private:
     void load_from_json(const rapidjson::Document& doc);
     void to_json(std::ostream& out) const;
 };
-
-std::ostream& operator<<(std::ostream&, const cluster_metadata_manifest&);
 
 using cluster_manifest_result
   = result<cluster_metadata_manifest, error_outcome>;

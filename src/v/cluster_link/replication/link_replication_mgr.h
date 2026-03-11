@@ -64,6 +64,7 @@ private:
 
     // Allowed operations on a replicator
     enum class op_type : uint8_t { start, stop };
+    friend constexpr std::string_view format_as(op_type);
     friend std::ostream& operator<<(std::ostream& os, op_type);
     struct ntp_target_state {
         op_type op;

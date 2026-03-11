@@ -33,7 +33,7 @@ enum class writer_error {
     out_of_disk,
     unknown_error,
 };
-std::ostream& operator<<(std::ostream&, const writer_error&);
+constexpr std::string_view format_as(writer_error);
 
 // Recoverable errors are the class of errors that donot leave the underlying
 // writers in a bad shape. Upon recoverable errors the translator may choose to

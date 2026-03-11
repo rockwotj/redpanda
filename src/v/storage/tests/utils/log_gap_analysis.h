@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 
@@ -30,7 +31,7 @@ struct log_gap_analysis {
     // For the last gap detected, stores the last offset that was missing.
     model::offset last_gap_end{-1};
     size_t num_gaps{0};
-    friend std::ostream& operator<<(std::ostream& o, const log_gap_analysis& r);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /**

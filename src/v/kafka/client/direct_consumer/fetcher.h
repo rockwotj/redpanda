@@ -131,6 +131,8 @@ private:
     model::node_id _id;
     prefix_logger* _logger;
     fetch_sessions_enabled _fetch_sessions_enabled;
+
+public:
     fmt::iterator format_to(fmt::iterator it) const;
 };
 

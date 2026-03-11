@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_storage/recovery_errors.h"
 #include "cloud_storage/recovery_request.h"
 #include "cloud_storage/remote.h"
@@ -38,9 +39,8 @@ struct init_recovery_result {
     ss::sstring message;
 
     bool operator==(const init_recovery_result&) const = default;
+    fmt::iterator format_to(fmt::iterator) const;
 };
-
-std::ostream& operator<<(std::ostream&, const init_recovery_result&);
 
 struct recovery_task_config {
     cloud_storage_clients::bucket_name bucket;
@@ -53,9 +53,8 @@ struct topic_download_counts {
     int pending_downloads;
     int successful_downloads;
     int failed_downloads;
+    fmt::iterator format_to(fmt::iterator) const;
 };
-
-std::ostream& operator<<(std::ostream&, const topic_download_counts&);
 
 struct topic_recovery_service
   : ss::peering_sharded_service<topic_recovery_service> {
@@ -74,6 +73,7 @@ struct topic_recovery_service
         state state;
         download_counts download_counts;
         std::optional<recovery_request> request;
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     static constexpr int shard_id = 0;
@@ -193,9 +193,25 @@ private:
     boost::circular_buffer<recovery_status> _status_log;
 };
 
-std::ostream&
-operator<<(std::ostream&, const topic_recovery_service::recovery_status&);
+inline constexpr std::string_view
+format_as(topic_recovery_service::state s) {
+    switch (s) {
+    case topic_recovery_service::state::inactive:
+        return "inactive";
+    case topic_recovery_service::state::starting:
+        return "starting";
+    case topic_recovery_service::state::scanning_bucket:
+        return "scanning_bucket";
+    case topic_recovery_service::state::creating_topics:
+        return "creating_topics";
+    case topic_recovery_service::state::recovering_data:
+        return "recovering_data";
+    }
+}
 
-std::ostream& operator<<(std::ostream&, const topic_recovery_service::state&);
+inline std::ostream&
+operator<<(std::ostream& os, topic_recovery_service::state s) {
+    return os << format_as(s);
+}
 
 } // namespace cloud_storage

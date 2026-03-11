@@ -2193,33 +2193,31 @@ void topic_table::on_partition_deletion(const model::ntp& ntp) {
     }
 }
 
-std::ostream&
-operator<<(std::ostream& o, const topic_table::in_progress_update& u) {
-    fmt::print(
-      o,
+fmt::iterator
+topic_table::in_progress_update::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{state: {}, update_rev: {}, last_cmd_rev: {}, previous: {}, target: "
       "{}, policy: {}}}",
-      u._state,
-      u._update_revision,
-      u._last_cmd_revision,
-      u._previous_replicas,
-      u._target_replicas,
-      u._policy);
-    return o;
+      _state,
+      _update_revision,
+      _last_cmd_revision,
+      _previous_replicas,
+      _target_replicas,
+      _policy);
 }
 
-std::ostream&
-operator<<(std::ostream& o, const topic_table::partition_replicas_view& ri) {
-    fmt::print(
-      o,
+fmt::iterator
+topic_table::partition_replicas_view::format_to(fmt::iterator it) const {
+    it = fmt::format_to(
+      it,
       "{{orig_replicas: {}, last_update_finished_revision: {}",
-      ri.orig_replicas(),
-      ri.last_update_finished_revision());
-    if (ri.update) {
-        fmt::print(o, ", update: {}", *ri.update);
+      orig_replicas(),
+      last_update_finished_revision());
+    if (update) {
+        it = fmt::format_to(it, ", update: {}", *update);
     }
-    fmt::print(o, "}}");
-    return o;
+    return fmt::format_to(it, "}}");
 }
 
 } // namespace cluster

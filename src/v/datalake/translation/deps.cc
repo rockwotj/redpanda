@@ -10,6 +10,7 @@
 
 #include "datalake/translation/deps.h"
 
+#include "base/format_to.h"
 #include "cluster/notification.h"
 #include "cluster/partition.h"
 #include "datalake/coordinator/frontend.h"
@@ -317,13 +318,11 @@ struct timestamped_offset {
     kafka::offset offset;
     model::timestamp ts;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const timestamped_offset& to);
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it, "{{offset: {}, timestamp: {}}}", offset, ts);
+    }
 };
-std::ostream& operator<<(std::ostream& o, const timestamped_offset& to) {
-    fmt::print(o, "{{offset: {}, timestamp: {}}}", to.offset, to.ts);
-    return o;
-}
 
 } // namespace
 
@@ -443,28 +442,28 @@ std::unique_ptr<data_source> data_source::make_default_data_source(
     return std::make_unique<partition_data_source>(std::move(partition));
 }
 
-std::ostream& operator<<(std::ostream& o, translation_errc ec) {
+std::string_view format_as(translation_errc ec) {
     switch (ec) {
     case no_data:
-        return o << "translation_errc::no_data";
+        return "translation_errc::no_data";
     case file_io_error:
-        return o << "translation_errc::file_io_error";
+        return "translation_errc::file_io_error";
     case cloud_io_error:
-        return o << "translation_errc::cloud_io_error";
+        return "translation_errc::cloud_io_error";
     case flush_error:
-        return o << "translation_errc::flush_error";
+        return "translation_errc::flush_error";
     case discard_error:
-        return o << "translation_errc::discard_error";
+        return "translation_errc::discard_error";
     case oom_error:
-        return o << "translation_errc::oom_error";
+        return "translation_errc::oom_error";
     case time_limit_exceeded:
-        return o << "translation_errc::time_limit_exceeded";
+        return "translation_errc::time_limit_exceeded";
     case shutting_down:
-        return o << "translation_errc::shutting_down";
+        return "translation_errc::shutting_down";
     case out_of_disk:
-        return o << "translation_errc::out_of_disk";
+        return "translation_errc::out_of_disk";
     case type_resolution_error:
-        return o << "translation_errc::type_resolution_error";
+        return "translation_errc::type_resolution_error";
     }
 }
 

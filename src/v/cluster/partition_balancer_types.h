@@ -12,6 +12,7 @@
 
 #include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_map.h"
+#include "base/format_to.h"
 #include "cluster/errc.h"
 #include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
@@ -42,7 +43,7 @@ struct node_disk_space {
 
     double final_used_ratio() const;
 
-    friend std::ostream& operator<<(std::ostream& o, const node_disk_space& d);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 struct partition_balancer_violations
@@ -61,8 +62,7 @@ struct partition_balancer_violations
         unavailable_node() noexcept = default;
         unavailable_node(model::node_id id, model::timestamp unavailable_since);
 
-        friend std::ostream&
-        operator<<(std::ostream& o, const unavailable_node& u);
+        fmt::iterator format_to(fmt::iterator) const;
 
         auto serde_fields() { return std::tie(id, unavailable_since); }
 
@@ -79,7 +79,7 @@ struct partition_balancer_violations
         full_node() noexcept = default;
         full_node(model::node_id id, uint32_t disk_used_percent);
 
-        friend std::ostream& operator<<(std::ostream& o, const full_node& f);
+        fmt::iterator format_to(fmt::iterator) const;
 
         auto serde_fields() { return std::tie(id, disk_used_percent); }
 
@@ -94,8 +94,7 @@ struct partition_balancer_violations
     partition_balancer_violations(
       std::vector<unavailable_node> un, std::vector<full_node> fn);
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const partition_balancer_violations& v);
+    fmt::iterator format_to(fmt::iterator) const;
 
     auto serde_fields() { return std::tie(unavailable_nodes, full_nodes); }
 
@@ -117,6 +116,21 @@ enum class partition_balancer_status {
     stalled,
 };
 
+inline constexpr std::string_view
+format_as(partition_balancer_status status) {
+    switch (status) {
+    case partition_balancer_status::off:
+        return "off";
+    case partition_balancer_status::starting:
+        return "starting";
+    case partition_balancer_status::ready:
+        return "ready";
+    case partition_balancer_status::in_progress:
+        return "in_progress";
+    case partition_balancer_status::stalled:
+        return "stalled";
+    }
+}
 std::ostream& operator<<(std::ostream& os, partition_balancer_status status);
 
 struct partition_balancer_overview_request
@@ -124,8 +138,7 @@ struct partition_balancer_overview_request
       partition_balancer_overview_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    friend std::ostream&
-    operator<<(std::ostream& o, const partition_balancer_overview_request&);
+    fmt::iterator format_to(fmt::iterator) const;
     auto serde_fields() { return std::tie(); }
 };
 
@@ -140,6 +153,20 @@ enum class change_reason {
     disk_full,
 };
 
+inline constexpr std::string_view format_as(change_reason reason) {
+    switch (reason) {
+    case change_reason::rack_constraint_repair:
+        return "rack_constraint_repair";
+    case change_reason::partition_count_rebalancing:
+        return "partition_count_rebalancing";
+    case change_reason::node_decommissioning:
+        return "node_decommissioning";
+    case change_reason::node_unavailable:
+        return "node_unavailable";
+    case change_reason::disk_full:
+        return "disk_full";
+    }
+}
 std::ostream& operator<<(std::ostream& o, change_reason rep);
 /**
  * Enum providing a details about partition replica reallocation failure.
@@ -156,6 +183,29 @@ enum class reallocation_error : int8_t {
     unknown_error,
 };
 
+inline constexpr std::string_view format_as(reallocation_error err) {
+    switch (err) {
+    case reallocation_error::missing_partition_size_info:
+        return "Missing partition size information, all replicas may be "
+               "offline";
+    case reallocation_error::no_eligible_node_found:
+        return "No eligible node found to move replica";
+    case reallocation_error::over_partition_fd_limit:
+        return "Over the total partition file descriptor limit";
+    case reallocation_error::over_partition_memory_limit:
+        return "Over the total partition memory limit";
+    case reallocation_error::over_partition_core_limit:
+        return "Over the partition per core limit";
+    case reallocation_error::no_quorum:
+        return "No quorum, majority of replicas are offline";
+    case reallocation_error::reconfiguration_in_progress:
+        return "Non cancellable reconfiguration in progress";
+    case reallocation_error::partition_disabled:
+        return "Partition is disabled";
+    case reallocation_error::unknown_error:
+        return "Unknown error or error not reported";
+    }
+}
 std::ostream& operator<<(std::ostream& o, reallocation_error rep);
 
 /**
@@ -177,8 +227,7 @@ struct reallocation_failure_details
       const reallocation_failure_details&, const reallocation_failure_details&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const reallocation_failure_details& rep);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 struct partition_balancer_overview_reply
@@ -230,8 +279,7 @@ struct partition_balancer_overview_reply
       const partition_balancer_overview_reply&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const partition_balancer_overview_reply& rep);
+    fmt::iterator format_to(fmt::iterator) const;
 
     partition_balancer_overview_reply copy() const;
 };

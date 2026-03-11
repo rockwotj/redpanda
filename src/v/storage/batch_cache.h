@@ -11,6 +11,7 @@
 
 #pragma once
 #include "absl/container/btree_map.h"
+#include "base/format_to.h"
 #include "base/units.h"
 #include "base/vassert.h"
 #include "container/chunked_circular_buffer.h"
@@ -117,6 +118,8 @@ public:
         // background reclaimer settings
         ss::scheduling_group background_reclaimer_sg;
         size_t min_free_memory = 64_MiB;
+
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     /*
@@ -450,8 +453,8 @@ private:
     background_reclaimer _background_reclaimer;
     resources::available_memory::deregister_holder _available_mem_deregister;
 
-    friend std::ostream& operator<<(std::ostream&, const reclaim_options&);
-    friend std::ostream& operator<<(std::ostream&, const batch_cache&);
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 class batch_cache_index {
@@ -489,10 +492,8 @@ class batch_cache_index {
 
         bool clean() const { return _min == model::offset{}; }
 
-        friend std::ostream&
-        operator<<(std::ostream& o, const dirty_tracker& t) {
-            o << "{min: " << t._min << ", max: " << t._max << "}";
-            return o;
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(it, "{{min: {}, max: {}}}", _min, _max);
         }
 
     private:
@@ -509,7 +510,7 @@ public:
         model::offset next_batch;
         std::optional<model::offset> next_cached_batch;
 
-        friend std::ostream& operator<<(std::ostream&, const read_result&);
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     explicit batch_cache_index(batch_cache& cache)
@@ -716,7 +717,8 @@ private:
 
     dirty_tracker _dirty_tracker;
 
-    friend std::ostream& operator<<(std::ostream&, const batch_cache_index&);
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 using batch_cache_index_ptr = std::unique_ptr<batch_cache_index>;

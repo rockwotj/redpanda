@@ -11,6 +11,7 @@
 #pragma once
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/node_hash_map.h"
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "config/property.h"
 #include "container/chunked_hash_map.h"
@@ -145,8 +146,7 @@ struct virtual_connection_id {
     operator==(const virtual_connection_id&, const virtual_connection_id&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const virtual_connection_id& id);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 class last_value {

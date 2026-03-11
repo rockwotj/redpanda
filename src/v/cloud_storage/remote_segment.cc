@@ -1393,7 +1393,7 @@ public:
               "added offset translation gap [{}-{}], current state: {}",
               header.base_offset,
               header.last_offset(),
-              _seg_reader._cur_ot_state);
+              _seg_reader._cur_ot_state->get());
 
             _seg_reader._cur_ot_state->get().add_gap(
               header.base_offset, header.last_offset());
@@ -1612,14 +1612,7 @@ remote_segment_batch_reader::~remote_segment_batch_reader() noexcept {
 }
 
 std::ostream& operator<<(std::ostream& os, hydration_request::kind kind) {
-    switch (kind) {
-    case hydration_request::kind::segment:
-        return os << "segment";
-    case hydration_request::kind::tx:
-        return os << "tx-range";
-    case hydration_request::kind::index:
-        return os << "index";
-    }
+    return os << format_as(kind);
 }
 
 hydration_loop_state::hydration_loop_state(

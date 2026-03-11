@@ -106,8 +106,6 @@ public:
     size_t buffered_bytes() const;
 
 private:
-    friend std::ostream& operator<<(std::ostream&, errc);
-
     ss::future<errc> delete_remote_files(
       chunked_vector<remote_path>, retry_chain_node& parent_rcn);
 
@@ -123,4 +121,38 @@ private:
     translation_probe* _translation_probe;
     record_multiplexer _multiplexer;
 };
+
+inline constexpr std::string_view format_as(translation_task::errc ec) {
+    switch (ec) {
+    case translation_task::errc::file_io_error:
+        return "local file IO error";
+    case translation_task::errc::cloud_io_error:
+        return "cloud IO error";
+    case translation_task::errc::flush_error:
+        return "writer flush error";
+    case translation_task::errc::no_data:
+        return "no data to translate";
+    case translation_task::errc::oom_error:
+        return "memory exhausted";
+    case translation_task::errc::time_limit_exceeded:
+        return "time limit exceeded";
+    case translation_task::errc::shutting_down:
+        return "shutting down";
+    case translation_task::errc::out_of_disk:
+        return "disk exhausted";
+    case translation_task::errc::type_resolution_error:
+        return "type resolution error";
+    }
+}
+
 } // namespace datalake
+
+template<>
+struct fmt::formatter<datalake::translation_task::errc>
+  : fmt::formatter<std::string_view> {
+    auto
+    format(datalake::translation_task::errc e, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string_view>::format(
+          datalake::format_as(e), ctx);
+    }
+};

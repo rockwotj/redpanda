@@ -285,19 +285,17 @@ ss::future<> drain_manager::do_restore() {
     co_return;
 }
 
-std::ostream&
-operator<<(std::ostream& os, const drain_manager::drain_status& ds) {
-    fmt::print(
-      os,
+fmt::iterator drain_manager::drain_status::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{finished: {}, errors: {}, partitions: {}, eligible: {}, transferring: "
       "{}, failed: {}}}",
-      ds.finished,
-      ds.errors,
-      ds.partitions,
-      ds.eligible,
-      ds.transferring,
-      ds.failed);
-    return os;
+      finished,
+      errors,
+      partitions,
+      eligible,
+      transferring,
+      failed);
 }
 
 } // namespace cluster

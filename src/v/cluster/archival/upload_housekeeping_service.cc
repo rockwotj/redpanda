@@ -32,24 +32,7 @@ using namespace std::chrono_literals;
 namespace archival {
 
 std::ostream& operator<<(std::ostream& o, housekeeping_state s) {
-    switch (s) {
-    case housekeeping_state::idle:
-        o << "idle";
-        break;
-    case housekeeping_state::active:
-        o << "active";
-        break;
-    case housekeeping_state::pause:
-        o << "pause";
-        break;
-    case housekeeping_state::draining:
-        o << "draining";
-        break;
-    case housekeeping_state::stopped:
-        o << "stopped";
-        break;
-    };
-    return o;
+    return o << format_as(s);
 }
 
 upload_housekeeping_service::upload_housekeeping_service(

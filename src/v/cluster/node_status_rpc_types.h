@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "model/metadata.h"
 #include "serde/rw/envelope.h"
 
@@ -27,10 +28,8 @@ struct node_status_metadata
 
     auto serde_fields() { return std::tie(node_id); }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const node_status_metadata& nsm) {
-        fmt::print(o, "{{node_id:{}}}", nsm.node_id);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{node_id:{}}}", node_id);
     }
 };
 
@@ -43,10 +42,8 @@ struct node_status_request
 
     auto serde_fields() { return std::tie(sender_metadata); }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const node_status_request& r) {
-        fmt::print(o, "{{sender_metadata: {}}}", r.sender_metadata);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{sender_metadata: {}}}", sender_metadata);
     }
 };
 
@@ -57,10 +54,8 @@ struct node_status_reply
 
     auto serde_fields() { return std::tie(replier_metadata); }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const node_status_reply& r) {
-        fmt::print(o, "{{replier_metadata: {}}}", r.replier_metadata);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{replier_metadata: {}}}", replier_metadata);
     }
 };
 

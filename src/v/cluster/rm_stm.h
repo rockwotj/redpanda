@@ -352,6 +352,14 @@ private:
         chunked_vector<tx::tx_range> aborted;
         chunked_vector<tx::abort_index> abort_indexes;
         tx::abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
+
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(
+              it,
+              "{{aborted: {}, abort_indexes: {}}}",
+              aborted.size(),
+              abort_indexes.size());
+        }
     };
 
     kafka::offset from_log_offset(model::offset old_offset) const;
@@ -366,8 +374,6 @@ private:
     get_expired_producers() const;
 
     uint8_t active_snapshot_version();
-
-    friend std::ostream& operator<<(std::ostream&, const aborted_tx_state&);
 
     // Defines the commit offset range for the stm bootstrap.
     // Set on first apply upcall and used to identify if the

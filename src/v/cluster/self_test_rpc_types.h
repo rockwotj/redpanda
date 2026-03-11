@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "config/node_config.h"
 #include "json/document.h"
 #include "model/metadata.h"
@@ -33,12 +34,14 @@ enum class self_test_status : int8_t { idle = 0, running, unreachable };
 
 ss::sstring self_test_status_as_string(self_test_status sts);
 
+ss::sstring format_as(self_test_status sts);
 std::ostream& operator<<(std::ostream& o, self_test_status sts);
 
 enum class self_test_stage : int8_t { idle = 0, disk, net, cloud };
 
 ss::sstring self_test_stage_as_string(self_test_stage sts);
 
+ss::sstring format_as(self_test_stage sts);
 std::ostream& operator<<(std::ostream& o, self_test_stage sts);
 
 struct diskcheck_opts
@@ -113,21 +116,19 @@ struct diskcheck_opts
           parallelism);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const diskcheck_opts& opts) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{name: {} dsync: {} skip_write: {} skip_read: {} data_size: {} "
           "request_size: {} duration: {} parallelism: {}}}",
-          opts.name,
-          opts.dsync,
-          opts.skip_write,
-          opts.skip_read,
-          opts.data_size,
-          opts.request_size,
-          opts.duration,
-          opts.parallelism);
-        return o;
+          name,
+          dsync,
+          skip_write,
+          skip_read,
+          data_size,
+          request_size,
+          duration,
+          parallelism);
     }
 };
 
@@ -176,19 +177,17 @@ struct netcheck_opts
           name, peers, request_size, duration, max_duration, parallelism);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const netcheck_opts& opts) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{name: {} peers: {} request_size: {} duration: "
           "{} max_duration: {} parallelism: {}}}",
-          opts.name,
-          opts.peers,
-          opts.request_size,
-          opts.duration.count(),
-          opts.max_duration.count(),
-          opts.parallelism);
-        return o;
+          name,
+          peers,
+          request_size,
+          duration.count(),
+          max_duration.count(),
+          parallelism);
     }
 };
 
@@ -226,15 +225,13 @@ struct cloudcheck_opts
 
     auto serde_fields() { return std::tie(name, timeout, backoff); }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const cloudcheck_opts& opts) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{name: {} timeout: {} backoff: {}}}",
-          opts.name,
-          opts.timeout,
-          opts.backoff);
-        return o;
+          name,
+          timeout,
+          backoff);
     }
 };
 
@@ -246,14 +243,12 @@ struct unparsed_check
     ss::sstring test_json;
     auto serde_fields() { return std::tie(test_type, test_json); }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const unparsed_check& unparsed_check) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{test_type: {}, test_json: {}}}",
-          unparsed_check.test_type,
-          unparsed_check.test_json);
-        return o;
+          test_type,
+          test_json);
     }
 };
 
@@ -279,33 +274,31 @@ struct self_test_result
     std::optional<ss::sstring> warning;
     std::optional<ss::sstring> error;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const self_test_result& r) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{p50: {} p90: {} p99: {} p999: {} max: {} rps: {} bps: {} "
           "timeouts: {} test_id: {} name: {} info: {} type: {} start_time: {} "
           "end_time: {} duration: {}ms "
           "warning: {} error: {}}}",
-          r.p50,
-          r.p90,
-          r.p99,
-          r.p999,
-          r.max,
-          r.rps,
-          r.bps,
-          r.timeouts,
-          r.test_id,
-          r.name,
-          r.info,
-          r.test_type,
-          r.start_time,
-          r.end_time,
-          std::chrono::duration_cast<std::chrono::milliseconds>(r.duration)
+          p50,
+          p90,
+          p99,
+          p999,
+          max,
+          rps,
+          bps,
+          timeouts,
+          test_id,
+          name,
+          info,
+          test_type,
+          start_time,
+          end_time,
+          std::chrono::duration_cast<std::chrono::milliseconds>(duration)
             .count(),
-          r.warning ? *r.warning : "<no_value>",
-          r.error ? *r.error : "<no_value>");
-        return o;
+          warning ? *warning : "<no_value>",
+          error ? *error : "<no_value>");
     }
 
     auto serde_fields() {
@@ -351,23 +344,21 @@ struct start_test_request
         return std::tie(id, dtos, ntos, unparsed_checks, ctos);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const start_test_request& r) {
-        std::stringstream ss;
-        for (const auto& v : r.dtos) {
-            fmt::print(ss, "diskcheck_opts: {}", v);
+    fmt::iterator format_to(fmt::iterator it) const {
+        it = fmt::format_to(it, "{{id: {} ", id);
+        for (const auto& v : dtos) {
+            it = fmt::format_to(it, "diskcheck_opts: {}", v);
         }
-        for (const auto& v : r.ntos) {
-            fmt::print(ss, "netcheck_opts: {}", v);
+        for (const auto& v : ntos) {
+            it = fmt::format_to(it, "netcheck_opts: {}", v);
         }
-        for (const auto& v : r.ctos) {
-            fmt::print(ss, "cloudcheck_opts: {}", v);
+        for (const auto& v : ctos) {
+            it = fmt::format_to(it, "cloudcheck_opts: {}", v);
         }
-        for (const auto& v : r.unparsed_checks) {
-            fmt::print(ss, "unparsed_check: {}", v);
+        for (const auto& v : unparsed_checks) {
+            it = fmt::format_to(it, "unparsed_check: {}", v);
         }
-        fmt::print(o, "{{id: {} {}}}", r.id, ss.str());
-        return o;
+        return fmt::format_to(it, "}}");
     }
 };
 
@@ -383,16 +374,14 @@ struct get_status_response
 
     auto serde_fields() { return std::tie(id, status, results, stage); }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const get_status_response& r) {
-        fmt::print(
-          o,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{id: {} status: {} stage: {} test_results: {}}}",
-          r.id,
-          r.status,
-          r.stage,
-          r.results);
-        return o;
+          id,
+          status,
+          stage,
+          results);
     }
 };
 
@@ -402,10 +391,9 @@ struct netcheck_request
     model::node_id source;
     iobuf buf;
     auto serde_fields() { return std::tie(source, buf); }
-    friend std::ostream&
-    operator<<(std::ostream& o, const netcheck_request& r) {
-        fmt::print(o, "{{source: {} buf: {}}}", r.source, r.buf.size_bytes());
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it, "{{source: {} buf: {}}}", source, buf.size_bytes());
     }
 };
 
@@ -416,10 +404,8 @@ struct netcheck_response
 
     auto serde_fields() { return std::tie(bytes_read); }
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const netcheck_response& r) {
-        fmt::print(o, "{{bytes_read: {}}}", r.bytes_read);
-        return o;
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{{bytes_read: {}}}", bytes_read);
     }
 };
 

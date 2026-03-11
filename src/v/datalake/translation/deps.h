@@ -218,7 +218,7 @@ enum translation_errc {
     type_resolution_error,
 };
 
-std::ostream& operator<<(std::ostream&, translation_errc);
+std::string_view format_as(translation_errc);
 
 class translation_context {
 public:

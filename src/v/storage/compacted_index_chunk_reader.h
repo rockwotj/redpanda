@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "storage/compacted_index_reader.h"
 
 #include <seastar/core/file.hh>
@@ -58,8 +59,8 @@ private:
     std::optional<ss::input_stream<char>> _cursor;
     ss::abort_source* _as;
 
-    friend std::ostream&
-    operator<<(std::ostream&, const compacted_index_chunk_reader&);
+public:
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 } // namespace storage::internal

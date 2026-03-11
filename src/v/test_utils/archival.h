@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cluster/archival/archival_policy.h"
@@ -53,19 +54,17 @@ struct segment_spec {
       , start_kafka_offset(start_kafka >= 0 ? start_kafka : start)
       , end_kafka_offset(end_kafka >= 0 ? end_kafka : end) {}
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const segment_spec& spec) {
-        fmt::print(
-          os,
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
           "{{ start_offset={}, end_offset={}, size_bytes={}, timestamp={}, "
           "start_kafka_offset={}, end_kafka_offset={} }}",
-          spec.start_offset,
-          spec.end_offset,
-          spec.size_bytes,
-          spec.timestamp,
-          spec.start_kafka_offset,
-          spec.end_kafka_offset);
-        return os;
+          start_offset,
+          end_offset,
+          size_bytes,
+          timestamp,
+          start_kafka_offset,
+          end_kafka_offset);
     }
 };
 

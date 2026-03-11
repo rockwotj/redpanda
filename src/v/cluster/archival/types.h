@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "cloud_storage/types.h"
 #include "cluster/archival/adjacent_segment_run.h"
@@ -66,7 +67,7 @@ struct configuration {
     ss::scheduling_group upload_scheduling_group{
       ss::default_scheduling_group()};
 
-    friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 /// \brief create scheduler service config

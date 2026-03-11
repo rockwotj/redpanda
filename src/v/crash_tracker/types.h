@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
@@ -33,6 +34,7 @@ enum class crash_type {
     oom
 };
 
+std::string_view format_as(crash_type);
 std::ostream& operator<<(std::ostream&, crash_type);
 
 /// reserved_string is a simple wrapper around a std::array that allows
@@ -138,7 +140,7 @@ struct crash_description
           type, crash_time, crash_message, stacktrace, app_version, arch);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const crash_description&);
+    fmt::iterator format_to(fmt::iterator) const;
 };
 
 struct crash_tracker_metadata

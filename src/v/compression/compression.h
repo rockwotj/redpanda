@@ -23,6 +23,7 @@ enum class type : uint8_t {
     lz4,
     zstd,
 };
+std::string_view format_as(type c);
 std::ostream& operator<<(std::ostream& os, const type& c);
 
 // a very simple compressor. Exposes virtually no knobs and uses
